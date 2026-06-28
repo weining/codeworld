@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -125,5 +126,49 @@ func TestNewRuntimeIncludesSessionSummaryInSystemPrompt(t *testing.T) {
 	}
 	if !strings.Contains(rt.Runner.SystemPrompt, "Conversation summary:") || !strings.Contains(rt.Runner.SystemPrompt, "remembered context") {
 		t.Fatalf("system prompt missing session summary:\n%s", rt.Runner.SystemPrompt)
+	}
+}
+
+func TestNewRuntimeRegistersEnabledPluginTools(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+	writeFile(t, filepath.Join(root, ".codeworld", "config.toml"), "plugins_enabled = true\n")
+	writeFile(t, filepath.Join(root, ".codeworld", "plugins", "demo", "plugin.json"), `{
+		"name": "demo",
+		"tools": [{
+			"name": "demo.echo",
+			"description": "echo input",
+			"command": "printf",
+			"args": ["{{text}}"],
+			"input_schema": {
+				"type": "object",
+				"properties": {"text": {"type": "string"}},
+				"required": ["text"]
+			},
+			"risk": "read"
+		}]
+	}`)
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	if _, ok := rt.Runner.Tools.Get("demo.echo"); !ok {
+		t.Fatalf("plugin tool demo.echo was not registered")
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 }

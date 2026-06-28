@@ -15,6 +15,7 @@ import (
 	"codeworld/internal/model"
 	"codeworld/internal/model/provider"
 	"codeworld/internal/permissions"
+	"codeworld/internal/plugin"
 	"codeworld/internal/repl"
 	"codeworld/internal/session"
 	"codeworld/internal/tools"
@@ -119,7 +120,14 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if err != nil {
 		return Runtime{}, err
 	}
+	pluginTools, err := plugin.LoadManifests(ws.Root, cfg.PluginsEnabled)
+	if err != nil {
+		return Runtime{}, err
+	}
 	registry := tools.NewDefaultRegistry(ws)
+	for _, spec := range pluginTools {
+		registry.Register(tools.NewPluginTool(ws, spec))
+	}
 	diffTool := tools.NewGitDiffTool(ws)
 
 	confirmer := repl.Confirmer{In: opts.In, Out: opts.Out}
