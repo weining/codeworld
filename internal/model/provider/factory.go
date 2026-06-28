@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"codeworld/internal/model"
+	"codeworld/internal/model/anthropic"
 	"codeworld/internal/model/deepseek"
 	"codeworld/internal/model/openai"
 )
@@ -45,7 +46,14 @@ func NewClient(cfg Config) (model.Client, error) {
 		}
 		return client, nil
 	case "anthropic":
-		return nil, fmt.Errorf("anthropic provider not implemented")
+		if cfg.AnthropicAPIKey == "" {
+			return nil, fmt.Errorf("ANTHROPIC_API_KEY is not set")
+		}
+		client := anthropic.NewClient(cfg.AnthropicAPIKey, cfg.Model)
+		if cfg.LogPath != "" {
+			client.SetLogger(anthropic.NewFileJSONLLogger(cfg.LogPath))
+		}
+		return client, nil
 	default:
 		return nil, fmt.Errorf("unknown provider %q", cfg.Provider)
 	}

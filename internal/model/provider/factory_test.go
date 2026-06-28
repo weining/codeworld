@@ -51,6 +51,28 @@ func TestNewClientCreatesLocalClientWithoutAPIKey(t *testing.T) {
 	}
 }
 
+func TestNewClientCreatesAnthropicClient(t *testing.T) {
+	client, err := NewClient(Config{
+		Provider:        "anthropic",
+		Model:           "claude-sonnet-4-5",
+		AnthropicAPIKey: "anthropic-key",
+		LogPath:         filepath.Join(t.TempDir(), "calls.jsonl"),
+	})
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
+	if client == nil {
+		t.Fatalf("client nil")
+	}
+}
+
+func TestNewClientRejectsMissingAnthropicAPIKey(t *testing.T) {
+	_, err := NewClient(Config{Provider: "anthropic", Model: "claude-sonnet-4-5"})
+	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY is not set") {
+		t.Fatalf("err = %v, want missing Anthropic key", err)
+	}
+}
+
 func TestNewClientRejectsMissingOpenAIAPIKey(t *testing.T) {
 	_, err := NewClient(Config{Provider: "openai", Model: "gpt-4.1"})
 	if err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY is not set") {
