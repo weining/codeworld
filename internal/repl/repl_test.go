@@ -117,6 +117,7 @@ func TestRunHandlesSlashCommands(t *testing.T) {
 	store := session.NewStore(t.TempDir())
 	sess := session.New("workspace", "deepseek", "deepseek-v4-pro")
 	sess.Messages = []session.Message{{Role: "user", Content: "old"}}
+	sess.Approvals = []session.Approval{{Kind: "shell", Command: "go test ./..."}}
 	app := REPL{
 		In:  strings.NewReader("/help\n/model deepseek-v4-flash\n/model\n/status\n/diff\n/clear\n/unknown\n/exit\n"),
 		Out: &out,
@@ -140,6 +141,7 @@ func TestRunHandlesSlashCommands(t *testing.T) {
 		"/help /model /status /diff /clear /exit",
 		"model=deepseek-v4-flash",
 		"workspace=workspace provider=deepseek model=deepseek-v4-flash messages=1",
+		"approvals=1",
 		"diff --git a/a b/a",
 		"cleared",
 		"unknown command: /unknown",
@@ -163,6 +165,9 @@ func TestRunHandlesSlashCommands(t *testing.T) {
 	}
 	if len(saved.Messages) != 0 {
 		t.Fatalf("saved messages = %#v, want cleared", saved.Messages)
+	}
+	if len(saved.Approvals) != 0 {
+		t.Fatalf("saved approvals = %#v, want cleared", saved.Approvals)
 	}
 }
 
@@ -381,6 +386,53 @@ func TestConfirmerPromptsAndAcceptsY(t *testing.T) {
 		if !strings.Contains(output, want) {
 			t.Fatalf("prompt missing %q in:\n%s", want, output)
 		}
+	}
+}
+
+func TestConfirmerAddsSessionShellApprovalOnA(t *testing.T) {
+	var out bytes.Buffer
+	var approvals []session.Approval
+	confirmer := Confirmer{In: strings.NewReader("a\n"), Out: &out, Approvals: &approvals}
+
+	allowed, err := confirmer.Confirm(context.Background(), permissions.Request{
+		Action: permissions.ActionShell,
+		Target: " go   test ./... ",
+		Risk:   permissions.RiskExecute,
+		Reason: "run tests",
+	}, permissions.Decision{Kind: permissions.DecisionAsk})
+	if err != nil {
+		t.Fatalf("Confirm returned error: %v", err)
+	}
+	if !allowed {
+		t.Fatalf("Confirm returned false, want true")
+	}
+	if len(approvals) != 1 || approvals[0].Kind != "shell" || approvals[0].Command != "go test ./..." {
+		t.Fatalf("approvals = %#v, want normalized shell approval", approvals)
+	}
+	if !strings.Contains(out.String(), "Allow? [y/N/a=session]") {
+		t.Fatalf("prompt = %q, want session approval option", out.String())
+	}
+}
+
+func TestConfirmerUsesExistingSessionShellApprovalWithoutPrompt(t *testing.T) {
+	approvals := []session.Approval{{Kind: "shell", Command: "go test ./..."}}
+	var out bytes.Buffer
+	confirmer := Confirmer{Out: &out, Approvals: &approvals}
+
+	allowed, err := confirmer.Confirm(context.Background(), permissions.Request{
+		Action: permissions.ActionShell,
+		Target: " go   test ./... ",
+		Risk:   permissions.RiskExecute,
+		Reason: "run tests",
+	}, permissions.Decision{Kind: permissions.DecisionAsk})
+	if err != nil {
+		t.Fatalf("Confirm returned error: %v", err)
+	}
+	if !allowed {
+		t.Fatalf("Confirm returned false, want true")
+	}
+	if out.Len() != 0 {
+		t.Fatalf("prompt output = %q, want no prompt for existing approval", out.String())
 	}
 }
 

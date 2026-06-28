@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"codeworld/internal/agent"
+	"codeworld/internal/approvals"
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
@@ -83,9 +84,11 @@ func (r *REPL) bindConfirmerInput(reader *bufio.Reader) {
 	switch confirmer := r.Runner.Confirmer.(type) {
 	case Confirmer:
 		confirmer.In = reader
+		confirmer.Approvals = &r.Session.Approvals
 		r.Runner.Confirmer = confirmer
 	case *Confirmer:
 		confirmer.In = reader
+		confirmer.Approvals = &r.Session.Approvals
 	}
 }
 
@@ -107,7 +110,7 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 		r.writeTerminalTitle()
 		r.saveSession()
 	case line == "/status":
-		fmt.Fprintf(r.Out, "workspace=%s provider=%s model=%s messages=%d tokens %s\n", r.Session.Workspace, r.Session.Provider, r.Session.Model, len(r.Messages), formatUsage(r.Usage))
+		fmt.Fprintf(r.Out, "workspace=%s provider=%s model=%s messages=%d tokens %s approvals=%d\n", r.Session.Workspace, r.Session.Provider, r.Session.Model, len(r.Messages), formatUsage(r.Usage), len(r.Session.Approvals))
 	case line == "/diff":
 		if r.Diff == nil {
 			fmt.Fprintln(r.Out, "diff unavailable")
@@ -126,6 +129,7 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 	case line == "/clear":
 		r.Messages = nil
 		r.Session.Messages = nil
+		r.Session.Approvals = nil
 		r.Usage = model.Usage{}
 		r.Session.Usage = session.Usage{}
 		r.writeTerminalTitle()
@@ -242,13 +246,17 @@ func historyMessages(messages []model.Message) []model.Message {
 }
 
 type Confirmer struct {
-	In  io.Reader
-	Out io.Writer
+	In        io.Reader
+	Out       io.Writer
+	Approvals *[]session.Approval
 }
 
 func (c Confirmer) Confirm(ctx context.Context, req permissions.Request, decision permissions.Decision) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
+	}
+	if c.isApproved(req) {
+		return true, nil
 	}
 	if c.In == nil {
 		return false, fmt.Errorf("confirmation input is nil")
@@ -261,7 +269,11 @@ func (c Confirmer) Confirm(ctx context.Context, req permissions.Request, decisio
 	if req.Preview != "" {
 		fmt.Fprintf(c.Out, "Preview:\n%s\n", req.Preview)
 	}
-	fmt.Fprint(c.Out, "Allow? [y/N] ")
+	if req.Action == permissions.ActionShell {
+		fmt.Fprint(c.Out, "Allow? [y/N/a=session] ")
+	} else {
+		fmt.Fprint(c.Out, "Allow? [y/N] ")
+	}
 
 	reader, ok := c.In.(*bufio.Reader)
 	if !ok {
@@ -271,5 +283,44 @@ func (c Confirmer) Confirm(ctx context.Context, req permissions.Request, decisio
 	if err != nil && err != io.EOF {
 		return false, err
 	}
-	return strings.EqualFold(strings.TrimSpace(line), "y"), nil
+	answer := strings.TrimSpace(line)
+	if strings.EqualFold(answer, "a") && req.Action == permissions.ActionShell {
+		c.addApproval(req)
+		return true, nil
+	}
+	return strings.EqualFold(answer, "y"), nil
+}
+
+func (c Confirmer) isApproved(req permissions.Request) bool {
+	if req.Action != permissions.ActionShell || c.Approvals == nil {
+		return false
+	}
+	return approvalSet(*c.Approvals).Allows(req.Target)
+}
+
+func (c Confirmer) addApproval(req permissions.Request) {
+	if req.Action != permissions.ActionShell || c.Approvals == nil {
+		return
+	}
+	set := approvalSet(*c.Approvals)
+	set.Add(req.Target)
+	*c.Approvals = approvalsToSession(set)
+}
+
+func approvalSet(items []session.Approval) approvals.Set {
+	set := approvals.Set{}
+	for _, item := range items {
+		if item.Kind == "shell" {
+			set.Add(item.Command)
+		}
+	}
+	return set
+}
+
+func approvalsToSession(set approvals.Set) []session.Approval {
+	items := make([]session.Approval, 0, len(set.Commands))
+	for _, command := range set.Commands {
+		items = append(items, session.Approval{Kind: "shell", Command: command})
+	}
+	return items
 }

@@ -6,7 +6,9 @@ import (
 
 	"codeworld/internal/agent"
 	"codeworld/internal/app"
+	"codeworld/internal/approvals"
 	"codeworld/internal/permissions"
+	"codeworld/internal/session"
 )
 
 func Once(ctx context.Context, rt *app.Runtime, input string) error {
@@ -14,7 +16,7 @@ func Once(ctx context.Context, rt *app.Runtime, input string) error {
 		return fmt.Errorf("run input is empty")
 	}
 	rt.Runner.Reporter = reporter{out: rt.Out}
-	rt.Runner.Confirmer = denyConfirmer{}
+	rt.Runner.Confirmer = nonInteractiveConfirmer{approvals: rt.Session.Approvals}
 	result, err := rt.Runner.RunTurn(ctx, rt.Messages, input)
 	if err != nil {
 		return err
@@ -48,11 +50,26 @@ func (r reporter) ReportTool(ctx context.Context, event agent.ToolEvent) {
 	}
 }
 
-type denyConfirmer struct{}
+type nonInteractiveConfirmer struct {
+	approvals []session.Approval
+}
 
-func (denyConfirmer) Confirm(ctx context.Context, req permissions.Request, decision permissions.Decision) (bool, error) {
+func (c nonInteractiveConfirmer) Confirm(ctx context.Context, req permissions.Request, decision permissions.Decision) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
+	if req.Action == permissions.ActionShell && approvalSet(c.approvals).Allows(req.Target) {
+		return true, nil
+	}
 	return false, nil
+}
+
+func approvalSet(items []session.Approval) approvals.Set {
+	set := approvals.Set{}
+	for _, item := range items {
+		if item.Kind == "shell" {
+			set.Add(item.Command)
+		}
+	}
+	return set
 }

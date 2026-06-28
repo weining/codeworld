@@ -3,12 +3,14 @@ package run
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"codeworld/internal/agent"
 	"codeworld/internal/app"
 	"codeworld/internal/model"
+	"codeworld/internal/permissions"
 	"codeworld/internal/session"
 	"codeworld/internal/tools"
 )
@@ -61,9 +63,59 @@ func TestOnceRejectsEmptyInput(t *testing.T) {
 	}
 }
 
+func TestOnceUsesSessionShellApprovalWithoutPrompt(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	tool := &fakeShellTool{}
+	rt := app.Runtime{
+		Out:   &bytes.Buffer{},
+		Store: store,
+		Session: session.Session{
+			ID:        "session-test",
+			Workspace: "workspace",
+			Provider:  "deepseek",
+			Model:     "deepseek-v4-pro",
+			Approvals: []session.Approval{{Kind: "shell", Command: "go test ./..."}},
+		},
+		Runner: agent.Runner{
+			Model: &fakeModel{responses: []model.GenerateResponse{
+				{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "shell", Arguments: json.RawMessage(`{}`)}}},
+				{FinalText: "tested"},
+			}},
+			Tools:    tools.NewRegistry([]tools.Tool{tool}, nil),
+			Policy:   permissions.ConservativePolicy{},
+			MaxSteps: 3,
+		},
+	}
+
+	err := Once(context.Background(), &rt, "run tests")
+	if err != nil {
+		t.Fatalf("Once returned error: %v", err)
+	}
+	if tool.executeCalls != 1 {
+		t.Fatalf("execute calls = %d, want approved shell execution", tool.executeCalls)
+	}
+}
+
 type fakeModel struct {
 	responses []model.GenerateResponse
 	requests  []model.GenerateRequest
+}
+
+type fakeShellTool struct {
+	executeCalls int
+}
+
+func (f *fakeShellTool) Definition() model.ToolDefinition {
+	return model.ToolDefinition{Name: "shell", Description: "shell", InputSchema: map[string]any{"type": "object"}}
+}
+
+func (f *fakeShellTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
+	return permissions.Request{Action: permissions.ActionShell, Risk: permissions.RiskExecute, Target: " go   test ./... ", Reason: "run tests"}, nil
+}
+
+func (f *fakeShellTool) Execute(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+	f.executeCalls++
+	return tools.Result{Content: "ok"}, nil
 }
 
 func (f *fakeModel) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {

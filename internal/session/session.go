@@ -31,6 +31,11 @@ type ToolEvent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type Approval struct {
+	Kind    string `json:"kind"`
+	Command string `json:"command,omitempty"`
+}
+
 type Usage struct {
 	InputTokens  int `json:"input_tokens,omitempty"`
 	OutputTokens int `json:"output_tokens,omitempty"`
@@ -45,6 +50,7 @@ type Session struct {
 	Model     string      `json:"model"`
 	Messages  []Message   `json:"messages"`
 	Tools     []ToolEvent `json:"tools"`
+	Approvals []Approval  `json:"approvals,omitempty"`
 	Usage     Usage       `json:"usage,omitempty"`
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
