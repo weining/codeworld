@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -109,6 +110,8 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	sess := New(root, "deepseek", "deepseek-v4-pro")
 	sess.Messages = []Message{
 		{Role: "user", Content: "run tests"},
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "call-1", Name: "read_file", Arguments: []byte(`{"path":"go.mod"}`)}}},
+		{Role: "tool", Content: "module codeworld", ToolCallID: "call-1"},
 		{Role: "assistant", Content: "ok"},
 	}
 	sess.Tools = []ToolEvent{
@@ -141,9 +144,13 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	if !got.UpdatedAt.After(sess.UpdatedAt) {
 		t.Fatalf("LoadCurrent updated_at = %v, want after pre-save value %v", got.UpdatedAt, sess.UpdatedAt)
 	}
-	if len(got.Messages) != 2 || got.Messages[0].Content != "run tests" || got.Messages[1].Role != "assistant" {
+	if len(got.Messages) != 4 || got.Messages[0].Content != "run tests" || got.Messages[3].Role != "assistant" {
 		t.Fatalf("LoadCurrent messages = %#v", got.Messages)
 	}
+	if len(got.Messages[1].ToolCalls) != 1 || got.Messages[1].ToolCalls[0].ID != "call-1" || got.Messages[1].ToolCalls[0].Name != "read_file" {
+		t.Fatalf("LoadCurrent tool calls = %#v", got.Messages[1].ToolCalls)
+	}
+	assertJSONEqual(t, got.Messages[1].ToolCalls[0].Arguments, `{"path":"go.mod"}`)
 	if len(got.Tools) != 1 || got.Tools[0].ID != "tool-1" || !got.Tools[0].CreatedAt.Equal(sess.Tools[0].CreatedAt) {
 		t.Fatalf("LoadCurrent tools = %#v", got.Tools)
 	}
@@ -160,4 +167,21 @@ func requireRegularFile(t *testing.T, path string) os.FileInfo {
 		t.Fatalf("%q is not a regular file: %v", path, info.Mode())
 	}
 	return info
+}
+
+func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
+	t.Helper()
+	var gotValue any
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatalf("Unmarshal got JSON: %v", err)
+	}
+	var wantValue any
+	if err := json.Unmarshal([]byte(want), &wantValue); err != nil {
+		t.Fatalf("Unmarshal want JSON: %v", err)
+	}
+	gotData, _ := json.Marshal(gotValue)
+	wantData, _ := json.Marshal(wantValue)
+	if string(gotData) != string(wantData) {
+		t.Fatalf("JSON = %s, want %s", got, want)
+	}
 }
