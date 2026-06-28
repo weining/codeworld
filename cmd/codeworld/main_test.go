@@ -121,6 +121,39 @@ func TestIndexCommandWritesWorkspaceIndex(t *testing.T) {
 	}
 }
 
+func TestTUICommandStartsStatusShell(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	root := t.TempDir()
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir temp root: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+
+	err = runWithIO(strings.NewReader("/exit\n"), &out, &stderr, []string{"tui"})
+	if err != nil {
+		t.Fatalf("runWithIO returned error: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{
+		"codeworld tui",
+		"provider=deepseek",
+		"model=deepseek-v4-pro",
+		"tokens input=0 output=0 cache=0 total=0",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("stdout missing %q in:\n%s", want, output)
+		}
+	}
+}
+
 func TestModelCallLogPath(t *testing.T) {
 	root := filepath.Join("tmp", "workspace")
 	got := modelCallLogPath(root)

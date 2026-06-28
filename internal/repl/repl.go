@@ -24,6 +24,7 @@ type REPL struct {
 	Messages           []model.Message
 	Usage              model.Usage
 	SummaryMaxMessages int
+	ShowStatusLine     bool
 	ShowTerminalTitle  bool
 	Diff               func(context.Context) (string, error)
 }
@@ -47,6 +48,7 @@ func (r *REPL) Run(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		r.writeStatusLine()
 		fmt.Fprintf(r.Out, "codeworld [%s]> ", formatUsage(r.Usage))
 		raw, err := reader.ReadString('\n')
 		if err != nil {
@@ -221,6 +223,20 @@ func (r *REPL) writeTerminalTitle() {
 		return
 	}
 	fmt.Fprintf(r.Out, "\x1b]0;%s\x07", terminalTitle(r.currentModelName(), r.Usage))
+}
+
+func (r *REPL) writeStatusLine() {
+	if !r.ShowStatusLine {
+		return
+	}
+	fmt.Fprintf(r.Out, "status workspace=%s provider=%s model=%s messages=%d approvals=%d tokens %s\n",
+		r.Session.Workspace,
+		r.Session.Provider,
+		r.currentModelName(),
+		len(r.Messages),
+		len(r.Session.Approvals),
+		formatUsage(r.Usage),
+	)
 }
 
 func (r *REPL) currentModelName() string {

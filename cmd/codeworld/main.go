@@ -12,6 +12,7 @@ import (
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/repl"
 	runmode "codeworld/internal/run"
+	"codeworld/internal/tui"
 )
 
 func main() {
@@ -57,6 +58,12 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			}
 			_, err = fmt.Fprintf(out, "indexed files=%d skipped=%d\n", len(idx.Entries), skipped)
 			return err
+		case "tui":
+			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
+			if err != nil {
+				return err
+			}
+			return tui.Run(context.Background(), &rt)
 		default:
 			return fmt.Errorf("unknown command: %s", args[0])
 		}
