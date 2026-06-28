@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"codeworld/internal/model"
 )
@@ -17,6 +18,7 @@ type Client struct {
 	model      string
 	baseURL    string
 	httpClient *http.Client
+	logger     CallLogger
 }
 
 func NewClient(apiKey, modelName string) *Client {
@@ -29,9 +31,6 @@ func NewClient(apiKey, modelName string) *Client {
 }
 
 func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
-	if c.apiKey == "" {
-		return model.GenerateResponse{}, fmt.Errorf("DEEPSEEK_API_KEY is not set")
-	}
 	body := requestBody{
 		Model:    firstNonEmpty(req.Model, c.model),
 		Messages: toProviderMessages(req.Messages),
@@ -41,13 +40,33 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 	if err != nil {
 		return model.GenerateResponse{}, err
 	}
+	logEntry := callLogEntry{
+		Timestamp: time.Now().UTC(),
+		Provider:  "deepseek",
+		Request: httpRequestLog{
+			Method:  http.MethodPost,
+			URL:     strings.TrimRight(c.baseURL, "/") + "/chat/completions",
+			Headers: http.Header{},
+			Body:    string(data),
+		},
+	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.baseURL, "/")+"/chat/completions", bytes.NewReader(data))
+	if c.apiKey == "" {
+		err := fmt.Errorf("DEEPSEEK_API_KEY is not set")
+		logEntry.Error = err.Error()
+		c.logCall(ctx, logEntry)
+		return model.GenerateResponse{}, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, logEntry.Request.URL, bytes.NewReader(data))
 	if err != nil {
+		logEntry.Error = err.Error()
+		c.logCall(ctx, logEntry)
 		return model.GenerateResponse{}, err
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
+	logEntry.Request.Headers = redactHeaders(httpReq.Header, c.apiKey)
 
 	httpClient := c.httpClient
 	if httpClient == nil {
@@ -55,24 +74,39 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 	}
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {
+		logEntry.Error = redactAPIKey(err.Error(), c.apiKey)
+		c.logCall(ctx, logEntry)
 		return model.GenerateResponse{}, err
 	}
 	defer httpResp.Body.Close()
 
 	respData, err := io.ReadAll(httpResp.Body)
 	if err != nil {
+		logEntry.Response = loggedHTTPResponse(httpResp, nil, c.apiKey)
+		logEntry.Error = redactAPIKey(err.Error(), c.apiKey)
+		c.logCall(ctx, logEntry)
 		return model.GenerateResponse{}, err
 	}
+	logEntry.Response = loggedHTTPResponse(httpResp, respData, c.apiKey)
+	defer func() {
+		c.logCall(ctx, logEntry)
+	}()
+
 	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
-		return model.GenerateResponse{}, fmt.Errorf("deepseek status %d: %s", httpResp.StatusCode, redactAPIKey(string(respData), c.apiKey))
+		err := fmt.Errorf("deepseek status %d: %s", httpResp.StatusCode, redactAPIKey(string(respData), c.apiKey))
+		logEntry.Error = err.Error()
+		return model.GenerateResponse{}, err
 	}
 
 	var providerResp responseBody
 	if err := json.Unmarshal(respData, &providerResp); err != nil {
+		logEntry.Error = err.Error()
 		return model.GenerateResponse{}, err
 	}
 	if len(providerResp.Choices) == 0 {
-		return model.GenerateResponse{}, fmt.Errorf("deepseek returned no choices")
+		err := fmt.Errorf("deepseek returned no choices")
+		logEntry.Error = err.Error()
+		return model.GenerateResponse{}, err
 	}
 
 	msg := providerResp.Choices[0].Message
@@ -90,6 +124,16 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 		ToolCalls: toolCalls,
 		FinalText: finalText,
 	}, nil
+}
+
+func (c *Client) SetLogger(logger CallLogger) {
+	c.logger = logger
+}
+
+func (c *Client) logCall(ctx context.Context, entry callLogEntry) {
+	if c.logger != nil {
+		_ = c.logger.LogCall(ctx, entry)
+	}
 }
 
 type requestBody struct {
@@ -202,4 +246,42 @@ func redactAPIKey(text, apiKey string) string {
 		return text
 	}
 	return strings.ReplaceAll(text, apiKey, "[redacted]")
+}
+
+func redactHeaders(headers http.Header, apiKey string) http.Header {
+	out := make(http.Header, len(headers))
+	for key, values := range headers {
+		copied := make([]string, len(values))
+		for i, value := range values {
+			if strings.EqualFold(key, "Authorization") {
+				copied[i] = redactAuthorization(value)
+				continue
+			}
+			copied[i] = redactAPIKey(value, apiKey)
+		}
+		out[key] = copied
+	}
+	return out
+}
+
+func redactAuthorization(value string) string {
+	if value == "" {
+		return value
+	}
+	if strings.HasPrefix(strings.ToLower(value), "bearer ") {
+		return "Bearer [redacted]"
+	}
+	return "[redacted]"
+}
+
+func loggedHTTPResponse(resp *http.Response, body []byte, apiKey string) *httpResponseLog {
+	if resp == nil {
+		return nil
+	}
+	return &httpResponseLog{
+		StatusCode: resp.StatusCode,
+		Status:     resp.Status,
+		Headers:    redactHeaders(resp.Header, apiKey),
+		Body:       redactAPIKey(string(body), apiKey),
+	}
 }

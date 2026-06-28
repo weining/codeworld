@@ -1,10 +1,13 @@
 package deepseek
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -196,5 +199,110 @@ func TestGenerateRejectsEmptyChoices(t *testing.T) {
 
 	if _, err := client.Generate(context.Background(), model.GenerateRequest{}); err == nil {
 		t.Fatalf("Generate accepted response with no choices")
+	}
+}
+
+func TestGenerateLogsHTTPRequestAndResponseWithRedactedAuthorization(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Request-ID", "req-1")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"hello"}}]}`))
+	}))
+	defer server.Close()
+
+	var log bytes.Buffer
+	client := NewClient("secret-key", "deepseek-v4-pro")
+	client.baseURL = server.URL
+	client.logger = NewJSONLLogger(&log)
+
+	_, err := client.Generate(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+
+	var entry callLogEntry
+	if err := json.Unmarshal(bytes.TrimSpace(log.Bytes()), &entry); err != nil {
+		t.Fatalf("Unmarshal log entry: %v\n%s", err, log.String())
+	}
+	if entry.Request.Method != http.MethodPost {
+		t.Fatalf("request method = %q, want POST", entry.Request.Method)
+	}
+	if !strings.HasSuffix(entry.Request.URL, "/chat/completions") {
+		t.Fatalf("request URL = %q, want chat completions", entry.Request.URL)
+	}
+	if got := entry.Request.Headers.Get("Authorization"); got != "Bearer [redacted]" {
+		t.Fatalf("logged Authorization = %q, want redacted", got)
+	}
+	if strings.Contains(log.String(), "secret-key") {
+		t.Fatalf("log leaked API key:\n%s", log.String())
+	}
+	if !strings.Contains(string(entry.Request.Body), `"messages"`) {
+		t.Fatalf("request body log = %s, want model request body", entry.Request.Body)
+	}
+	if entry.Response == nil {
+		t.Fatalf("response log missing")
+	}
+	if entry.Response.StatusCode != http.StatusOK {
+		t.Fatalf("response status = %d, want 200", entry.Response.StatusCode)
+	}
+	if entry.Response.Headers.Get("X-Request-ID") != "req-1" {
+		t.Fatalf("response headers = %#v, want X-Request-ID", entry.Response.Headers)
+	}
+	if !strings.Contains(string(entry.Response.Body), `"hello"`) {
+		t.Fatalf("response body log = %s, want hello", entry.Response.Body)
+	}
+}
+
+func TestGenerateLogsHTTPErrorWithRedactedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad secret-key", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	var log bytes.Buffer
+	client := NewClient("secret-key", "deepseek-v4-pro")
+	client.baseURL = server.URL
+	client.logger = NewJSONLLogger(&log)
+
+	_, err := client.Generate(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "hi"}},
+	})
+	if err == nil {
+		t.Fatalf("Generate returned nil error for HTTP failure")
+	}
+	if strings.Contains(log.String(), "secret-key") {
+		t.Fatalf("log leaked API key:\n%s", log.String())
+	}
+	if !strings.Contains(log.String(), "[redacted]") {
+		t.Fatalf("log = %s, want redacted marker", log.String())
+	}
+}
+
+func TestFileJSONLLoggerCreatesRestrictiveLogFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".codeworld", "logs", "model-calls.jsonl")
+	logger := NewFileJSONLLogger(path)
+
+	err := logger.LogCall(context.Background(), callLogEntry{
+		Provider: "deepseek",
+		Request:  httpRequestLog{Method: http.MethodPost, URL: "https://api.deepseek.com/chat/completions"},
+	})
+	if err != nil {
+		t.Fatalf("LogCall returned error: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile log: %v", err)
+	}
+	if !strings.Contains(string(data), `"provider":"deepseek"`) {
+		t.Fatalf("log data = %s, want provider", data)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat log: %v", err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("log permissions = %o, want 600", mode)
 	}
 }

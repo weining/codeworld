@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"codeworld/internal/agent"
 	"codeworld/internal/config"
@@ -61,6 +62,7 @@ func newAppWithIO(in io.Reader, out io.Writer, stderr io.Writer, root string) (r
 	messages := sessionMessagesToModel(sess.Messages)
 	modelName := firstNonEmpty(sess.Model, cfg.Model)
 	client := deepseek.NewClient(cfg.APIKey, modelName)
+	client.SetLogger(deepseek.NewFileJSONLLogger(modelCallLogPath(ws.Root)))
 	registry := tools.NewDefaultRegistry(ws)
 	diffTool := tools.NewGitDiffTool(ws)
 
@@ -122,6 +124,10 @@ func sessionToolCallsToModel(calls []session.ToolCall) []model.ToolCall {
 		})
 	}
 	return out
+}
+
+func modelCallLogPath(root string) string {
+	return filepath.Join(root, ".codeworld", "logs", "model-calls.jsonl")
 }
 
 func firstNonEmpty(values ...string) string {

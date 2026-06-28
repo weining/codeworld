@@ -80,6 +80,15 @@ func TestRunUsesRestoredSessionModel(t *testing.T) {
 	}
 }
 
+func TestModelCallLogPath(t *testing.T) {
+	root := filepath.Join("tmp", "workspace")
+	got := modelCallLogPath(root)
+	want := filepath.Join(root, ".codeworld", "logs", "model-calls.jsonl")
+	if got != want {
+		t.Fatalf("modelCallLogPath = %q, want %q", got, want)
+	}
+}
+
 type outDiscard struct{}
 
 func (outDiscard) Write(p []byte) (int, error) {
