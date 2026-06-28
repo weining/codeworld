@@ -30,6 +30,14 @@ func TestRegistryRejectsUnknownTool(t *testing.T) {
 	}
 }
 
+func TestDefaultRegistryIncludesIndexWorkspaceTool(t *testing.T) {
+	registry := NewDefaultRegistry(newTestWorkspace(t))
+
+	if _, ok := registry.Get("index_workspace"); !ok {
+		t.Fatalf("default registry missing index_workspace")
+	}
+}
+
 func TestReadFileLimitedContentMetadataAndPermission(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "notes.txt", "0123456789")

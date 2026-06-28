@@ -10,6 +10,7 @@ import (
 
 	"codeworld/internal/agent"
 	"codeworld/internal/config"
+	"codeworld/internal/context/indexer"
 	"codeworld/internal/model"
 	"codeworld/internal/model/provider"
 	"codeworld/internal/permissions"
@@ -77,6 +78,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		summary = "workspace summary unavailable: " + err.Error()
 	}
 	systemPrompt := agent.DefaultSystemPrompt + "\n\nWorkspace files:\n" + summary
+	if indexSummary := loadIndexSummary(ws.Root); indexSummary != "" {
+		systemPrompt += "\n\nWorkspace index:\n" + indexSummary
+	}
 
 	store := session.NewStore(ws.Root)
 	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
@@ -213,6 +217,14 @@ func sessionUsage(usage model.Usage) session.Usage {
 
 func modelCallLogPath(root string) string {
 	return filepath.Join(root, ".codeworld", "logs", "model-calls.jsonl")
+}
+
+func loadIndexSummary(root string) string {
+	idx, err := indexer.Load(indexer.DefaultPath(root))
+	if err != nil {
+		return ""
+	}
+	return indexer.Summary(idx, 120)
 }
 
 func firstNonEmpty(values ...string) string {

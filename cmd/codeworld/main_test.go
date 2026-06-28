@@ -90,6 +90,37 @@ func TestRunCommandRequiresPrompt(t *testing.T) {
 	}
 }
 
+func TestIndexCommandWritesWorkspaceIndex(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	root := t.TempDir()
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir temp root: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+
+	err = runWithIO(strings.NewReader(""), &out, &stderr, []string{"index"})
+	if err != nil {
+		t.Fatalf("runWithIO returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), "indexed files=") {
+		t.Fatalf("stdout = %q, want indexed summary", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(root, ".codeworld", "index.json")); err != nil {
+		t.Fatalf("index file missing: %v", err)
+	}
+}
+
 func TestModelCallLogPath(t *testing.T) {
 	root := filepath.Join("tmp", "workspace")
 	got := modelCallLogPath(root)

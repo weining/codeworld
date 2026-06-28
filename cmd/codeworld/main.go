@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"codeworld/internal/app"
+	"codeworld/internal/context/indexer"
 	"codeworld/internal/repl"
 	runmode "codeworld/internal/run"
 )
@@ -36,6 +37,26 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 				return err
 			}
 			return runmode.Once(context.Background(), &rt, strings.Join(args[1:], " "))
+		case "index":
+			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
+			if err != nil {
+				return err
+			}
+			idx, err := indexer.Build(rt.Workspace.Root, int64(rt.Config.IndexMaxFileBytes))
+			if err != nil {
+				return err
+			}
+			if err := indexer.Save(indexer.DefaultPath(rt.Workspace.Root), idx); err != nil {
+				return err
+			}
+			skipped := 0
+			for _, entry := range idx.Entries {
+				if entry.Skipped {
+					skipped++
+				}
+			}
+			_, err = fmt.Fprintf(out, "indexed files=%d skipped=%d\n", len(idx.Entries), skipped)
+			return err
 		default:
 			return fmt.Errorf("unknown command: %s", args[0])
 		}
