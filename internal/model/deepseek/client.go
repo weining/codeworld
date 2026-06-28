@@ -40,15 +40,13 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 	if err != nil {
 		return model.GenerateResponse{}, err
 	}
+	endpoint := strings.TrimRight(c.baseURL, "/") + "/chat/completions"
+	redactedRequestBody := redactAPIKey(string(data), c.apiKey)
 	logEntry := callLogEntry{
 		Timestamp: time.Now().UTC(),
 		Provider:  "deepseek",
 		Request: httpRequestLog{
-			Method:   http.MethodPost,
-			URL:      strings.TrimRight(c.baseURL, "/") + "/chat/completions",
-			Headers:  http.Header{},
-			Body:     redactAPIKey(string(data), c.apiKey),
-			BodyJSON: jsonBody(redactAPIKey(string(data), c.apiKey)),
+			BodyJSON: jsonBody(redactedRequestBody),
 		},
 	}
 
@@ -59,7 +57,7 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 		return model.GenerateResponse{}, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, logEntry.Request.URL, bytes.NewReader(data))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
 	if err != nil {
 		logEntry.Error = err.Error()
 		c.logCall(ctx, logEntry)
@@ -67,7 +65,6 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
-	logEntry.Request.Headers = redactHeaders(httpReq.Header, c.apiKey)
 
 	httpClient := c.httpClient
 	if httpClient == nil {
@@ -281,42 +278,13 @@ func redactAPIKey(text, apiKey string) string {
 	return strings.ReplaceAll(text, apiKey, "[redacted]")
 }
 
-func redactHeaders(headers http.Header, apiKey string) http.Header {
-	out := make(http.Header, len(headers))
-	for key, values := range headers {
-		copied := make([]string, len(values))
-		for i, value := range values {
-			if strings.EqualFold(key, "Authorization") {
-				copied[i] = redactAuthorization(value)
-				continue
-			}
-			copied[i] = redactAPIKey(value, apiKey)
-		}
-		out[key] = copied
-	}
-	return out
-}
-
-func redactAuthorization(value string) string {
-	if value == "" {
-		return value
-	}
-	if strings.HasPrefix(strings.ToLower(value), "bearer ") {
-		return "Bearer [redacted]"
-	}
-	return "[redacted]"
-}
-
 func loggedHTTPResponse(resp *http.Response, body []byte, apiKey string) *httpResponseLog {
 	if resp == nil {
 		return nil
 	}
+	redactedBody := redactAPIKey(string(body), apiKey)
 	return &httpResponseLog{
-		StatusCode: resp.StatusCode,
-		Status:     resp.Status,
-		Headers:    redactHeaders(resp.Header, apiKey),
-		Body:       redactAPIKey(string(body), apiKey),
-		BodyJSON:   jsonBody(redactAPIKey(string(body), apiKey)),
+		BodyJSON: jsonBody(redactedBody),
 	}
 }
 

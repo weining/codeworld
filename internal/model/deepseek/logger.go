@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -85,17 +84,9 @@ type callLogEntry struct {
 }
 
 type httpRequestLog struct {
-	Method   string          `json:"method"`
-	URL      string          `json:"url"`
-	Headers  http.Header     `json:"headers"`
-	Body     string          `json:"body,omitempty"`
 	BodyJSON json.RawMessage `json:"body_json,omitempty"`
 }
 
 type httpResponseLog struct {
-	StatusCode int             `json:"status_code"`
-	Status     string          `json:"status"`
-	Headers    http.Header     `json:"headers"`
-	Body       string          `json:"body,omitempty"`
-	BodyJSON   json.RawMessage `json:"body_json,omitempty"`
+	BodyJSON json.RawMessage `json:"body_json,omitempty"`
 }

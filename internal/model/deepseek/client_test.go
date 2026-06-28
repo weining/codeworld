@@ -263,7 +263,7 @@ func TestGenerateRejectsEmptyChoices(t *testing.T) {
 	}
 }
 
-func TestGenerateLogsHTTPRequestAndResponseWithRedactedAuthorization(t *testing.T) {
+func TestGenerateLogsOnlyRequestAndResponseBodyJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Request-ID", "req-1")
 		w.Header().Set("Content-Type", "application/json")
@@ -287,20 +287,8 @@ func TestGenerateLogsHTTPRequestAndResponseWithRedactedAuthorization(t *testing.
 	if err := json.Unmarshal(bytes.TrimSpace(log.Bytes()), &entry); err != nil {
 		t.Fatalf("Unmarshal log entry: %v\n%s", err, log.String())
 	}
-	if entry.Request.Method != http.MethodPost {
-		t.Fatalf("request method = %q, want POST", entry.Request.Method)
-	}
-	if !strings.HasSuffix(entry.Request.URL, "/chat/completions") {
-		t.Fatalf("request URL = %q, want chat completions", entry.Request.URL)
-	}
-	if got := entry.Request.Headers.Get("Authorization"); got != "Bearer [redacted]" {
-		t.Fatalf("logged Authorization = %q, want redacted", got)
-	}
 	if strings.Contains(log.String(), "secret-key") {
 		t.Fatalf("log leaked API key:\n%s", log.String())
-	}
-	if !strings.Contains(string(entry.Request.Body), `"messages"`) {
-		t.Fatalf("request body log = %s, want model request body", entry.Request.Body)
 	}
 	if len(entry.Request.BodyJSON) == 0 {
 		t.Fatalf("request body_json missing")
@@ -315,15 +303,6 @@ func TestGenerateLogsHTTPRequestAndResponseWithRedactedAuthorization(t *testing.
 	if entry.Response == nil {
 		t.Fatalf("response log missing")
 	}
-	if entry.Response.StatusCode != http.StatusOK {
-		t.Fatalf("response status = %d, want 200", entry.Response.StatusCode)
-	}
-	if entry.Response.Headers.Get("X-Request-ID") != "req-1" {
-		t.Fatalf("response headers = %#v, want X-Request-ID", entry.Response.Headers)
-	}
-	if !strings.Contains(string(entry.Response.Body), `"hello"`) {
-		t.Fatalf("response body log = %s, want hello", entry.Response.Body)
-	}
 	if len(entry.Response.BodyJSON) == 0 {
 		t.Fatalf("response body_json missing")
 	}
@@ -333,6 +312,22 @@ func TestGenerateLogsHTTPRequestAndResponseWithRedactedAuthorization(t *testing.
 	}
 	if _, ok := responseBodyJSON["choices"]; !ok {
 		t.Fatalf("response body_json = %#v, want choices", responseBodyJSON)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(log.Bytes()), &raw); err != nil {
+		t.Fatalf("Unmarshal raw log entry: %v", err)
+	}
+	request := raw["request"].(map[string]any)
+	for _, key := range []string{"method", "url", "headers", "body"} {
+		if _, ok := request[key]; ok {
+			t.Fatalf("request log contains %q: %s", key, log.String())
+		}
+	}
+	response := raw["response"].(map[string]any)
+	for _, key := range []string{"status_code", "status", "headers", "body"} {
+		if _, ok := response[key]; ok {
+			t.Fatalf("response log contains %q: %s", key, log.String())
+		}
 	}
 }
 
@@ -374,7 +369,7 @@ func TestFileJSONLLoggerCreatesRestrictiveLogFile(t *testing.T) {
 
 	err := logger.LogCall(context.Background(), callLogEntry{
 		Provider: "deepseek",
-		Request:  httpRequestLog{Method: http.MethodPost, URL: "https://api.deepseek.com/chat/completions"},
+		Request:  httpRequestLog{BodyJSON: json.RawMessage(`{"model":"deepseek-v4-pro"}`)},
 	})
 	if err != nil {
 		t.Fatalf("LogCall returned error: %v", err)
