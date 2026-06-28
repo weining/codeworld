@@ -10,19 +10,27 @@ import (
 )
 
 type Config struct {
-	Provider  string
-	Model     string
-	MaxSteps  int
-	Workspace string
-	APIKey    string
+	Provider           string
+	Model              string
+	MaxSteps           int
+	Workspace          string
+	APIKey             string
+	OpenAIAPIKey       string
+	AnthropicAPIKey    string
+	LocalBaseURL       string
+	PluginsEnabled     bool
+	SummaryMaxMessages int
+	IndexMaxFileBytes  int
 }
 
 func Default() Config {
 	return Config{
-		Provider:  "deepseek",
-		Model:     "deepseek-v4-pro",
-		MaxSteps:  20,
-		Workspace: ".",
+		Provider:           "deepseek",
+		Model:              "deepseek-v4-pro",
+		MaxSteps:           20,
+		Workspace:          ".",
+		SummaryMaxMessages: 40,
+		IndexMaxFileBytes:  256 * 1024,
 	}
 }
 
@@ -35,7 +43,7 @@ func Load(root string) (Config, error) {
 		if !os.IsNotExist(err) {
 			return Config{}, err
 		}
-		cfg.APIKey = os.Getenv("DEEPSEEK_API_KEY")
+		loadEnv(&cfg)
 		return cfg, nil
 	}
 	defer file.Close()
@@ -66,6 +74,26 @@ func Load(root string) (Config, error) {
 			cfg.MaxSteps = n
 		case "workspace":
 			cfg.Workspace = value
+		case "local_base_url":
+			cfg.LocalBaseURL = value
+		case "plugins_enabled":
+			enabled, err := strconv.ParseBool(value)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid plugins_enabled %q: %w", value, err)
+			}
+			cfg.PluginsEnabled = enabled
+		case "summary_max_messages":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid summary_max_messages %q: %w", value, err)
+			}
+			cfg.SummaryMaxMessages = n
+		case "index_max_file_bytes":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid index_max_file_bytes %q: %w", value, err)
+			}
+			cfg.IndexMaxFileBytes = n
 		default:
 			return Config{}, fmt.Errorf("unknown config key %q", key)
 		}
@@ -74,6 +102,15 @@ func Load(root string) (Config, error) {
 		return Config{}, err
 	}
 
-	cfg.APIKey = os.Getenv("DEEPSEEK_API_KEY")
+	loadEnv(&cfg)
 	return cfg, nil
+}
+
+func loadEnv(cfg *Config) {
+	cfg.APIKey = os.Getenv("DEEPSEEK_API_KEY")
+	cfg.OpenAIAPIKey = os.Getenv("OPENAI_API_KEY")
+	cfg.AnthropicAPIKey = os.Getenv("ANTHROPIC_API_KEY")
+	if cfg.LocalBaseURL == "" {
+		cfg.LocalBaseURL = os.Getenv("CODEWORLD_LOCAL_BASE_URL")
+	}
 }

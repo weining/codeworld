@@ -11,7 +11,7 @@ import (
 	"codeworld/internal/agent"
 	"codeworld/internal/config"
 	"codeworld/internal/model"
-	"codeworld/internal/model/deepseek"
+	"codeworld/internal/model/provider"
 	"codeworld/internal/permissions"
 	"codeworld/internal/repl"
 	"codeworld/internal/session"
@@ -82,8 +82,18 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
 	messages := sessionMessagesToModel(sess.Messages)
 	modelName := firstNonEmpty(sess.Model, cfg.Model)
-	client := deepseek.NewClient(cfg.APIKey, modelName)
-	client.SetLogger(deepseek.NewFileJSONLLogger(modelCallLogPath(ws.Root)))
+	client, err := provider.NewClient(provider.Config{
+		Provider:        cfg.Provider,
+		Model:           modelName,
+		DeepSeekAPIKey:  cfg.APIKey,
+		OpenAIAPIKey:    cfg.OpenAIAPIKey,
+		AnthropicAPIKey: cfg.AnthropicAPIKey,
+		LocalBaseURL:    cfg.LocalBaseURL,
+		LogPath:         modelCallLogPath(ws.Root),
+	})
+	if err != nil {
+		return Runtime{}, err
+	}
 	registry := tools.NewDefaultRegistry(ws)
 	diffTool := tools.NewGitDiffTool(ws)
 

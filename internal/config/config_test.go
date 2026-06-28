@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,12 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.Workspace != "." {
 		t.Fatalf("Workspace = %q, want .", cfg.Workspace)
+	}
+	if cfg.SummaryMaxMessages != 40 {
+		t.Fatalf("SummaryMaxMessages = %d, want 40", cfg.SummaryMaxMessages)
+	}
+	if cfg.IndexMaxFileBytes != 256*1024 {
+		t.Fatalf("IndexMaxFileBytes = %d, want 256 KiB", cfg.IndexMaxFileBytes)
 	}
 }
 
@@ -41,6 +48,56 @@ func TestLoadProjectConfig(t *testing.T) {
 	}
 	if cfg.APIKey != "test-key" {
 		t.Fatalf("APIKey was not loaded from environment")
+	}
+}
+
+func TestLoadExtendedProjectConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("OPENAI_API_KEY", "openai-key")
+	t.Setenv("ANTHROPIC_API_KEY", "anthropic-key")
+	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), strings.Join([]string{
+		"provider = \"openai\"",
+		"model = \"gpt-4.1\"",
+		"local_base_url = \"http://127.0.0.1:11434/v1\"",
+		"plugins_enabled = true",
+		"summary_max_messages = 80",
+		"index_max_file_bytes = 65536",
+	}, "\n"))
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Provider != "openai" || cfg.Model != "gpt-4.1" {
+		t.Fatalf("provider/model = %s/%s, want openai/gpt-4.1", cfg.Provider, cfg.Model)
+	}
+	if cfg.LocalBaseURL != "http://127.0.0.1:11434/v1" {
+		t.Fatalf("LocalBaseURL = %q", cfg.LocalBaseURL)
+	}
+	if !cfg.PluginsEnabled {
+		t.Fatalf("PluginsEnabled = false, want true")
+	}
+	if cfg.SummaryMaxMessages != 80 {
+		t.Fatalf("SummaryMaxMessages = %d, want 80", cfg.SummaryMaxMessages)
+	}
+	if cfg.IndexMaxFileBytes != 65536 {
+		t.Fatalf("IndexMaxFileBytes = %d, want 65536", cfg.IndexMaxFileBytes)
+	}
+	if cfg.OpenAIAPIKey != "openai-key" || cfg.AnthropicAPIKey != "anthropic-key" {
+		t.Fatalf("provider keys not loaded from environment")
+	}
+}
+
+func TestLoadLocalBaseURLFromEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CODEWORLD_LOCAL_BASE_URL", "http://localhost:1234/v1")
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.LocalBaseURL != "http://localhost:1234/v1" {
+		t.Fatalf("LocalBaseURL = %q, want env value", cfg.LocalBaseURL)
 	}
 }
 
