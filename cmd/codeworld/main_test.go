@@ -15,7 +15,7 @@ func TestRunShowsHelpWithoutAPIKey(t *testing.T) {
 	var out bytes.Buffer
 	var stderr bytes.Buffer
 
-	err := runWithIO(strings.NewReader("/help\n/exit\n"), &out, &stderr)
+	err := runWithIO(strings.NewReader("/help\n/exit\n"), &out, &stderr, nil)
 	if err != nil {
 		t.Fatalf("runWithIO returned error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestRunUsesRestoredSessionModel(t *testing.T) {
 
 	var out bytes.Buffer
 	var stderr bytes.Buffer
-	err = runWithIO(strings.NewReader("/status\n/exit\n"), &out, &stderr)
+	err = runWithIO(strings.NewReader("/status\n/exit\n"), &out, &stderr, nil)
 	if err != nil {
 		t.Fatalf("runWithIO returned error: %v", err)
 	}
@@ -77,6 +77,16 @@ func TestRunUsesRestoredSessionModel(t *testing.T) {
 	}
 	if !strings.Contains(string(current), "deepseek-v4-flash") {
 		t.Fatalf("current session = %s, want restored model preserved", current)
+	}
+}
+
+func TestRunCommandRequiresPrompt(t *testing.T) {
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := runWithIO(strings.NewReader(""), &out, &stderr, []string{"run"})
+	if err == nil || !strings.Contains(err.Error(), "usage: codeworld run") {
+		t.Fatalf("err = %v, want run usage", err)
 	}
 }
 

@@ -40,6 +40,14 @@ type Runtime struct {
 	Err       io.Writer
 }
 
+func (r *Runtime) SaveTurn(result agent.TurnResult) error {
+	r.Messages = historyMessages(result.Messages)
+	r.Usage = r.Usage.Add(result.Usage)
+	r.Session.Messages = modelMessagesToSession(r.Messages)
+	r.Session.Usage = sessionUsage(r.Usage)
+	return r.Store.SaveCurrent(r.Session)
+}
+
 func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if err := ctx.Err(); err != nil {
 		return Runtime{}, err
@@ -146,6 +154,51 @@ func sessionToolCallsToModel(calls []session.ToolCall) []model.ToolCall {
 		})
 	}
 	return out
+}
+
+func historyMessages(messages []model.Message) []model.Message {
+	history := make([]model.Message, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Role == model.RoleSystem {
+			continue
+		}
+		history = append(history, msg)
+	}
+	return history
+}
+
+func modelMessagesToSession(messages []model.Message) []session.Message {
+	out := make([]session.Message, 0, len(messages))
+	for _, msg := range messages {
+		out = append(out, session.Message{
+			Role:       string(msg.Role),
+			Content:    msg.Content,
+			ToolCallID: msg.ToolCallID,
+			ToolCalls:  modelToolCallsToSession(msg.ToolCalls),
+		})
+	}
+	return out
+}
+
+func modelToolCallsToSession(calls []model.ToolCall) []session.ToolCall {
+	out := make([]session.ToolCall, 0, len(calls))
+	for _, call := range calls {
+		out = append(out, session.ToolCall{
+			ID:        call.ID,
+			Name:      call.Name,
+			Arguments: call.Arguments,
+		})
+	}
+	return out
+}
+
+func sessionUsage(usage model.Usage) session.Usage {
+	return session.Usage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		CacheTokens:  usage.CacheTokens,
+		TotalTokens:  usage.TotalTokens,
+	}
 }
 
 func modelCallLogPath(root string) string {
