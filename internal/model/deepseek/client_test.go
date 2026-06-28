@@ -241,6 +241,16 @@ func TestGenerateLogsHTTPRequestAndResponseWithRedactedAuthorization(t *testing.
 	if !strings.Contains(string(entry.Request.Body), `"messages"`) {
 		t.Fatalf("request body log = %s, want model request body", entry.Request.Body)
 	}
+	if len(entry.Request.BodyJSON) == 0 {
+		t.Fatalf("request body_json missing")
+	}
+	var requestBodyJSON map[string]any
+	if err := json.Unmarshal(entry.Request.BodyJSON, &requestBodyJSON); err != nil {
+		t.Fatalf("Unmarshal request body_json: %v", err)
+	}
+	if requestBodyJSON["model"] != "deepseek-v4-pro" {
+		t.Fatalf("request body_json model = %#v, want deepseek-v4-pro", requestBodyJSON["model"])
+	}
 	if entry.Response == nil {
 		t.Fatalf("response log missing")
 	}
@@ -252,6 +262,16 @@ func TestGenerateLogsHTTPRequestAndResponseWithRedactedAuthorization(t *testing.
 	}
 	if !strings.Contains(string(entry.Response.Body), `"hello"`) {
 		t.Fatalf("response body log = %s, want hello", entry.Response.Body)
+	}
+	if len(entry.Response.BodyJSON) == 0 {
+		t.Fatalf("response body_json missing")
+	}
+	var responseBodyJSON map[string]any
+	if err := json.Unmarshal(entry.Response.BodyJSON, &responseBodyJSON); err != nil {
+		t.Fatalf("Unmarshal response body_json: %v", err)
+	}
+	if _, ok := responseBodyJSON["choices"]; !ok {
+		t.Fatalf("response body_json = %#v, want choices", responseBodyJSON)
 	}
 }
 
@@ -277,6 +297,13 @@ func TestGenerateLogsHTTPErrorWithRedactedBody(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "[redacted]") {
 		t.Fatalf("log = %s, want redacted marker", log.String())
+	}
+	var entry callLogEntry
+	if err := json.Unmarshal(bytes.TrimSpace(log.Bytes()), &entry); err != nil {
+		t.Fatalf("Unmarshal log entry: %v\n%s", err, log.String())
+	}
+	if entry.Response != nil && len(entry.Response.BodyJSON) != 0 {
+		t.Fatalf("error response body_json = %s, want omitted for non-JSON body", entry.Response.BodyJSON)
 	}
 }
 

@@ -44,10 +44,11 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 		Timestamp: time.Now().UTC(),
 		Provider:  "deepseek",
 		Request: httpRequestLog{
-			Method:  http.MethodPost,
-			URL:     strings.TrimRight(c.baseURL, "/") + "/chat/completions",
-			Headers: http.Header{},
-			Body:    string(data),
+			Method:   http.MethodPost,
+			URL:      strings.TrimRight(c.baseURL, "/") + "/chat/completions",
+			Headers:  http.Header{},
+			Body:     redactAPIKey(string(data), c.apiKey),
+			BodyJSON: jsonBody(redactAPIKey(string(data), c.apiKey)),
 		},
 	}
 
@@ -283,5 +284,17 @@ func loggedHTTPResponse(resp *http.Response, body []byte, apiKey string) *httpRe
 		Status:     resp.Status,
 		Headers:    redactHeaders(resp.Header, apiKey),
 		Body:       redactAPIKey(string(body), apiKey),
+		BodyJSON:   jsonBody(redactAPIKey(string(body), apiKey)),
 	}
+}
+
+func jsonBody(body string) json.RawMessage {
+	if body == "" || !json.Valid([]byte(body)) {
+		return nil
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(body)); err != nil {
+		return json.RawMessage(body)
+	}
+	return json.RawMessage(compact.Bytes())
 }
