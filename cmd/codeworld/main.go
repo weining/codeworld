@@ -2,21 +2,13 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
-	"codeworld/internal/agent"
-	"codeworld/internal/config"
-	"codeworld/internal/model"
-	"codeworld/internal/model/deepseek"
-	"codeworld/internal/permissions"
+	"codeworld/internal/app"
 	"codeworld/internal/repl"
-	"codeworld/internal/session"
-	"codeworld/internal/tools"
-	"codeworld/internal/workspace"
 )
 
 func main() {
@@ -39,96 +31,21 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer) error {
 }
 
 func newAppWithIO(in io.Reader, out io.Writer, stderr io.Writer, root string) (repl.REPL, error) {
-	cfg, err := config.Load(root)
+	rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
 	if err != nil {
 		return repl.REPL{}, err
-	}
-	ws, err := workspace.New(root)
-	if err != nil {
-		return repl.REPL{}, err
-	}
-	if !ws.IsGitRepo() {
-		fmt.Fprintln(stderr, "warning: current workspace is not a git repository; patch workflows are safer in git repositories")
-	}
-
-	summary, err := ws.Summary(120)
-	if err != nil {
-		summary = "workspace summary unavailable: " + err.Error()
-	}
-	systemPrompt := agent.DefaultSystemPrompt + "\n\nWorkspace files:\n" + summary
-
-	store := session.NewStore(ws.Root)
-	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
-	messages := sessionMessagesToModel(sess.Messages)
-	modelName := firstNonEmpty(sess.Model, cfg.Model)
-	client := deepseek.NewClient(cfg.APIKey, modelName)
-	client.SetLogger(deepseek.NewFileJSONLLogger(modelCallLogPath(ws.Root)))
-	registry := tools.NewDefaultRegistry(ws)
-	diffTool := tools.NewGitDiffTool(ws)
-
-	confirmer := repl.Confirmer{In: in, Out: out}
-	runner := agent.Runner{
-		Model:        client,
-		Tools:        registry,
-		Policy:       permissions.ConservativePolicy{},
-		Confirmer:    confirmer,
-		MaxSteps:     cfg.MaxSteps,
-		ModelName:    modelName,
-		SystemPrompt: systemPrompt,
 	}
 	return repl.REPL{
 		In:                in,
 		Out:               out,
-		Runner:            runner,
-		Store:             store,
-		Session:           sess,
-		Messages:          messages,
+		Runner:            rt.Runner,
+		Store:             rt.Store,
+		Session:           rt.Session,
+		Messages:          rt.Messages,
+		Usage:             rt.Usage,
 		ShowTerminalTitle: shouldShowTerminalTitle(out),
-		Diff: func(ctx context.Context) (string, error) {
-			result, err := diffTool.Execute(ctx, json.RawMessage(`{}`))
-			return result.Content, err
-		},
+		Diff:              rt.Diff,
 	}, nil
-}
-
-func loadOrCreateSession(store session.Store, workspaceRoot, provider, modelName string) session.Session {
-	sess, err := store.LoadCurrent()
-	if err == nil && sess.Workspace == workspaceRoot && sess.Provider == provider {
-		if sess.Model == "" {
-			sess.Model = modelName
-		}
-		return sess
-	}
-	return session.New(workspaceRoot, provider, modelName)
-}
-
-func sessionMessagesToModel(messages []session.Message) []model.Message {
-	out := make([]model.Message, 0, len(messages))
-	for _, msg := range messages {
-		out = append(out, model.Message{
-			Role:       model.Role(msg.Role),
-			Content:    msg.Content,
-			ToolCallID: msg.ToolCallID,
-			ToolCalls:  sessionToolCallsToModel(msg.ToolCalls),
-		})
-	}
-	return out
-}
-
-func sessionToolCallsToModel(calls []session.ToolCall) []model.ToolCall {
-	out := make([]model.ToolCall, 0, len(calls))
-	for _, call := range calls {
-		out = append(out, model.ToolCall{
-			ID:        call.ID,
-			Name:      call.Name,
-			Arguments: call.Arguments,
-		})
-	}
-	return out
-}
-
-func modelCallLogPath(root string) string {
-	return filepath.Join(root, ".codeworld", "logs", "model-calls.jsonl")
 }
 
 func shouldShowTerminalTitle(out io.Writer) bool {
@@ -140,11 +57,6 @@ func shouldShowTerminalTitle(out io.Writer) bool {
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
+func modelCallLogPath(root string) string {
+	return filepath.Join(root, ".codeworld", "logs", "model-calls.jsonl")
 }

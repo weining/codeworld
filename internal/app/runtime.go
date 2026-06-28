@@ -1,0 +1,162 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+
+	"codeworld/internal/agent"
+	"codeworld/internal/config"
+	"codeworld/internal/model"
+	"codeworld/internal/model/deepseek"
+	"codeworld/internal/permissions"
+	"codeworld/internal/repl"
+	"codeworld/internal/session"
+	"codeworld/internal/tools"
+	"codeworld/internal/workspace"
+)
+
+type Options struct {
+	Root string
+	In   io.Reader
+	Out  io.Writer
+	Err  io.Writer
+}
+
+type Runtime struct {
+	Config    config.Config
+	Workspace workspace.Workspace
+	Store     session.Store
+	Session   session.Session
+	Messages  []model.Message
+	Usage     model.Usage
+	Runner    agent.Runner
+	Diff      func(context.Context) (string, error)
+	In        io.Reader
+	Out       io.Writer
+	Err       io.Writer
+}
+
+func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
+	if err := ctx.Err(); err != nil {
+		return Runtime{}, err
+	}
+	root := opts.Root
+	if root == "" {
+		var err error
+		root, err = os.Getwd()
+		if err != nil {
+			return Runtime{}, err
+		}
+	}
+	cfg, err := config.Load(root)
+	if err != nil {
+		return Runtime{}, err
+	}
+	ws, err := workspace.New(root)
+	if err != nil {
+		return Runtime{}, err
+	}
+	if opts.Err != nil && !ws.IsGitRepo() {
+		fmt.Fprintln(opts.Err, "warning: current workspace is not a git repository; patch workflows are safer in git repositories")
+	}
+
+	summary, err := ws.Summary(120)
+	if err != nil {
+		summary = "workspace summary unavailable: " + err.Error()
+	}
+	systemPrompt := agent.DefaultSystemPrompt + "\n\nWorkspace files:\n" + summary
+
+	store := session.NewStore(ws.Root)
+	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
+	messages := sessionMessagesToModel(sess.Messages)
+	modelName := firstNonEmpty(sess.Model, cfg.Model)
+	client := deepseek.NewClient(cfg.APIKey, modelName)
+	client.SetLogger(deepseek.NewFileJSONLLogger(modelCallLogPath(ws.Root)))
+	registry := tools.NewDefaultRegistry(ws)
+	diffTool := tools.NewGitDiffTool(ws)
+
+	confirmer := repl.Confirmer{In: opts.In, Out: opts.Out}
+	runner := agent.Runner{
+		Model:        client,
+		Tools:        registry,
+		Policy:       permissions.ConservativePolicy{},
+		Confirmer:    confirmer,
+		MaxSteps:     cfg.MaxSteps,
+		ModelName:    modelName,
+		SystemPrompt: systemPrompt,
+	}
+	return Runtime{
+		Config:    cfg,
+		Workspace: ws,
+		Store:     store,
+		Session:   sess,
+		Messages:  messages,
+		Usage: model.Usage{
+			InputTokens:  sess.Usage.InputTokens,
+			OutputTokens: sess.Usage.OutputTokens,
+			CacheTokens:  sess.Usage.CacheTokens,
+			TotalTokens:  sess.Usage.TotalTokens,
+		},
+		Runner: runner,
+		In:     opts.In,
+		Out:    opts.Out,
+		Err:    opts.Err,
+		Diff: func(ctx context.Context) (string, error) {
+			result, err := diffTool.Execute(ctx, json.RawMessage(`{}`))
+			return result.Content, err
+		},
+	}, nil
+}
+
+func loadOrCreateSession(store session.Store, workspaceRoot, provider, modelName string) session.Session {
+	sess, err := store.LoadCurrent()
+	if err == nil && sess.Workspace == workspaceRoot && sess.Provider == provider {
+		if sess.Model == "" {
+			sess.Model = modelName
+		}
+		return sess
+	}
+	return session.New(workspaceRoot, provider, modelName)
+}
+
+func sessionMessagesToModel(messages []session.Message) []model.Message {
+	out := make([]model.Message, 0, len(messages))
+	for _, msg := range messages {
+		out = append(out, model.Message{
+			Role:       model.Role(msg.Role),
+			Content:    msg.Content,
+			ToolCallID: msg.ToolCallID,
+			ToolCalls:  sessionToolCallsToModel(msg.ToolCalls),
+		})
+	}
+	return out
+}
+
+func sessionToolCallsToModel(calls []session.ToolCall) []model.ToolCall {
+	out := make([]model.ToolCall, 0, len(calls))
+	for _, call := range calls {
+		out = append(out, model.ToolCall{
+			ID:        call.ID,
+			Name:      call.Name,
+			Arguments: call.Arguments,
+		})
+	}
+	return out
+}
+
+func modelCallLogPath(root string) string {
+	return filepath.Join(root, ".codeworld", "logs", "model-calls.jsonl")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
