@@ -14,13 +14,15 @@ import (
 )
 
 type REPL struct {
-	In       io.Reader
-	Out      io.Writer
-	Runner   agent.Runner
-	Store    session.Store
-	Session  session.Session
-	Messages []model.Message
-	Diff     func(context.Context) (string, error)
+	In                io.Reader
+	Out               io.Writer
+	Runner            agent.Runner
+	Store             session.Store
+	Session           session.Session
+	Messages          []model.Message
+	Usage             model.Usage
+	ShowTerminalTitle bool
+	Diff              func(context.Context) (string, error)
 }
 
 func (r *REPL) Run(ctx context.Context) error {
@@ -33,14 +35,16 @@ func (r *REPL) Run(ctx context.Context) error {
 
 	reader := bufio.NewReader(r.In)
 	r.bindConfirmerInput(reader)
+	r.restoreUsageFromSession()
 	r.Runner.Reporter = r
 	fmt.Fprintln(r.Out, "codeworld")
 	fmt.Fprintln(r.Out, "Type /help for commands.")
+	r.writeTerminalTitle()
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		fmt.Fprint(r.Out, "codeworld> ")
+		fmt.Fprintf(r.Out, "codeworld [%s]> ", formatUsage(r.Usage))
 		raw, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF && raw == "" {
@@ -66,6 +70,8 @@ func (r *REPL) Run(ctx context.Context) error {
 			fmt.Fprintf(r.Out, "error: %v\n", err)
 			continue
 		}
+		r.Usage = r.Usage.Add(result.Usage)
+		r.writeTerminalTitle()
 		r.Messages = historyMessages(result.Messages)
 		fmt.Fprintln(r.Out, result.FinalText)
 		r.syncSession()
@@ -98,9 +104,10 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 		r.Session.Model = next
 		r.Runner.ModelName = next
 		fmt.Fprintf(r.Out, "model=%s\n", next)
+		r.writeTerminalTitle()
 		r.saveSession()
 	case line == "/status":
-		fmt.Fprintf(r.Out, "workspace=%s provider=%s model=%s messages=%d\n", r.Session.Workspace, r.Session.Provider, r.Session.Model, len(r.Messages))
+		fmt.Fprintf(r.Out, "workspace=%s provider=%s model=%s messages=%d tokens %s\n", r.Session.Workspace, r.Session.Provider, r.Session.Model, len(r.Messages), formatUsage(r.Usage))
 	case line == "/diff":
 		if r.Diff == nil {
 			fmt.Fprintln(r.Out, "diff unavailable")
@@ -119,6 +126,9 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 	case line == "/clear":
 		r.Messages = nil
 		r.Session.Messages = nil
+		r.Usage = model.Usage{}
+		r.Session.Usage = session.Usage{}
+		r.writeTerminalTitle()
 		fmt.Fprintln(r.Out, "cleared")
 		r.saveSession()
 	case line == "/exit":
@@ -139,6 +149,7 @@ func (r *REPL) syncSession() {
 			ToolCalls:  toSessionToolCalls(msg.ToolCalls),
 		})
 	}
+	r.Session.Usage = toSessionUsage(r.Usage)
 }
 
 func toSessionToolCalls(calls []model.ToolCall) []session.ToolCall {
@@ -157,6 +168,53 @@ func (r *REPL) saveSession() {
 	if err := r.Store.SaveCurrent(r.Session); err != nil {
 		fmt.Fprintf(r.Out, "session save error: %v\n", err)
 	}
+}
+
+func (r *REPL) restoreUsageFromSession() {
+	if !r.Usage.IsZero() {
+		return
+	}
+	r.Usage = model.Usage{
+		InputTokens:  r.Session.Usage.InputTokens,
+		OutputTokens: r.Session.Usage.OutputTokens,
+		CacheTokens:  r.Session.Usage.CacheTokens,
+		TotalTokens:  r.Session.Usage.TotalTokens,
+	}
+}
+
+func toSessionUsage(usage model.Usage) session.Usage {
+	return session.Usage{
+		InputTokens:  usage.InputTokens,
+		OutputTokens: usage.OutputTokens,
+		CacheTokens:  usage.CacheTokens,
+		TotalTokens:  usage.TotalTokens,
+	}
+}
+
+func (r *REPL) writeTerminalTitle() {
+	if !r.ShowTerminalTitle {
+		return
+	}
+	fmt.Fprintf(r.Out, "\x1b]0;%s\x07", terminalTitle(r.currentModelName(), r.Usage))
+}
+
+func (r *REPL) currentModelName() string {
+	switch {
+	case r.Session.Model != "":
+		return r.Session.Model
+	case r.Runner.ModelName != "":
+		return r.Runner.ModelName
+	default:
+		return "unknown"
+	}
+}
+
+func terminalTitle(modelName string, usage model.Usage) string {
+	return fmt.Sprintf("codeworld | %s | %s", modelName, formatUsage(usage))
+}
+
+func formatUsage(usage model.Usage) string {
+	return fmt.Sprintf("input=%d output=%d cache=%d total=%d", usage.InputTokens, usage.OutputTokens, usage.CacheTokens, usage.TotalTokens)
 }
 
 func (r *REPL) ReportTool(ctx context.Context, event agent.ToolEvent) {

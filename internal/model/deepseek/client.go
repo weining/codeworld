@@ -124,6 +124,7 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 		},
 		ToolCalls: toolCalls,
 		FinalText: finalText,
+		Usage:     providerResp.Usage.toModelUsage(),
 	}, nil
 }
 
@@ -147,6 +148,20 @@ type responseBody struct {
 	Choices []struct {
 		Message providerMessage `json:"message"`
 	} `json:"choices"`
+	Usage providerUsage `json:"usage"`
+}
+
+type providerUsage struct {
+	PromptTokens          int                       `json:"prompt_tokens"`
+	CompletionTokens      int                       `json:"completion_tokens"`
+	TotalTokens           int                       `json:"total_tokens"`
+	PromptCacheHitTokens  int                       `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens int                       `json:"prompt_cache_miss_tokens"`
+	PromptTokensDetails   providerPromptTokenDetail `json:"prompt_tokens_details"`
+}
+
+type providerPromptTokenDetail struct {
+	CachedTokens int `json:"cached_tokens"`
 }
 
 type providerMessage struct {
@@ -231,6 +246,23 @@ func fromProviderToolCalls(calls []providerToolCall) []model.ToolCall {
 		})
 	}
 	return out
+}
+
+func (u providerUsage) toModelUsage() model.Usage {
+	cacheTokens := u.PromptCacheHitTokens
+	if cacheTokens == 0 {
+		cacheTokens = u.PromptTokensDetails.CachedTokens
+	}
+	totalTokens := u.TotalTokens
+	if totalTokens == 0 && (u.PromptTokens != 0 || u.CompletionTokens != 0) {
+		totalTokens = u.PromptTokens + u.CompletionTokens
+	}
+	return model.Usage{
+		InputTokens:  u.PromptTokens,
+		OutputTokens: u.CompletionTokens,
+		CacheTokens:  cacheTokens,
+		TotalTokens:  totalTokens,
+	}
 }
 
 func firstNonEmpty(values ...string) string {

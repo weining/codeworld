@@ -117,6 +117,7 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	sess.Tools = []ToolEvent{
 		{ID: "tool-1", Name: "go test", Summary: "passed", CreatedAt: sess.CreatedAt.Add(time.Second)},
 	}
+	sess.Usage = Usage{InputTokens: 120, OutputTokens: 30, CacheTokens: 40, TotalTokens: 150}
 	sess.UpdatedAt = time.Now().UTC().Add(-time.Minute)
 
 	if sess.ID == "" {
@@ -153,6 +154,9 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	assertJSONEqual(t, got.Messages[1].ToolCalls[0].Arguments, `{"path":"go.mod"}`)
 	if len(got.Tools) != 1 || got.Tools[0].ID != "tool-1" || !got.Tools[0].CreatedAt.Equal(sess.Tools[0].CreatedAt) {
 		t.Fatalf("LoadCurrent tools = %#v", got.Tools)
+	}
+	if got.Usage != sess.Usage {
+		t.Fatalf("LoadCurrent usage = %#v, want %#v", got.Usage, sess.Usage)
 	}
 }
 

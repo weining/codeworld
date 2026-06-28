@@ -236,6 +236,85 @@ func TestRunPrintsToolProgress(t *testing.T) {
 	}
 }
 
+func TestRunDisplaysTitlePromptAndPersistsTokenUsage(t *testing.T) {
+	client := &fakeModelClient{responses: []model.GenerateResponse{
+		{
+			FinalText: "first answer",
+			Usage:     model.Usage{InputTokens: 10, OutputTokens: 3, CacheTokens: 4, TotalTokens: 13},
+		},
+		{
+			FinalText: "second answer",
+			Usage:     model.Usage{InputTokens: 20, OutputTokens: 5, CacheTokens: 6, TotalTokens: 25},
+		},
+	}}
+	store := session.NewStore(t.TempDir())
+	var out bytes.Buffer
+	app := REPL{
+		In:  strings.NewReader("first\nsecond\n/status\n/exit\n"),
+		Out: &out,
+		Runner: agent.Runner{
+			Model:     client,
+			Tools:     tools.NewRegistry(nil, nil),
+			Policy:    permissions.ConservativePolicy{},
+			MaxSteps:  3,
+			ModelName: "deepseek-v4-pro",
+		},
+		Store:             store,
+		Session:           session.New("workspace", "deepseek", "deepseek-v4-pro"),
+		ShowTerminalTitle: true,
+	}
+
+	if err := app.Run(context.Background()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{
+		"\x1b]0;codeworld | deepseek-v4-pro | input=0 output=0 cache=0 total=0\x07",
+		"codeworld [input=0 output=0 cache=0 total=0]> ",
+		"\x1b]0;codeworld | deepseek-v4-pro | input=30 output=8 cache=10 total=38\x07",
+		"codeworld [input=30 output=8 cache=10 total=38]> ",
+		"tokens input=30 output=8 cache=10 total=38",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q in:\n%q", want, output)
+		}
+	}
+	if app.Usage != (model.Usage{InputTokens: 30, OutputTokens: 8, CacheTokens: 10, TotalTokens: 38}) {
+		t.Fatalf("repl usage = %#v", app.Usage)
+	}
+	saved, err := store.LoadCurrent()
+	if err != nil {
+		t.Fatalf("LoadCurrent returned error: %v", err)
+	}
+	wantSessionUsage := session.Usage{InputTokens: 30, OutputTokens: 8, CacheTokens: 10, TotalTokens: 38}
+	if saved.Usage != wantSessionUsage {
+		t.Fatalf("saved usage = %#v, want %#v", saved.Usage, wantSessionUsage)
+	}
+}
+
+func TestRunRestoresTokenUsageFromSession(t *testing.T) {
+	var out bytes.Buffer
+	app := REPL{
+		In:                strings.NewReader("/exit\n"),
+		Out:               &out,
+		Store:             session.NewStore(t.TempDir()),
+		Session:           session.Session{Model: "deepseek-v4-pro", Usage: session.Usage{InputTokens: 7, OutputTokens: 2, CacheTokens: 3, TotalTokens: 9}},
+		ShowTerminalTitle: true,
+	}
+
+	if err := app.Run(context.Background()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	for _, want := range []string{
+		"\x1b]0;codeworld | deepseek-v4-pro | input=7 output=2 cache=3 total=9\x07",
+		"codeworld [input=7 output=2 cache=3 total=9]> ",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output missing %q in:\n%q", want, out.String())
+		}
+	}
+}
+
 func TestRunPrintsToolDeniedAndErrorProgress(t *testing.T) {
 	client := &fakeModelClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "write", Arguments: json.RawMessage(`{}`)}}},

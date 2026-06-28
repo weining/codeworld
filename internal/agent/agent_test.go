@@ -97,6 +97,36 @@ func TestRunTurnExecutesToolAndSendsResultBackToModel(t *testing.T) {
 	}
 }
 
+func TestRunTurnAccumulatesUsageAcrossModelCalls(t *testing.T) {
+	client := &fakeClient{responses: []model.GenerateResponse{
+		{
+			ToolCalls: []model.ToolCall{{ID: "call-1", Name: "echo", Arguments: json.RawMessage(`{"text":"hello"}`)}},
+			Usage:     model.Usage{InputTokens: 10, OutputTokens: 2, CacheTokens: 4, TotalTokens: 12},
+		},
+		{
+			FinalText: "done",
+			Usage:     model.Usage{InputTokens: 20, OutputTokens: 5, CacheTokens: 6, TotalTokens: 25},
+		},
+	}}
+	tool := newFakeTool("echo", permissions.ActionRead, permissions.RiskRead)
+	runner := Runner{
+		Model:     client,
+		Tools:     tools.NewRegistry([]tools.Tool{tool}, nil),
+		Policy:    permissions.ConservativePolicy{},
+		ModelName: "test-model",
+		MaxSteps:  3,
+	}
+
+	result, err := runner.RunTurn(context.Background(), nil, "start")
+	if err != nil {
+		t.Fatalf("RunTurn returned error: %v", err)
+	}
+	want := model.Usage{InputTokens: 30, OutputTokens: 7, CacheTokens: 10, TotalTokens: 37}
+	if result.Usage != want {
+		t.Fatalf("usage = %#v, want %#v", result.Usage, want)
+	}
+}
+
 func TestRunTurnReportsToolProgress(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "echo", Arguments: json.RawMessage(`{"text":"hello"}`)}}},

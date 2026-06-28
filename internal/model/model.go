@@ -43,8 +43,29 @@ type GenerateResponse struct {
 	Message   Message    `json:"message"`
 	ToolCalls []ToolCall `json:"tool_calls"`
 	FinalText string     `json:"final_text"`
+	Usage     Usage      `json:"usage,omitempty"`
 }
 
 type Client interface {
 	Generate(ctx context.Context, req GenerateRequest) (GenerateResponse, error)
+}
+
+type Usage struct {
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
+	CacheTokens  int `json:"cache_tokens,omitempty"`
+	TotalTokens  int `json:"total_tokens,omitempty"`
+}
+
+func (u Usage) Add(next Usage) Usage {
+	return Usage{
+		InputTokens:  u.InputTokens + next.InputTokens,
+		OutputTokens: u.OutputTokens + next.OutputTokens,
+		CacheTokens:  u.CacheTokens + next.CacheTokens,
+		TotalTokens:  u.TotalTokens + next.TotalTokens,
+	}
+}
+
+func (u Usage) IsZero() bool {
+	return u == Usage{}
 }

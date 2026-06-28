@@ -31,6 +31,13 @@ type ToolEvent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type Usage struct {
+	InputTokens  int `json:"input_tokens,omitempty"`
+	OutputTokens int `json:"output_tokens,omitempty"`
+	CacheTokens  int `json:"cache_tokens,omitempty"`
+	TotalTokens  int `json:"total_tokens,omitempty"`
+}
+
 type Session struct {
 	ID        string      `json:"id"`
 	Workspace string      `json:"workspace"`
@@ -38,6 +45,7 @@ type Session struct {
 	Model     string      `json:"model"`
 	Messages  []Message   `json:"messages"`
 	Tools     []ToolEvent `json:"tools"`
+	Usage     Usage       `json:"usage,omitempty"`
 	CreatedAt time.Time   `json:"created_at"`
 	UpdatedAt time.Time   `json:"updated_at"`
 }

@@ -156,6 +156,67 @@ func TestGenerateParsesToolCallAndLeavesFinalTextEmpty(t *testing.T) {
 	}
 }
 
+func TestGenerateParsesUsageIncludingCachedInputTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":"hello"}}],
+			"usage":{
+				"prompt_tokens":120,
+				"completion_tokens":30,
+				"total_tokens":150,
+				"prompt_cache_hit_tokens":80,
+				"prompt_cache_miss_tokens":40
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", "deepseek-v4-pro")
+	client.baseURL = server.URL
+
+	resp, err := client.Generate(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	want := model.Usage{InputTokens: 120, OutputTokens: 30, CacheTokens: 80, TotalTokens: 150}
+	if resp.Usage != want {
+		t.Fatalf("usage = %#v, want %#v", resp.Usage, want)
+	}
+}
+
+func TestGenerateParsesOpenAIStyleCachedInputTokens(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"choices":[{"message":{"role":"assistant","content":"hello"}}],
+			"usage":{
+				"prompt_tokens":50,
+				"completion_tokens":10,
+				"total_tokens":60,
+				"prompt_tokens_details":{"cached_tokens":25}
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", "deepseek-v4-pro")
+	client.baseURL = server.URL
+
+	resp, err := client.Generate(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	want := model.Usage{InputTokens: 50, OutputTokens: 10, CacheTokens: 25, TotalTokens: 60}
+	if resp.Usage != want {
+		t.Fatalf("usage = %#v, want %#v", resp.Usage, want)
+	}
+}
+
 func TestGenerateRejectsMissingAPIKey(t *testing.T) {
 	client := NewClient("", "deepseek-v4-pro")
 

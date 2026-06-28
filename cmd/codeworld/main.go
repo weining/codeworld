@@ -77,12 +77,13 @@ func newAppWithIO(in io.Reader, out io.Writer, stderr io.Writer, root string) (r
 		SystemPrompt: systemPrompt,
 	}
 	return repl.REPL{
-		In:       in,
-		Out:      out,
-		Runner:   runner,
-		Store:    store,
-		Session:  sess,
-		Messages: messages,
+		In:                in,
+		Out:               out,
+		Runner:            runner,
+		Store:             store,
+		Session:           sess,
+		Messages:          messages,
+		ShowTerminalTitle: shouldShowTerminalTitle(out),
 		Diff: func(ctx context.Context) (string, error) {
 			result, err := diffTool.Execute(ctx, json.RawMessage(`{}`))
 			return result.Content, err
@@ -128,6 +129,15 @@ func sessionToolCallsToModel(calls []session.ToolCall) []model.ToolCall {
 
 func modelCallLogPath(root string) string {
 	return filepath.Join(root, ".codeworld", "logs", "model-calls.jsonl")
+}
+
+func shouldShowTerminalTitle(out io.Writer) bool {
+	file, ok := out.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func firstNonEmpty(values ...string) string {

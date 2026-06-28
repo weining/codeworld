@@ -56,6 +56,7 @@ type Runner struct {
 type TurnResult struct {
 	FinalText string
 	Messages  []model.Message
+	Usage     model.Usage
 }
 
 func (r Runner) RunTurn(ctx context.Context, history []model.Message, input string) (TurnResult, error) {
@@ -76,6 +77,7 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 	messages := []model.Message{{Role: model.RoleSystem, Content: firstNonEmpty(r.SystemPrompt, DefaultSystemPrompt)}}
 	messages = append(messages, history...)
 	messages = append(messages, model.Message{Role: model.RoleUser, Content: input})
+	var usage model.Usage
 
 	for step := 0; step < maxSteps; step++ {
 		resp, err := r.Model.Generate(ctx, model.GenerateRequest{
@@ -86,6 +88,7 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 		if err != nil {
 			return TurnResult{}, err
 		}
+		usage = usage.Add(resp.Usage)
 
 		toolCalls := responseToolCalls(resp)
 		if len(toolCalls) > 0 {
@@ -102,7 +105,7 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 			return TurnResult{}, fmt.Errorf("model returned no final text and no tool calls")
 		}
 		messages = append(messages, model.Message{Role: model.RoleAssistant, Content: finalText})
-		return TurnResult{FinalText: finalText, Messages: messages}, nil
+		return TurnResult{FinalText: finalText, Messages: messages, Usage: usage}, nil
 	}
 	return TurnResult{}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
 }
