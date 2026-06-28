@@ -33,6 +33,7 @@ func (r *REPL) Run(ctx context.Context) error {
 
 	reader := bufio.NewReader(r.In)
 	r.bindConfirmerInput(reader)
+	r.Runner.Reporter = r
 	fmt.Fprintln(r.Out, "codeworld")
 	fmt.Fprintln(r.Out, "Type /help for commands.")
 	for {
@@ -155,6 +156,19 @@ func toSessionToolCalls(calls []model.ToolCall) []session.ToolCall {
 func (r *REPL) saveSession() {
 	if err := r.Store.SaveCurrent(r.Session); err != nil {
 		fmt.Fprintf(r.Out, "session save error: %v\n", err)
+	}
+}
+
+func (r *REPL) ReportTool(ctx context.Context, event agent.ToolEvent) {
+	switch event.Status {
+	case agent.ToolEventStart:
+		fmt.Fprintf(r.Out, "tool> %s target=%s risk=%s\n", event.Name, event.Request.Target, event.Request.Risk)
+	case agent.ToolEventSuccess:
+		fmt.Fprintf(r.Out, "tool< %s ok\n", event.Name)
+	case agent.ToolEventDenied:
+		fmt.Fprintf(r.Out, "tool< %s denied: %s\n", event.Name, event.Error)
+	case agent.ToolEventError:
+		fmt.Fprintf(r.Out, "tool< %s error: %s\n", event.Name, event.Error)
 	}
 }
 

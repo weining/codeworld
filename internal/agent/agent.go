@@ -21,11 +21,33 @@ type Confirmer interface {
 	Confirm(ctx context.Context, req permissions.Request, decision permissions.Decision) (bool, error)
 }
 
+type ToolEventStatus string
+
+const (
+	ToolEventStart   ToolEventStatus = "start"
+	ToolEventSuccess ToolEventStatus = "success"
+	ToolEventDenied  ToolEventStatus = "denied"
+	ToolEventError   ToolEventStatus = "error"
+)
+
+type ToolEvent struct {
+	Status  ToolEventStatus
+	Name    string
+	CallID  string
+	Request permissions.Request
+	Error   string
+}
+
+type ToolReporter interface {
+	ReportTool(ctx context.Context, event ToolEvent)
+}
+
 type Runner struct {
 	Model        model.Client
 	Tools        *tools.Registry
 	Policy       permissions.Policy
 	Confirmer    Confirmer
+	Reporter     ToolReporter
 	MaxSteps     int
 	ModelName    string
 	SystemPrompt string
@@ -88,42 +110,75 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 func (r Runner) executeTool(ctx context.Context, call model.ToolCall) string {
 	tool, ok := r.Tools.Get(call.Name)
 	if !ok {
+		r.reportTool(ctx, ToolEvent{Status: ToolEventError, Name: call.Name, CallID: call.ID, Error: "tool error: unknown tool " + call.Name})
 		return "tool error: unknown tool " + call.Name
 	}
 
 	req, err := tool.PermissionRequest(call.Arguments)
 	if err != nil {
-		return "permission request error: " + err.Error()
+		message := "permission request error: " + err.Error()
+		r.reportTool(ctx, ToolEvent{Status: ToolEventError, Name: call.Name, CallID: call.ID, Error: message})
+		return message
 	}
+	event := ToolEvent{Name: call.Name, CallID: call.ID, Request: req}
+	r.reportTool(ctx, event.withStatus(ToolEventStart, ""))
+
 	decision, err := r.permissionPolicy().Check(ctx, req)
 	if err != nil {
-		return "permission policy error: " + err.Error()
+		message := "permission policy error: " + err.Error()
+		r.reportTool(ctx, event.withStatus(ToolEventError, message))
+		return message
 	}
 
 	switch decision.Kind {
 	case permissions.DecisionAllow:
 	case permissions.DecisionDeny:
-		return "permission denied: " + decision.Reason
+		message := "permission denied: " + decision.Reason
+		r.reportTool(ctx, event.withStatus(ToolEventDenied, message))
+		return message
 	case permissions.DecisionAsk:
 		if r.Confirmer == nil {
-			return "permission denied: confirmation required"
+			message := "permission denied: confirmation required"
+			r.reportTool(ctx, event.withStatus(ToolEventDenied, message))
+			return message
 		}
 		allowed, err := r.Confirmer.Confirm(ctx, req, decision)
 		if err != nil {
-			return "confirmation error: " + err.Error()
+			message := "confirmation error: " + err.Error()
+			r.reportTool(ctx, event.withStatus(ToolEventError, message))
+			return message
 		}
 		if !allowed {
-			return "permission denied by user"
+			message := "permission denied by user"
+			r.reportTool(ctx, event.withStatus(ToolEventDenied, message))
+			return message
 		}
 	default:
-		return "permission denied: unknown permission decision " + string(decision.Kind)
+		message := "permission denied: unknown permission decision " + string(decision.Kind)
+		r.reportTool(ctx, event.withStatus(ToolEventDenied, message))
+		return message
 	}
 
 	result, err := tool.Execute(ctx, call.Arguments)
 	if err != nil {
-		return encodeToolResult(result, "tool error: "+err.Error())
+		message := "tool error: " + err.Error()
+		r.reportTool(ctx, event.withStatus(ToolEventError, message))
+		return encodeToolResult(result, message)
 	}
+	r.reportTool(ctx, event.withStatus(ToolEventSuccess, ""))
 	return encodeToolResult(result, "")
+}
+
+func (r Runner) reportTool(ctx context.Context, event ToolEvent) {
+	if r.Reporter != nil {
+		r.Reporter.ReportTool(ctx, event)
+	}
+}
+
+func (e ToolEvent) withStatus(status ToolEventStatus, message string) ToolEvent {
+	e.Status = status
+	e.Error = message
+	return e
 }
 
 func (r Runner) permissionPolicy() permissions.Policy {

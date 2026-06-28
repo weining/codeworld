@@ -97,6 +97,36 @@ func TestRunTurnExecutesToolAndSendsResultBackToModel(t *testing.T) {
 	}
 }
 
+func TestRunTurnReportsToolProgress(t *testing.T) {
+	client := &fakeClient{responses: []model.GenerateResponse{
+		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "echo", Arguments: json.RawMessage(`{"text":"hello"}`)}}},
+		{FinalText: "done"},
+	}}
+	reporter := &fakeToolReporter{}
+	runner := Runner{
+		Model:     client,
+		Tools:     tools.NewRegistry([]tools.Tool{newFakeTool("echo", permissions.ActionRead, permissions.RiskRead)}, nil),
+		Policy:    permissions.ConservativePolicy{},
+		Reporter:  reporter,
+		ModelName: "test-model",
+		MaxSteps:  3,
+	}
+
+	_, err := runner.RunTurn(context.Background(), nil, "start")
+	if err != nil {
+		t.Fatalf("RunTurn returned error: %v", err)
+	}
+	if len(reporter.events) != 2 {
+		t.Fatalf("reported events = %#v, want start and success", reporter.events)
+	}
+	if reporter.events[0].Status != ToolEventStart || reporter.events[0].Name != "echo" || reporter.events[0].Request.Target != "echo" {
+		t.Fatalf("start event = %#v, want echo start", reporter.events[0])
+	}
+	if reporter.events[1].Status != ToolEventSuccess || reporter.events[1].Name != "echo" {
+		t.Fatalf("success event = %#v, want echo success", reporter.events[1])
+	}
+}
+
 func TestRunTurnExecutesToolWhenMessageHasContentAndToolCalls(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{
@@ -312,6 +342,14 @@ func (f fakePolicy) Check(ctx context.Context, req permissions.Request) (permiss
 		return permissions.Decision{}, err
 	}
 	return f.decision, f.err
+}
+
+type fakeToolReporter struct {
+	events []ToolEvent
+}
+
+func (f *fakeToolReporter) ReportTool(ctx context.Context, event ToolEvent) {
+	f.events = append(f.events, event)
 }
 
 func messagesEqual(a, b []model.Message) bool {

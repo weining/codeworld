@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -200,6 +201,85 @@ func TestRunUsesSingleInputBufferForPermissionConfirmation(t *testing.T) {
 	}
 }
 
+func TestRunPrintsToolProgress(t *testing.T) {
+	client := &fakeModelClient{responses: []model.GenerateResponse{
+		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "read", Arguments: json.RawMessage(`{}`)}}},
+		{FinalText: "read complete"},
+	}}
+	var out bytes.Buffer
+	app := REPL{
+		In:  strings.NewReader("read\n/exit\n"),
+		Out: &out,
+		Runner: agent.Runner{
+			Model:     client,
+			Tools:     tools.NewRegistry([]tools.Tool{newReplFakeTool("read", permissions.ActionRead, permissions.RiskRead)}, nil),
+			Policy:    permissions.ConservativePolicy{},
+			MaxSteps:  3,
+			ModelName: "deepseek-v4-pro",
+		},
+		Store:   session.NewStore(t.TempDir()),
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+	}
+
+	if err := app.Run(context.Background()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{
+		"tool> read target=read risk=read",
+		"tool< read ok",
+		"read complete",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q in:\n%s", want, output)
+		}
+	}
+}
+
+func TestRunPrintsToolDeniedAndErrorProgress(t *testing.T) {
+	client := &fakeModelClient{responses: []model.GenerateResponse{
+		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "write", Arguments: json.RawMessage(`{}`)}}},
+		{ToolCalls: []model.ToolCall{{ID: "call-2", Name: "fail", Arguments: json.RawMessage(`{}`)}}},
+		{FinalText: "handled"},
+	}}
+	failTool := newReplFakeTool("fail", permissions.ActionRead, permissions.RiskRead)
+	failTool.executeErr = errors.New("boom")
+	var out bytes.Buffer
+	app := REPL{
+		In:  strings.NewReader("change\nn\n/exit\n"),
+		Out: &out,
+		Runner: agent.Runner{
+			Model: client,
+			Tools: tools.NewRegistry([]tools.Tool{
+				newReplFakeTool("write", permissions.ActionWrite, permissions.RiskWrite),
+				failTool,
+			}, nil),
+			Policy:    permissions.ConservativePolicy{},
+			Confirmer: Confirmer{In: strings.NewReader("n\n"), Out: &out},
+			MaxSteps:  4,
+			ModelName: "deepseek-v4-pro",
+		},
+		Store:   session.NewStore(t.TempDir()),
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+	}
+
+	if err := app.Run(context.Background()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{
+		"tool> write target=write risk=write",
+		"tool< write denied: permission denied by user",
+		"tool> fail target=fail risk=read",
+		"tool< fail error: tool error: boom",
+		"handled",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q in:\n%s", want, output)
+		}
+	}
+}
+
 func TestConfirmerPromptsAndAcceptsY(t *testing.T) {
 	var out bytes.Buffer
 	confirmer := Confirmer{In: strings.NewReader("y\n"), Out: &out}
@@ -257,6 +337,7 @@ type replFakeTool struct {
 	name         string
 	action       permissions.Action
 	risk         permissions.Risk
+	executeErr   error
 	executeCalls int
 }
 
@@ -274,7 +355,7 @@ func (f *replFakeTool) PermissionRequest(args json.RawMessage) (permissions.Requ
 
 func (f *replFakeTool) Execute(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 	f.executeCalls++
-	return tools.Result{Content: "ok"}, nil
+	return tools.Result{Content: "ok"}, f.executeErr
 }
 
 func cloneGenerateRequest(req model.GenerateRequest) model.GenerateRequest {
