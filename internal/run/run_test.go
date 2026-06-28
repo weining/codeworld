@@ -9,6 +9,7 @@ import (
 
 	"codeworld/internal/agent"
 	"codeworld/internal/app"
+	"codeworld/internal/config"
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
@@ -93,6 +94,40 @@ func TestOnceUsesSessionShellApprovalWithoutPrompt(t *testing.T) {
 	}
 	if tool.executeCalls != 1 {
 		t.Fatalf("execute calls = %d, want approved shell execution", tool.executeCalls)
+	}
+}
+
+func TestOnceSummarizesWhenMessageCountExceedsThreshold(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	out := &bytes.Buffer{}
+	rt := app.Runtime{
+		Out:     out,
+		Store:   store,
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+		Config:  config.Config{SummaryMaxMessages: 1},
+		Runner: agent.Runner{
+			Model: &fakeModel{responses: []model.GenerateResponse{
+				{FinalText: "done"},
+				{FinalText: "summary text"},
+			}},
+			Tools:    tools.NewRegistry(nil, nil),
+			MaxSteps: 3,
+		},
+	}
+
+	err := Once(context.Background(), &rt, "inspect")
+	if err != nil {
+		t.Fatalf("Once returned error: %v", err)
+	}
+	saved, err := store.LoadCurrent()
+	if err != nil {
+		t.Fatalf("LoadCurrent: %v", err)
+	}
+	if saved.Summary != "summary text" {
+		t.Fatalf("summary = %q, want summary text", saved.Summary)
+	}
+	if len(saved.Messages) != 2 {
+		t.Fatalf("saved messages = %#v, want recent messages retained", saved.Messages)
 	}
 }
 

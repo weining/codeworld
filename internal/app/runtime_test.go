@@ -99,3 +99,31 @@ func TestNewRuntimeIncludesWorkspaceIndexSummaryInSystemPrompt(t *testing.T) {
 		t.Fatalf("system prompt missing index summary:\n%s", rt.Runner.SystemPrompt)
 	}
 }
+
+func TestNewRuntimeIncludesSessionSummaryInSystemPrompt(t *testing.T) {
+	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	store := session.NewStore(canonicalRoot)
+	sess := session.New(canonicalRoot, "deepseek", "deepseek-v4-pro")
+	sess.Summary = "remembered context"
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	if !strings.Contains(rt.Runner.SystemPrompt, "Conversation summary:") || !strings.Contains(rt.Runner.SystemPrompt, "remembered context") {
+		t.Fatalf("system prompt missing session summary:\n%s", rt.Runner.SystemPrompt)
+	}
+}

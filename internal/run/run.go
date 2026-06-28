@@ -24,6 +24,9 @@ func Once(ctx context.Context, rt *app.Runtime, input string) error {
 	if err := rt.SaveTurn(result); err != nil {
 		return err
 	}
+	if err := rt.MaybeSummarize(ctx); err != nil && rt.Err != nil {
+		_, _ = fmt.Fprintf(rt.Err, "summary warning: %v\n", err)
+	}
 	_, err = fmt.Fprintln(rt.Out, result.FinalText)
 	return err
 }

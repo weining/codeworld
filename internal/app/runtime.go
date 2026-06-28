@@ -11,6 +11,7 @@ import (
 	"codeworld/internal/agent"
 	"codeworld/internal/config"
 	"codeworld/internal/context/indexer"
+	"codeworld/internal/context/summarizer"
 	"codeworld/internal/model"
 	"codeworld/internal/model/provider"
 	"codeworld/internal/permissions"
@@ -49,6 +50,23 @@ func (r *Runtime) SaveTurn(result agent.TurnResult) error {
 	return r.Store.SaveCurrent(r.Session)
 }
 
+func (r *Runtime) MaybeSummarize(ctx context.Context) error {
+	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, r.Usage, summarizer.Options{MaxMessages: r.Config.SummaryMaxMessages}) {
+		return nil
+	}
+	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
+		MaxMessages: r.Config.SummaryMaxMessages,
+		KeepRecent:  20,
+	})
+	if err != nil {
+		return err
+	}
+	r.Session.Summary = summary
+	r.Messages = recent
+	r.Session.Messages = modelMessagesToSession(recent)
+	return r.Store.SaveCurrent(r.Session)
+}
+
 func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if err := ctx.Err(); err != nil {
 		return Runtime{}, err
@@ -84,6 +102,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 
 	store := session.NewStore(ws.Root)
 	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
+	if sess.Summary != "" {
+		systemPrompt += "\n\nConversation summary:\n" + sess.Summary
+	}
 	messages := sessionMessagesToModel(sess.Messages)
 	modelName := firstNonEmpty(sess.Model, cfg.Model)
 	client, err := provider.NewClient(provider.Config{

@@ -49,6 +49,7 @@ type Session struct {
 	Provider  string      `json:"provider"`
 	Model     string      `json:"model"`
 	Messages  []Message   `json:"messages"`
+	Summary   string      `json:"summary,omitempty"`
 	Tools     []ToolEvent `json:"tools"`
 	Approvals []Approval  `json:"approvals,omitempty"`
 	Usage     Usage       `json:"usage,omitempty"`

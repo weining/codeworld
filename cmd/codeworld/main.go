@@ -74,15 +74,16 @@ func newAppWithIO(in io.Reader, out io.Writer, stderr io.Writer, root string) (r
 		return repl.REPL{}, err
 	}
 	return repl.REPL{
-		In:                in,
-		Out:               out,
-		Runner:            rt.Runner,
-		Store:             rt.Store,
-		Session:           rt.Session,
-		Messages:          rt.Messages,
-		Usage:             rt.Usage,
-		ShowTerminalTitle: shouldShowTerminalTitle(out),
-		Diff:              rt.Diff,
+		In:                 in,
+		Out:                out,
+		Runner:             rt.Runner,
+		Store:              rt.Store,
+		Session:            rt.Session,
+		Messages:           rt.Messages,
+		Usage:              rt.Usage,
+		SummaryMaxMessages: rt.Config.SummaryMaxMessages,
+		ShowTerminalTitle:  shouldShowTerminalTitle(out),
+		Diff:               rt.Diff,
 	}, nil
 }
 

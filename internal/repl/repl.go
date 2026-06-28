@@ -9,21 +9,23 @@ import (
 
 	"codeworld/internal/agent"
 	"codeworld/internal/approvals"
+	"codeworld/internal/context/summarizer"
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
 )
 
 type REPL struct {
-	In                io.Reader
-	Out               io.Writer
-	Runner            agent.Runner
-	Store             session.Store
-	Session           session.Session
-	Messages          []model.Message
-	Usage             model.Usage
-	ShowTerminalTitle bool
-	Diff              func(context.Context) (string, error)
+	In                 io.Reader
+	Out                io.Writer
+	Runner             agent.Runner
+	Store              session.Store
+	Session            session.Session
+	Messages           []model.Message
+	Usage              model.Usage
+	SummaryMaxMessages int
+	ShowTerminalTitle  bool
+	Diff               func(context.Context) (string, error)
 }
 
 func (r *REPL) Run(ctx context.Context) error {
@@ -77,6 +79,7 @@ func (r *REPL) Run(ctx context.Context) error {
 		fmt.Fprintln(r.Out, result.FinalText)
 		r.syncSession()
 		r.saveSession()
+		r.maybeSummarize(ctx)
 	}
 }
 
@@ -172,6 +175,24 @@ func (r *REPL) saveSession() {
 	if err := r.Store.SaveCurrent(r.Session); err != nil {
 		fmt.Fprintf(r.Out, "session save error: %v\n", err)
 	}
+}
+
+func (r *REPL) maybeSummarize(ctx context.Context) {
+	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, r.Usage, summarizer.Options{MaxMessages: r.SummaryMaxMessages}) {
+		return
+	}
+	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
+		MaxMessages: r.SummaryMaxMessages,
+		KeepRecent:  20,
+	})
+	if err != nil {
+		fmt.Fprintf(r.Out, "summary warning: %v\n", err)
+		return
+	}
+	r.Session.Summary = summary
+	r.Messages = recent
+	r.syncSession()
+	r.saveSession()
 }
 
 func (r *REPL) restoreUsageFromSession() {

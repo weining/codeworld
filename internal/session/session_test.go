@@ -114,6 +114,7 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 		{Role: "tool", Content: "module codeworld", ToolCallID: "call-1"},
 		{Role: "assistant", Content: "ok"},
 	}
+	sess.Summary = "previous conversation summary"
 	sess.Tools = []ToolEvent{
 		{ID: "tool-1", Name: "go test", Summary: "passed", CreatedAt: sess.CreatedAt.Add(time.Second)},
 	}
@@ -148,6 +149,9 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	}
 	if len(got.Messages) != 4 || got.Messages[0].Content != "run tests" || got.Messages[3].Role != "assistant" {
 		t.Fatalf("LoadCurrent messages = %#v", got.Messages)
+	}
+	if got.Summary != "previous conversation summary" {
+		t.Fatalf("LoadCurrent summary = %q", got.Summary)
 	}
 	if len(got.Messages[1].ToolCalls) != 1 || got.Messages[1].ToolCalls[0].ID != "call-1" || got.Messages[1].ToolCalls[0].Name != "read_file" {
 		t.Fatalf("LoadCurrent tool calls = %#v", got.Messages[1].ToolCalls)
