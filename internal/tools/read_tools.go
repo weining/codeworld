@@ -534,12 +534,15 @@ func readRequest(reason string, target string) permissions.Request {
 }
 
 func objectSchema(properties map[string]any, required []string) map[string]any {
-	return map[string]any{
+	schema := map[string]any{
 		"type":                 "object",
 		"properties":           properties,
-		"required":             required,
 		"additionalProperties": false,
 	}
+	if len(required) > 0 {
+		schema["required"] = required
+	}
+	return schema
 }
 
 func parsePathArgs(args json.RawMessage, defaultPath string) (pathArgs, error) {

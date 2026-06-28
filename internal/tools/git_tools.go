@@ -77,6 +77,9 @@ func NewDefaultRegistry(ws workspace.Workspace) *Registry {
 		NewListDirTool(ws),
 		NewReadFileTool(ws),
 		NewSearchTool(ws),
+		NewWriteFileTool(ws),
+		NewApplyPatchTool(ws),
+		NewShellTool(ws),
 		NewGitStatusTool(ws),
 		NewGitDiffTool(ws),
 	}, nil)
@@ -96,17 +99,21 @@ func parseEmptyArgs(args json.RawMessage) error {
 func runGitTool(ctx context.Context, ws workspace.Workspace, command string, args ...string) (Result, error) {
 	cmdArgs := append([]string{"-C", ws.Root}, args...)
 	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
-	out := &cappedBuffer{limit: defaultReadLimit}
-	cmd.Stdout = out
-	cmd.Stderr = out
+	stdout := &cappedBuffer{limit: defaultReadLimit}
+	stderr := &cappedBuffer{limit: defaultReadLimit}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	err := cmd.Run()
+	content, truncated := combineCommandOutput(stdout, stderr, defaultReadLimit)
 
 	metadata := map[string]any{
-		"command":   command,
-		"exit_code": exitCode(err),
-		"truncated": out.truncated(),
+		"command":          command,
+		"exit_code":        exitCode(err),
+		"truncated":        truncated,
+		"stdout_truncated": stdout.truncated(),
+		"stderr_truncated": stderr.truncated(),
 	}
-	return Result{Content: out.String(), Metadata: metadata}, err
+	return Result{Content: content, Metadata: metadata}, err
 }
 
 func exitCode(err error) int {
@@ -144,4 +151,41 @@ func (b *cappedBuffer) String() string {
 
 func (b *cappedBuffer) truncated() bool {
 	return b.total > b.limit
+}
+
+func combineCommandOutput(stdout *cappedBuffer, stderr *cappedBuffer, limit int64) (string, bool) {
+	truncated := stdout.truncated() || stderr.truncated()
+	stdoutText := stdout.String()
+	stderrText := stderr.String()
+	if stderrText == "" {
+		content, clipped := capString(stdoutText, limit)
+		return content, truncated || clipped
+	}
+	if stdoutText == "" {
+		content, clipped := capString(stderrText, limit)
+		return content, truncated || clipped
+	}
+
+	separator := "\nstderr:\n"
+	errBudget := limit - int64(len(separator))
+	if errBudget < 0 {
+		errBudget = 0
+	}
+	stderrPart, stderrClipped := capString(stderrText, errBudget)
+	stdoutBudget := limit - int64(len(separator)) - int64(len(stderrPart))
+	if stdoutBudget < 0 {
+		stdoutBudget = 0
+	}
+	stdoutPart, stdoutClipped := capString(stdoutText, stdoutBudget)
+	return stdoutPart + separator + stderrPart, truncated || stdoutClipped || stderrClipped
+}
+
+func capString(value string, limit int64) (string, bool) {
+	if limit < 0 {
+		limit = 0
+	}
+	if int64(len(value)) <= limit {
+		return value, false
+	}
+	return value[:int(limit)], true
 }
