@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 
 type Model struct {
 	rt       *app.Runtime
+	adapter  RunnerAdapter
 	input    textarea.Model
 	viewport viewport.Model
 	items    []TranscriptItem
@@ -30,7 +32,7 @@ func NewModel(rt *app.Runtime) Model {
 	input.SetHeight(3)
 	input.Focus()
 	vp := viewport.New(80, 20)
-	m := Model{rt: rt, input: input, viewport: vp, width: 80, height: 24}
+	m := Model{rt: rt, adapter: NewRunnerAdapter(rt), input: input, viewport: vp, width: 80, height: 24}
 	m.refreshViewport()
 	return m
 }
@@ -41,6 +43,15 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case turnDoneMsg:
+		m.running = false
+		if msg.err != nil {
+			m.items = append(m.items, TranscriptItem{Kind: ItemError, Text: msg.err.Error()})
+		} else {
+			m.items = append(m.items, TranscriptItem{Kind: ItemAssistant, Text: msg.text})
+		}
+		m.refreshViewport()
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -64,6 +75,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.items = append(m.items, TranscriptItem{Kind: ItemUser, Text: text})
 				m.input.Reset()
 				m.refreshViewport()
+				m.running = true
+				prompt := text
+				return m, func() tea.Msg {
+					return m.adapter.RunTurn(context.Background(), prompt)
+				}
 			}
 			return m, nil
 		}

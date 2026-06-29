@@ -6,9 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"codeworld/internal/agent"
 	"codeworld/internal/app"
 	"codeworld/internal/model"
+	"codeworld/internal/permissions"
 	"codeworld/internal/session"
+	"codeworld/internal/tools"
 	"codeworld/internal/workspace"
 )
 
@@ -67,5 +70,44 @@ func TestModelViewContainsTranscriptStatusAndComposer(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q in:\n%s", want, view)
 		}
+	}
+}
+
+type fakeModelClient struct {
+	resp model.GenerateResponse
+}
+
+func (f fakeModelClient) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
+	return f.resp, nil
+}
+
+func TestRunnerAdapterUpdatesRuntimeUsageAndMessages(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Store:     session.NewStore(root),
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+		Runner: agent.Runner{
+			Model:     fakeModelClient{resp: model.GenerateResponse{FinalText: "done", Usage: model.Usage{InputTokens: 3, OutputTokens: 2, CacheTokens: 1, TotalTokens: 5}}},
+			Tools:     tools.NewRegistry(nil, nil),
+			Policy:    permissions.ConservativePolicy{},
+			MaxSteps:  1,
+			ModelName: "deepseek-v4-pro",
+		},
+	}
+
+	adapter := NewRunnerAdapter(&rt)
+	result := adapter.RunTurn(context.Background(), "hello")
+	if result.err != nil {
+		t.Fatalf("RunTurn error: %v", result.err)
+	}
+	if result.text != "done" {
+		t.Fatalf("text = %q, want done", result.text)
+	}
+	if rt.Usage.InputTokens != 3 || rt.Usage.OutputTokens != 2 || rt.Usage.CacheTokens != 1 || rt.Usage.TotalTokens != 5 {
+		t.Fatalf("usage = %#v, want accumulated usage", rt.Usage)
+	}
+	if len(rt.Messages) == 0 {
+		t.Fatalf("runtime messages were not updated")
 	}
 }
