@@ -21,6 +21,13 @@ type Config struct {
 	PluginsEnabled     bool
 	SummaryMaxMessages int
 	IndexMaxFileBytes  int
+	MCPServers         []MCPServer
+}
+
+type MCPServer struct {
+	Name    string
+	Command string
+	Args    []string
 }
 
 func Default() Config {
@@ -49,9 +56,15 @@ func Load(root string) (Config, error) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+	var currentMCP *MCPServer
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if line == "[[mcp_servers]]" {
+			cfg.MCPServers = append(cfg.MCPServers, MCPServer{})
+			currentMCP = &cfg.MCPServers[len(cfg.MCPServers)-1]
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
@@ -60,6 +73,13 @@ func Load(root string) (Config, error) {
 		}
 		key = strings.TrimSpace(key)
 		value = strings.Trim(strings.TrimSpace(value), "\"")
+
+		if currentMCP != nil {
+			if err := setMCPServerValue(currentMCP, key, value); err != nil {
+				return Config{}, err
+			}
+			continue
+		}
 
 		switch key {
 		case "provider":
@@ -104,6 +124,45 @@ func Load(root string) (Config, error) {
 
 	loadEnv(&cfg)
 	return cfg, nil
+}
+
+func setMCPServerValue(server *MCPServer, key, value string) error {
+	switch key {
+	case "name":
+		server.Name = value
+	case "command":
+		server.Command = value
+	case "args":
+		args, err := parseStringArray(value)
+		if err != nil {
+			return fmt.Errorf("invalid mcp args %q: %w", value, err)
+		}
+		server.Args = args
+	default:
+		return fmt.Errorf("unknown mcp_servers key %q", key)
+	}
+	return nil
+}
+
+func parseStringArray(value string) ([]string, error) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(value, "[") || !strings.HasSuffix(value, "]") {
+		return nil, fmt.Errorf("expected string array")
+	}
+	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))
+	if body == "" {
+		return nil, nil
+	}
+	parts := strings.Split(body, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if !strings.HasPrefix(part, "\"") || !strings.HasSuffix(part, "\"") {
+			return nil, fmt.Errorf("expected quoted string")
+		}
+		out = append(out, strings.Trim(part, "\""))
+	}
+	return out, nil
 }
 
 func loadEnv(cfg *Config) {

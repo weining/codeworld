@@ -1,8 +1,12 @@
 package app
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -163,6 +167,35 @@ func TestNewRuntimeRegistersEnabledPluginTools(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeRegistersMCPTools(t *testing.T) {
+	if os.Getenv("CODEWORLD_APP_MCP_TEST_SERVER") == "1" {
+		runAppFakeMCPServer()
+		return
+	}
+	root := t.TempDir()
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+	t.Setenv("CODEWORLD_APP_MCP_TEST_SERVER", "1")
+	writeFile(t, filepath.Join(root, ".codeworld", "config.toml"), fmt.Sprintf(`[[mcp_servers]]
+name = "demo"
+command = %q
+args = ["-test.run=TestNewRuntimeRegistersMCPTools"]
+`, os.Args[0]))
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	defer rt.Close()
+	if _, ok := rt.Runner.Tools.Get("mcp.demo.echo"); !ok {
+		t.Fatalf("mcp tool mcp.demo.echo was not registered")
+	}
+}
+
 func TestNewRuntimeIncludesProjectSkillsInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("DEEPSEEK_API_KEY", "test-key")
@@ -196,4 +229,55 @@ func writeFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+}
+
+func runAppFakeMCPServer() {
+	reader := bufio.NewReader(os.Stdin)
+	for {
+		msg, err := readAppMCPMessage(reader)
+		if err != nil {
+			if err != io.EOF {
+				fmt.Fprintln(os.Stderr, err)
+			}
+			return
+		}
+		var req struct {
+			ID     int    `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(msg, &req); err != nil {
+			return
+		}
+		var result any
+		switch req.Method {
+		case "initialize":
+			result = map[string]any{"protocolVersion": "2024-11-05"}
+		case "tools/list":
+			result = map[string]any{"tools": []any{map[string]any{"name": "echo", "description": "Echo", "inputSchema": map[string]any{"type": "object"}}}}
+		default:
+			result = map[string]any{}
+		}
+		data, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+		_, _ = fmt.Fprintf(os.Stdout, "Content-Length: %d\r\n\r\n%s", len(data), data)
+	}
+}
+
+func readAppMCPMessage(reader *bufio.Reader) ([]byte, error) {
+	var length int
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			break
+		}
+		if _, err := fmt.Sscanf(line, "Content-Length: %d", &length); err != nil {
+			return nil, err
+		}
+	}
+	data := make([]byte, length)
+	_, err := io.ReadFull(reader, data)
+	return data, err
 }

@@ -12,6 +12,7 @@ import (
 	"codeworld/internal/config"
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/context/summarizer"
+	"codeworld/internal/mcp"
 	"codeworld/internal/model"
 	"codeworld/internal/model/provider"
 	"codeworld/internal/permissions"
@@ -31,18 +32,19 @@ type Options struct {
 }
 
 type Runtime struct {
-	Config    config.Config
-	Workspace workspace.Workspace
-	Store     session.Store
-	Session   session.Session
-	Messages  []model.Message
-	Usage     model.Usage
-	Skills    []skill.Skill
-	Runner    agent.Runner
-	Diff      func(context.Context) (string, error)
-	In        io.Reader
-	Out       io.Writer
-	Err       io.Writer
+	Config     config.Config
+	Workspace  workspace.Workspace
+	Store      session.Store
+	Session    session.Session
+	Messages   []model.Message
+	Usage      model.Usage
+	Skills     []skill.Skill
+	MCPClients []*mcp.Client
+	Runner     agent.Runner
+	Diff       func(context.Context) (string, error)
+	In         io.Reader
+	Out        io.Writer
+	Err        io.Writer
 }
 
 func (r *Runtime) SaveTurn(result agent.TurnResult) error {
@@ -51,6 +53,13 @@ func (r *Runtime) SaveTurn(result agent.TurnResult) error {
 	r.Session.Messages = modelMessagesToSession(r.Messages)
 	r.Session.Usage = sessionUsage(r.Usage)
 	return r.Store.SaveCurrent(r.Session)
+}
+
+func (r *Runtime) Close() error {
+	for _, client := range r.MCPClients {
+		_ = client.Close()
+	}
+	return nil
 }
 
 func (r *Runtime) MaybeSummarize(ctx context.Context) error {
@@ -137,6 +146,10 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	for _, spec := range pluginTools {
 		registry.Register(tools.NewPluginTool(ws, spec))
 	}
+	mcpClients, err := registerMCPTools(ctx, registry, cfg.MCPServers)
+	if err != nil {
+		return Runtime{}, err
+	}
 	diffTool := tools.NewGitDiffTool(ws)
 
 	confirmer := repl.Confirmer{In: opts.In, Out: opts.Out}
@@ -161,16 +174,48 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			CacheTokens:  sess.Usage.CacheTokens,
 			TotalTokens:  sess.Usage.TotalTokens,
 		},
-		Skills: projectSkills,
-		Runner: runner,
-		In:     opts.In,
-		Out:    opts.Out,
-		Err:    opts.Err,
+		Skills:     projectSkills,
+		MCPClients: mcpClients,
+		Runner:     runner,
+		In:         opts.In,
+		Out:        opts.Out,
+		Err:        opts.Err,
 		Diff: func(ctx context.Context) (string, error) {
 			result, err := diffTool.Execute(ctx, json.RawMessage(`{}`))
 			return result.Content, err
 		},
 	}, nil
+}
+
+func registerMCPTools(ctx context.Context, registry *tools.Registry, servers []config.MCPServer) ([]*mcp.Client, error) {
+	clients := make([]*mcp.Client, 0, len(servers))
+	for _, server := range servers {
+		client, err := mcp.StartStdio(ctx, mcp.ServerConfig{Name: server.Name, Command: server.Command, Args: server.Args})
+		if err != nil {
+			closeMCPClients(clients)
+			return nil, err
+		}
+		clients = append(clients, client)
+		if err := client.Initialize(ctx); err != nil {
+			closeMCPClients(clients)
+			return nil, err
+		}
+		mcpTools, err := client.ListTools(ctx)
+		if err != nil {
+			closeMCPClients(clients)
+			return nil, err
+		}
+		for _, spec := range mcpTools {
+			registry.Register(tools.NewMCPTool(server.Name, spec, client))
+		}
+	}
+	return clients, nil
+}
+
+func closeMCPClients(clients []*mcp.Client) {
+	for _, client := range clients {
+		_ = client.Close()
+	}
 }
 
 func loadOrCreateSession(store session.Store, workspaceRoot, provider, modelName string) session.Session {

@@ -88,6 +88,28 @@ func TestLoadExtendedProjectConfig(t *testing.T) {
 	}
 }
 
+func TestLoadMCPServers(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), strings.Join([]string{
+		"[[mcp_servers]]",
+		"name = \"demo\"",
+		"command = \"node\"",
+		"args = [\"server.js\", \"--stdio\"]",
+	}, "\n"))
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(cfg.MCPServers) != 1 {
+		t.Fatalf("MCPServers = %#v, want one server", cfg.MCPServers)
+	}
+	server := cfg.MCPServers[0]
+	if server.Name != "demo" || server.Command != "node" || len(server.Args) != 2 || server.Args[0] != "server.js" || server.Args[1] != "--stdio" {
+		t.Fatalf("server = %#v, want parsed MCP server", server)
+	}
+}
+
 func TestLoadLocalBaseURLFromEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CODEWORLD_LOCAL_BASE_URL", "http://localhost:1234/v1")
