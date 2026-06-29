@@ -50,6 +50,29 @@ type Client interface {
 	Generate(ctx context.Context, req GenerateRequest) (GenerateResponse, error)
 }
 
+type StreamClient interface {
+	Stream(ctx context.Context, req GenerateRequest, emit func(StreamEvent) error) error
+}
+
+type StreamEventKind string
+
+const (
+	StreamEventTextDelta StreamEventKind = "text_delta"
+	StreamEventToolCall  StreamEventKind = "tool_call"
+	StreamEventUsage     StreamEventKind = "usage"
+	StreamEventDone      StreamEventKind = "done"
+	StreamEventError     StreamEventKind = "error"
+)
+
+type StreamEvent struct {
+	Kind      StreamEventKind
+	Delta     string
+	Message   Message
+	ToolCalls []ToolCall
+	Usage     Usage
+	Err       error
+}
+
 type Usage struct {
 	InputTokens  int `json:"input_tokens,omitempty"`
 	OutputTokens int `json:"output_tokens,omitempty"`
