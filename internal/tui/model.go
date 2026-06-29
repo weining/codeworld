@@ -106,11 +106,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "enter":
 			text := strings.TrimSpace(m.input.Value())
-			if text == "/exit" {
-				m.quitting = true
-				return m, tea.Quit
-			}
 			if text != "" {
+				if strings.HasPrefix(text, "/") {
+					next, quit := m.handleSlashCommand(context.Background(), text)
+					if quit {
+						next.quitting = true
+						return next, tea.Quit
+					}
+					next.input.Reset()
+					return next, nil
+				}
 				m.items = append(m.items, TranscriptItem{Kind: ItemUser, Text: text})
 				m.input.Reset()
 				m.refreshViewport()

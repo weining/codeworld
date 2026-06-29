@@ -154,3 +154,25 @@ func TestTUIConfirmerAllowsSessionApproval(t *testing.T) {
 		t.Fatalf("confirm denied, want allowed")
 	}
 }
+
+func TestHandleSlashCommandUpdatesModelAndTranscript(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Store:     session.NewStore(root),
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+		Usage:     model.Usage{InputTokens: 1, OutputTokens: 2, CacheTokens: 3, TotalTokens: 4},
+	}
+	m := NewModel(&rt)
+
+	next, quit := m.handleSlashCommand(context.Background(), "/model deepseek-v4-flash")
+	if quit {
+		t.Fatalf("model command requested quit")
+	}
+	if next.rt.Session.Model != "deepseek-v4-flash" || next.rt.Runner.ModelName != "deepseek-v4-flash" {
+		t.Fatalf("model not updated: session=%q runner=%q", next.rt.Session.Model, next.rt.Runner.ModelName)
+	}
+	if len(next.items) == 0 || !strings.Contains(next.items[len(next.items)-1].Text, "deepseek-v4-flash") {
+		t.Fatalf("items = %#v, want model notice", next.items)
+	}
+}
