@@ -73,6 +73,7 @@ func (t gitDiffTool) Execute(ctx context.Context, args json.RawMessage) (Result,
 }
 
 func NewDefaultRegistry(ws workspace.Workspace) *Registry {
+	contextStore := NewContextStore(ws, 256*1024)
 	return NewRegistry([]Tool{
 		NewListDirTool(ws),
 		NewReadFileTool(ws),
@@ -83,6 +84,9 @@ func NewDefaultRegistry(ws workspace.Workspace) *Registry {
 		NewGitStatusTool(ws),
 		NewGitDiffTool(ws),
 		NewIndexWorkspaceTool(ws),
+		NewContextRefreshTool(contextStore),
+		NewContextSearchTool(contextStore),
+		NewContextOpenTool(contextStore),
 	}, nil)
 }
 

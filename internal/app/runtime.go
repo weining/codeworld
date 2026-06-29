@@ -11,6 +11,7 @@ import (
 	"codeworld/internal/agent"
 	"codeworld/internal/capability"
 	"codeworld/internal/config"
+	contextgraph "codeworld/internal/context/graph"
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/context/summarizer"
 	"codeworld/internal/mcp"
@@ -108,6 +109,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	systemPrompt := agent.DefaultSystemPrompt + "\n\nWorkspace files:\n" + summary
 	if indexSummary := loadIndexSummary(ws.Root); indexSummary != "" {
 		systemPrompt += "\n\nWorkspace index:\n" + indexSummary
+	}
+	if graphSummary := loadContextGraphSummary(ws.Root, cfg.IndexMaxFileBytes); graphSummary != "" {
+		systemPrompt += "\n\nWorkspace context graph:\n" + graphSummary
 	}
 	store := session.NewStore(ws.Root)
 	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
@@ -272,6 +276,14 @@ func loadIndexSummary(root string) string {
 		return ""
 	}
 	return indexer.Summary(idx, 120)
+}
+
+func loadContextGraphSummary(root string, maxFileBytes int) string {
+	g, err := contextgraph.Build(root, contextgraph.Options{MaxFileBytes: int64(maxFileBytes)})
+	if err != nil {
+		return ""
+	}
+	return g.SummaryText(120)
 }
 
 func firstNonEmpty(values ...string) string {

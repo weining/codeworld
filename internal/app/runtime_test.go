@@ -105,6 +105,28 @@ func TestNewRuntimeIncludesWorkspaceIndexSummaryInSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeIncludesContextGraphSummaryInSystemPrompt(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "main.go"), `package main
+
+func RunServer() {}
+`)
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	if !strings.Contains(rt.Runner.SystemPrompt, "Workspace context graph:") || !strings.Contains(rt.Runner.SystemPrompt, "main.go go symbols=1") {
+		t.Fatalf("system prompt missing context graph summary:\n%s", rt.Runner.SystemPrompt)
+	}
+}
+
 func TestNewRuntimeIncludesSessionSummaryInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
