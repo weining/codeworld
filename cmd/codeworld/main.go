@@ -63,7 +63,7 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			if err != nil {
 				return err
 			}
-			return tui.Run(context.Background(), &rt)
+			return tui.RunWithOptions(context.Background(), &rt, tui.Options{TestMode: !shouldShowTerminalTitle(out)})
 		default:
 			return fmt.Errorf("unknown command: %s", args[0])
 		}

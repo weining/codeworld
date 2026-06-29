@@ -121,7 +121,7 @@ func TestIndexCommandWritesWorkspaceIndex(t *testing.T) {
 	}
 }
 
-func TestTUICommandStartsStatusShell(t *testing.T) {
+func TestTUICommandStartsFullScreenAppInTestMode(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	root := t.TempDir()
 	originalWD, err := os.Getwd()
@@ -143,10 +143,13 @@ func TestTUICommandStartsStatusShell(t *testing.T) {
 	}
 	output := out.String()
 	for _, want := range []string{
-		"codeworld tui",
+		"codeworld",
 		"provider=deepseek",
 		"model=deepseek-v4-pro",
-		"tokens input=0 output=0 cache=0 total=0",
+		"input=0",
+		"output=0",
+		"cache=0",
+		"total=0",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("stdout missing %q in:\n%s", want, output)
