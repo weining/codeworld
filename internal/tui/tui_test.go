@@ -128,3 +128,29 @@ func TestToolReporterAppendsToolEvents(t *testing.T) {
 		t.Fatalf("item = %#v, want tool start transcript item", item)
 	}
 }
+
+func TestTUIConfirmerAllowsSessionApproval(t *testing.T) {
+	confirmer := NewTUIConfirmer()
+	done := make(chan bool, 1)
+	go func() {
+		allowed, err := confirmer.Confirm(context.Background(), permissions.Request{
+			Action: permissions.ActionShell,
+			Target: "mise exec -- go test ./...",
+			Risk:   permissions.RiskExecute,
+			Reason: "shell command",
+		}, permissions.Decision{Kind: permissions.DecisionAsk})
+		if err != nil {
+			t.Errorf("Confirm returned error: %v", err)
+		}
+		done <- allowed
+	}()
+
+	req := <-confirmer.Requests()
+	if req.Target != "mise exec -- go test ./..." {
+		t.Fatalf("request = %#v, want shell target", req)
+	}
+	confirmer.Decide(PermissionDecision{Allow: true, Session: true})
+	if !<-done {
+		t.Fatalf("confirm denied, want allowed")
+	}
+}

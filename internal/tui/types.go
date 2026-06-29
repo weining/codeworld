@@ -1,5 +1,7 @@
 package tui
 
+import "codeworld/internal/permissions"
+
 type ItemKind string
 
 const (
@@ -24,4 +26,8 @@ type turnDoneMsg struct {
 
 type toolEventMsg struct {
 	item TranscriptItem
+}
+
+type permissionRequestMsg struct {
+	request permissions.Request
 }

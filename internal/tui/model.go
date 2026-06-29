@@ -11,19 +11,23 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"codeworld/internal/app"
+	"codeworld/internal/permissions"
+	"codeworld/internal/session"
 )
 
 type Model struct {
-	rt         *app.Runtime
-	adapter    RunnerAdapter
-	toolEvents <-chan TranscriptItem
-	input      textarea.Model
-	viewport   viewport.Model
-	items      []TranscriptItem
-	width      int
-	height     int
-	running    bool
-	quitting   bool
+	rt                *app.Runtime
+	adapter           RunnerAdapter
+	toolEvents        <-chan TranscriptItem
+	confirmer         *TUIConfirmer
+	pendingPermission *permissions.Request
+	input             textarea.Model
+	viewport          viewport.Model
+	items             []TranscriptItem
+	width             int
+	height            int
+	running           bool
+	quitting          bool
 }
 
 func NewModel(rt *app.Runtime) Model {
@@ -34,18 +38,25 @@ func NewModel(rt *app.Runtime) Model {
 	input.Focus()
 	vp := viewport.New(80, 20)
 	reporter := NewToolReporter()
+	confirmer := NewTUIConfirmer()
 	rt.Runner.Reporter = reporter
-	m := Model{rt: rt, adapter: NewRunnerAdapter(rt), toolEvents: reporter.Events(), input: input, viewport: vp, width: 80, height: 24}
+	rt.Runner.Confirmer = confirmer
+	m := Model{rt: rt, adapter: NewRunnerAdapter(rt), toolEvents: reporter.Events(), confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24}
 	m.refreshViewport()
 	return m
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.waitToolEvent())
+	return tea.Batch(textarea.Blink, m.waitToolEvent(), m.waitPermissionRequest())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case permissionRequestMsg:
+		m.pendingPermission = &msg.request
+		m.items = append(m.items, TranscriptItem{Kind: ItemPermission, Text: FormatPermissionRequest(msg.request)})
+		m.refreshViewport()
+		return m, m.waitPermissionRequest()
 	case toolEventMsg:
 		m.items = append(m.items, msg.item)
 		m.refreshViewport()
@@ -68,6 +79,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 	case tea.KeyMsg:
+		if m.pendingPermission != nil {
+			switch msg.String() {
+			case "y":
+				m.confirmer.Decide(PermissionDecision{Allow: true})
+				m.items = append(m.items, TranscriptItem{Kind: ItemPermission, Text: "allowed once"})
+				m.pendingPermission = nil
+			case "a":
+				if m.pendingPermission.Action == permissions.ActionShell {
+					m.rt.Session.Approvals = append(m.rt.Session.Approvals, session.Approval{Kind: "shell", Command: m.pendingPermission.Target})
+				}
+				m.confirmer.Decide(PermissionDecision{Allow: true, Session: true})
+				m.items = append(m.items, TranscriptItem{Kind: ItemPermission, Text: "allowed for session"})
+				m.pendingPermission = nil
+			case "n", "esc":
+				m.confirmer.Decide(PermissionDecision{Allow: false})
+				m.items = append(m.items, TranscriptItem{Kind: ItemPermission, Text: "denied"})
+				m.pendingPermission = nil
+			}
+			m.refreshViewport()
+			return m, nil
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			m.quitting = true
@@ -125,6 +157,16 @@ func (m Model) waitToolEvent() tea.Cmd {
 			return nil
 		}
 		return toolEventMsg{item: item}
+	}
+}
+
+func (m Model) waitPermissionRequest() tea.Cmd {
+	return func() tea.Msg {
+		req, ok := <-m.confirmer.Requests()
+		if !ok {
+			return nil
+		}
+		return permissionRequestMsg{request: req}
 	}
 }
 
