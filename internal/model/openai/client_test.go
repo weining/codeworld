@@ -113,6 +113,51 @@ func TestGenerateOmitsAuthorizationWhenAPIKeyIsEmpty(t *testing.T) {
 	}
 }
 
+func TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("Decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"你\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"好\"}}]}\n\n"))
+		_, _ = w.Write([]byte("data: {\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6,\"prompt_tokens_details\":{\"cached_tokens\":1}},\"choices\":[{\"delta\":{}}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient("openai-key", "gpt-4.1", server.URL)
+	var events []model.StreamEvent
+	err := client.Stream(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "hi"}},
+	}, func(event model.StreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream returned error: %v", err)
+	}
+	if requestBody["stream"] != true {
+		t.Fatalf("request stream = %#v, want true", requestBody["stream"])
+	}
+	if len(events) != 4 {
+		t.Fatalf("events = %#v, want two deltas, usage, done", events)
+	}
+	if events[0].Kind != model.StreamEventTextDelta || events[0].Delta != "你" {
+		t.Fatalf("first event = %#v, want delta 你", events[0])
+	}
+	if events[1].Kind != model.StreamEventTextDelta || events[1].Delta != "好" {
+		t.Fatalf("second event = %#v, want delta 好", events[1])
+	}
+	if events[2].Kind != model.StreamEventUsage || events[2].Usage.TotalTokens != 6 || events[2].Usage.CacheTokens != 1 {
+		t.Fatalf("usage event = %#v, want usage", events[2])
+	}
+	if events[3].Kind != model.StreamEventDone || events[3].Message.Content != "你好" {
+		t.Fatalf("done event = %#v, want final message", events[3])
+	}
+}
+
 func TestGenerateParsesToolCallAndLeavesFinalTextEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
