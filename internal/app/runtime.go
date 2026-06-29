@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"codeworld/internal/agent"
+	"codeworld/internal/capability"
 	"codeworld/internal/config"
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/context/summarizer"
@@ -16,7 +17,6 @@ import (
 	"codeworld/internal/model"
 	"codeworld/internal/model/provider"
 	"codeworld/internal/permissions"
-	"codeworld/internal/plugin"
 	"codeworld/internal/repl"
 	"codeworld/internal/session"
 	"codeworld/internal/skill"
@@ -56,9 +56,7 @@ func (r *Runtime) SaveTurn(result agent.TurnResult) error {
 }
 
 func (r *Runtime) Close() error {
-	for _, client := range r.MCPClients {
-		_ = client.Close()
-	}
+	capability.CloseClients(r.MCPClients)
 	return nil
 }
 
@@ -111,14 +109,6 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if indexSummary := loadIndexSummary(ws.Root); indexSummary != "" {
 		systemPrompt += "\n\nWorkspace index:\n" + indexSummary
 	}
-	projectSkills, err := skill.LoadProject(ws.Root)
-	if err != nil {
-		return Runtime{}, err
-	}
-	if skillContext := skill.Context(projectSkills); skillContext != "" {
-		systemPrompt += "\n\n" + skillContext
-	}
-
 	store := session.NewStore(ws.Root)
 	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
 	if sess.Summary != "" {
@@ -138,17 +128,21 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if err != nil {
 		return Runtime{}, err
 	}
-	pluginTools, err := plugin.LoadManifests(ws.Root, cfg.PluginsEnabled)
+	loadedCapabilities, err := capability.Load(ctx, capability.Options{
+		Root:           ws.Root,
+		Workspace:      ws,
+		PluginsEnabled: cfg.PluginsEnabled,
+		MCPServers:     cfg.MCPServers,
+	})
 	if err != nil {
 		return Runtime{}, err
 	}
 	registry := tools.NewDefaultRegistry(ws)
-	for _, spec := range pluginTools {
-		registry.Register(tools.NewPluginTool(ws, spec))
+	for _, tool := range loadedCapabilities.Tools {
+		registry.Register(tool)
 	}
-	mcpClients, err := registerMCPTools(ctx, registry, cfg.MCPServers)
-	if err != nil {
-		return Runtime{}, err
+	if loadedCapabilities.SkillContext != "" {
+		systemPrompt += "\n\n" + loadedCapabilities.SkillContext
 	}
 	diffTool := tools.NewGitDiffTool(ws)
 
@@ -174,8 +168,8 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			CacheTokens:  sess.Usage.CacheTokens,
 			TotalTokens:  sess.Usage.TotalTokens,
 		},
-		Skills:     projectSkills,
-		MCPClients: mcpClients,
+		Skills:     loadedCapabilities.Skills,
+		MCPClients: loadedCapabilities.MCPClients,
 		Runner:     runner,
 		In:         opts.In,
 		Out:        opts.Out,
@@ -185,37 +179,6 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return result.Content, err
 		},
 	}, nil
-}
-
-func registerMCPTools(ctx context.Context, registry *tools.Registry, servers []config.MCPServer) ([]*mcp.Client, error) {
-	clients := make([]*mcp.Client, 0, len(servers))
-	for _, server := range servers {
-		client, err := mcp.StartStdio(ctx, mcp.ServerConfig{Name: server.Name, Command: server.Command, Args: server.Args})
-		if err != nil {
-			closeMCPClients(clients)
-			return nil, err
-		}
-		clients = append(clients, client)
-		if err := client.Initialize(ctx); err != nil {
-			closeMCPClients(clients)
-			return nil, err
-		}
-		mcpTools, err := client.ListTools(ctx)
-		if err != nil {
-			closeMCPClients(clients)
-			return nil, err
-		}
-		for _, spec := range mcpTools {
-			registry.Register(tools.NewMCPTool(server.Name, spec, client))
-		}
-	}
-	return clients, nil
-}
-
-func closeMCPClients(clients []*mcp.Client) {
-	for _, client := range clients {
-		_ = client.Close()
-	}
 }
 
 func loadOrCreateSession(store session.Store, workspaceRoot, provider, modelName string) session.Session {
