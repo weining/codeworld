@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"codeworld/internal/agent"
 	"codeworld/internal/app"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
@@ -19,6 +20,7 @@ type Model struct {
 	rt                *app.Runtime
 	adapter           RunnerAdapter
 	toolEvents        <-chan TranscriptItem
+	turnEvents        <-chan agent.TurnEvent
 	confirmer         *TUIConfirmer
 	pendingPermission *permissions.Request
 	input             textarea.Model
@@ -39,19 +41,24 @@ func NewModel(rt *app.Runtime) Model {
 	vp := viewport.New(80, 20)
 	reporter := NewToolReporter()
 	confirmer := NewTUIConfirmer()
+	turnEvents := make(chan agent.TurnEvent, 64)
 	rt.Runner.Reporter = reporter
 	rt.Runner.Confirmer = confirmer
-	m := Model{rt: rt, adapter: NewRunnerAdapter(rt), toolEvents: reporter.Events(), confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24}
+	m := Model{rt: rt, adapter: NewRunnerAdapter(rt, turnEvents), toolEvents: reporter.Events(), turnEvents: turnEvents, confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24}
 	m.refreshViewport()
 	return m
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.waitToolEvent(), m.waitPermissionRequest())
+	return tea.Batch(textarea.Blink, m.waitToolEvent(), m.waitPermissionRequest(), m.waitTurnEvent())
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case turnEventMsg:
+		m.applyTurnEvent(msg.event)
+		m.refreshViewport()
+		return m, m.waitTurnEvent()
 	case permissionRequestMsg:
 		m.pendingPermission = &msg.request
 		m.items = append(m.items, TranscriptItem{Kind: ItemPermission, Text: FormatPermissionRequest(msg.request)})
@@ -65,8 +72,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.running = false
 		if msg.err != nil {
 			m.items = append(m.items, TranscriptItem{Kind: ItemError, Text: msg.err.Error()})
-		} else {
-			m.items = append(m.items, TranscriptItem{Kind: ItemAssistant, Text: msg.text})
 		}
 		m.refreshViewport()
 		return m, nil
@@ -155,6 +160,26 @@ func (m *Model) refreshViewport() {
 	m.viewport.GotoBottom()
 }
 
+func (m *Model) applyTurnEvent(event agent.TurnEvent) {
+	switch event.Kind {
+	case agent.TurnEventAssistantDelta:
+		if len(m.items) == 0 || m.items[len(m.items)-1].Kind != ItemAssistant {
+			m.items = append(m.items, TranscriptItem{Kind: ItemAssistant})
+		}
+		m.items[len(m.items)-1].Text += event.Text
+	case agent.TurnEventAssistantDone:
+		if len(m.items) == 0 || m.items[len(m.items)-1].Kind != ItemAssistant {
+			m.items = append(m.items, TranscriptItem{Kind: ItemAssistant, Text: event.Text})
+			return
+		}
+		if m.items[len(m.items)-1].Text == "" {
+			m.items[len(m.items)-1].Text = event.Text
+		}
+	case agent.TurnEventError:
+		m.items = append(m.items, TranscriptItem{Kind: ItemError, Text: event.Text})
+	}
+}
+
 func (m Model) waitToolEvent() tea.Cmd {
 	return func() tea.Msg {
 		item, ok := <-m.toolEvents
@@ -162,6 +187,16 @@ func (m Model) waitToolEvent() tea.Cmd {
 			return nil
 		}
 		return toolEventMsg{item: item}
+	}
+}
+
+func (m Model) waitTurnEvent() tea.Cmd {
+	return func() tea.Msg {
+		event, ok := <-m.turnEvents
+		if !ok {
+			return nil
+		}
+		return turnEventMsg{event: event}
 	}
 }
 

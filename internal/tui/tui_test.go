@@ -96,7 +96,7 @@ func TestRunnerAdapterUpdatesRuntimeUsageAndMessages(t *testing.T) {
 		},
 	}
 
-	adapter := NewRunnerAdapter(&rt)
+	adapter := NewRunnerAdapter(&rt, nil)
 	result := adapter.RunTurn(context.Background(), "hello")
 	if result.err != nil {
 		t.Fatalf("RunTurn error: %v", result.err)
@@ -174,5 +174,26 @@ func TestHandleSlashCommandUpdatesModelAndTranscript(t *testing.T) {
 	}
 	if len(next.items) == 0 || !strings.Contains(next.items[len(next.items)-1].Text, "deepseek-v4-flash") {
 		t.Fatalf("items = %#v, want model notice", next.items)
+	}
+}
+
+func TestModelAppliesAssistantDeltaToActiveTranscriptItem(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+	}
+	m := NewModel(&rt)
+
+	nextModel, _ := m.Update(turnEventMsg{event: agent.TurnEvent{Kind: agent.TurnEventAssistantDelta, Text: "你"}})
+	next := nextModel.(Model)
+	nextModel, _ = next.Update(turnEventMsg{event: agent.TurnEvent{Kind: agent.TurnEventAssistantDelta, Text: "好"}})
+	next = nextModel.(Model)
+
+	if len(next.items) != 1 {
+		t.Fatalf("items = %#v, want one assistant item", next.items)
+	}
+	if next.items[0].Kind != ItemAssistant || next.items[0].Text != "你好" {
+		t.Fatalf("assistant item = %#v, want merged streaming text", next.items[0])
 	}
 }

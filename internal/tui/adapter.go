@@ -9,15 +9,26 @@ import (
 )
 
 type RunnerAdapter struct {
-	rt *app.Runtime
+	rt     *app.Runtime
+	events chan<- agent.TurnEvent
 }
 
-func NewRunnerAdapter(rt *app.Runtime) RunnerAdapter {
-	return RunnerAdapter{rt: rt}
+func NewRunnerAdapter(rt *app.Runtime, events chan<- agent.TurnEvent) RunnerAdapter {
+	return RunnerAdapter{rt: rt, events: events}
 }
 
 func (a RunnerAdapter) RunTurn(ctx context.Context, input string) turnDoneMsg {
-	result, err := a.rt.Runner.RunTurn(ctx, a.rt.Messages, input)
+	result, err := a.rt.Runner.RunTurnStream(ctx, a.rt.Messages, input, func(event agent.TurnEvent) error {
+		if a.events == nil {
+			return nil
+		}
+		select {
+		case a.events <- event:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
 	if err != nil {
 		return turnDoneMsg{err: err}
 	}

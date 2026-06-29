@@ -1,6 +1,9 @@
 package tui
 
-import "codeworld/internal/permissions"
+import (
+	"codeworld/internal/agent"
+	"codeworld/internal/permissions"
+)
 
 type ItemKind string
 
@@ -30,4 +33,8 @@ type toolEventMsg struct {
 
 type permissionRequestMsg struct {
 	request permissions.Request
+}
+
+type turnEventMsg struct {
+	event agent.TurnEvent
 }
