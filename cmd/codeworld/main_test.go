@@ -31,6 +31,20 @@ func TestRunShowsHelpWithoutAPIKey(t *testing.T) {
 	}
 }
 
+func TestReplCommandShowsHelpWithoutAPIKey(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := runWithIO(strings.NewReader("/help\n/exit\n"), &out, &stderr, []string{"repl"})
+	if err != nil {
+		t.Fatalf("runWithIO returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), "/help /model /status /diff /clear /exit") {
+		t.Fatalf("stdout = %q, want repl help", out.String())
+	}
+}
+
 func TestRunUsesRestoredSessionModel(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	root := t.TempDir()

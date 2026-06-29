@@ -29,6 +29,12 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 	}
 	if len(args) > 0 {
 		switch args[0] {
+		case "repl":
+			app, err := newAppWithIO(in, out, stderr, root)
+			if err != nil {
+				return err
+			}
+			return app.Run(context.Background())
 		case "run":
 			if len(args) < 2 {
 				return fmt.Errorf("usage: codeworld run <task>")
@@ -67,6 +73,13 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 		default:
 			return fmt.Errorf("unknown command: %s", args[0])
 		}
+	}
+	if shouldShowTerminalTitle(out) {
+		rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
+		if err != nil {
+			return err
+		}
+		return tui.Run(context.Background(), &rt)
 	}
 	app, err := newAppWithIO(in, out, stderr, root)
 	if err != nil {
