@@ -28,6 +28,7 @@ type Model struct {
 	items             []TranscriptItem
 	width             int
 	height            int
+	theme             string
 	running           bool
 	quitting          bool
 }
@@ -44,7 +45,7 @@ func NewModel(rt *app.Runtime) Model {
 	turnEvents := make(chan agent.TurnEvent, 64)
 	rt.Runner.Reporter = reporter
 	rt.Runner.Confirmer = confirmer
-	m := Model{rt: rt, adapter: NewRunnerAdapter(rt, turnEvents), toolEvents: reporter.Events(), turnEvents: turnEvents, confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24}
+	m := Model{rt: rt, adapter: NewRunnerAdapter(rt, turnEvents), toolEvents: reporter.Events(), turnEvents: turnEvents, confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24, theme: "system"}
 	m.refreshViewport()
 	return m
 }
@@ -109,6 +110,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "pgup":
+			m.viewport.PageUp()
+			return m, nil
+		case "pgdown":
+			m.viewport.PageDown()
+			return m, nil
+		case "ctrl+u":
+			m.viewport.HalfPageUp()
+			return m, nil
+		case "ctrl+d":
+			m.viewport.HalfPageDown()
+			return m, nil
 		case "enter":
 			text := strings.TrimSpace(m.input.Value())
 			if text != "" {

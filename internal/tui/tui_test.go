@@ -6,8 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"codeworld/internal/agent"
 	"codeworld/internal/app"
+	"codeworld/internal/config"
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
@@ -24,9 +27,10 @@ func TestStatusLineShowsTokenBreakdown(t *testing.T) {
 		Messages:  5,
 		Approvals: 2,
 		Usage:     model.Usage{InputTokens: 10, OutputTokens: 3, CacheTokens: 4, TotalTokens: 13},
+		Git:       "dirty",
 	})
 
-	for _, want := range []string{"workspace=repo", "provider=deepseek", "model=deepseek-v4-pro", "messages=5", "approvals=2", "input=10", "output=3", "cache=4", "total=13"} {
+	for _, want := range []string{"workspace=repo", "provider=deepseek", "model=deepseek-v4-pro", "git=dirty", "messages=5", "approvals=2", "input=10", "output=3", "cache=4", "total=13"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("status line missing %q in %q", want, line)
 		}
@@ -196,6 +200,68 @@ func TestHandleSlashCommandListsSkills(t *testing.T) {
 	}
 }
 
+func TestHandleAdvancedSlashCommands(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Config:    config.Config{MCPServers: []config.MCPServer{{Name: "demo", Command: "node", Args: []string{"server.js"}}}},
+		Workspace: workspace.Workspace{Root: root},
+		Session: session.Session{
+			Provider:  "deepseek",
+			Model:     "deepseek-v4-pro",
+			Approvals: []session.Approval{{Kind: "shell", Command: "mise exec -- go test ./..."}},
+		},
+		Skills: []skill.Skill{{Name: "reviewer", Description: "Review Go changes."}},
+	}
+	m := NewModel(&rt)
+
+	for _, cmd := range []string{"/permissions", "/mcp", "/context", "/theme dark", "/repl"} {
+		var quit bool
+		m, quit = mustHandleCommand(t, m, cmd)
+		if quit {
+			t.Fatalf("%s requested quit", cmd)
+		}
+	}
+	all := transcriptText(m.items)
+	for _, want := range []string{"mise exec -- go test", "demo node server.js", "skills=1", "theme=dark", "restart with: codeworld repl"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("transcript missing %q in:\n%s", want, all)
+		}
+	}
+	if m.theme != "dark" {
+		t.Fatalf("theme = %q, want dark", m.theme)
+	}
+}
+
+func TestModelScrollKeysMoveViewport(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+	}
+	m := NewModel(&rt)
+	m.viewport.Height = 4
+	for i := 0; i < 20; i++ {
+		m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: "line"})
+	}
+	m.refreshViewport()
+	bottom := m.viewport.YOffset
+	if bottom == 0 {
+		t.Fatalf("viewport did not scroll to bottom")
+	}
+
+	nextModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	next := nextModel.(Model)
+	if next.viewport.YOffset >= bottom {
+		t.Fatalf("PageUp YOffset = %d, want less than %d", next.viewport.YOffset, bottom)
+	}
+	afterUp := next.viewport.YOffset
+	nextModel, _ = next.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	next = nextModel.(Model)
+	if next.viewport.YOffset <= afterUp {
+		t.Fatalf("Ctrl+D YOffset = %d, want greater than %d", next.viewport.YOffset, afterUp)
+	}
+}
+
 func TestModelAppliesAssistantDeltaToActiveTranscriptItem(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -215,4 +281,18 @@ func TestModelAppliesAssistantDeltaToActiveTranscriptItem(t *testing.T) {
 	if next.items[0].Kind != ItemAssistant || next.items[0].Text != "你好" {
 		t.Fatalf("assistant item = %#v, want merged streaming text", next.items[0])
 	}
+}
+
+func mustHandleCommand(t *testing.T, m Model, cmd string) (Model, bool) {
+	t.Helper()
+	next, quit := m.handleSlashCommand(context.Background(), cmd)
+	return next, quit
+}
+
+func transcriptText(items []TranscriptItem) string {
+	lines := make([]string, 0, len(items))
+	for _, item := range items {
+		lines = append(lines, item.Text)
+	}
+	return strings.Join(lines, "\n")
 }

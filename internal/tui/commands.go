@@ -12,7 +12,7 @@ import (
 func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool) {
 	switch {
 	case line == "/help":
-		m.appendNotice("/help /model /status /diff /skills /clear /exit")
+		m.appendNotice("/help /model /status /diff /permissions /mcp /skills /context /theme /repl /clear /exit")
 	case line == "/model":
 		m.appendNotice(m.rt.Session.Model)
 	case strings.HasPrefix(line, "/model "):
@@ -42,6 +42,30 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 			return m, false
 		}
 		m.items = append(m.items, TranscriptItem{Kind: ItemCommand, Text: diff})
+	case line == "/permissions":
+		if len(m.rt.Session.Approvals) == 0 {
+			m.appendNotice("no session approvals")
+			return m, false
+		}
+		lines := make([]string, 0, len(m.rt.Session.Approvals))
+		for _, approval := range m.rt.Session.Approvals {
+			if approval.Command == "" {
+				lines = append(lines, approval.Kind)
+				continue
+			}
+			lines = append(lines, approval.Kind+" "+approval.Command)
+		}
+		m.appendNotice(strings.Join(lines, "\n"))
+	case line == "/mcp":
+		if len(m.rt.Config.MCPServers) == 0 {
+			m.appendNotice("no mcp servers configured")
+			return m, false
+		}
+		lines := make([]string, 0, len(m.rt.Config.MCPServers))
+		for _, server := range m.rt.Config.MCPServers {
+			lines = append(lines, strings.TrimSpace(server.Name+" "+server.Command+" "+strings.Join(server.Args, " ")))
+		}
+		m.appendNotice(strings.Join(lines, "\n"))
 	case line == "/skills":
 		if len(m.rt.Skills) == 0 {
 			m.appendNotice("no project skills loaded")
@@ -56,6 +80,23 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 			lines = append(lines, skill.Name+" - "+skill.Description)
 		}
 		m.appendNotice(strings.Join(lines, "\n"))
+	case line == "/context":
+		m.appendNotice(fmt.Sprintf("messages=%d skills=%d mcp_servers=%d context_tools=3", len(m.rt.Messages), len(m.rt.Skills), len(m.rt.Config.MCPServers)))
+	case line == "/repl":
+		m.appendNotice("restart with: codeworld repl")
+	case strings.HasPrefix(line, "/theme"):
+		next := strings.TrimSpace(strings.TrimPrefix(line, "/theme"))
+		if next == "" {
+			m.appendNotice("theme=" + m.theme)
+			return m, false
+		}
+		switch next {
+		case "system", "dark", "light":
+			m.theme = next
+			m.appendNotice("theme=" + next)
+		default:
+			m.appendError("unknown theme: " + next)
+		}
 	case line == "/clear":
 		m.items = nil
 		m.rt.Messages = nil

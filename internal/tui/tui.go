@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -21,6 +23,7 @@ type Status struct {
 	Messages  int
 	Approvals int
 	Usage     model.Usage
+	Git       string
 	Running   bool
 }
 
@@ -32,6 +35,7 @@ func RuntimeStatus(rt *app.Runtime) Status {
 		Messages:  len(rt.Messages),
 		Approvals: len(rt.Session.Approvals),
 		Usage:     rt.Usage,
+		Git:       gitState(rt.Workspace.Root),
 	}
 }
 
@@ -40,10 +44,11 @@ func StatusLine(status Status) string {
 	if status.Running {
 		running = " running"
 	}
-	return fmt.Sprintf("workspace=%s provider=%s model=%s messages=%d approvals=%d tokens input=%d output=%d cache=%d total=%d%s",
+	return fmt.Sprintf("workspace=%s provider=%s model=%s git=%s messages=%d approvals=%d tokens input=%d output=%d cache=%d total=%d%s",
 		status.Workspace,
 		status.Provider,
 		status.Model,
+		status.Git,
 		status.Messages,
 		status.Approvals,
 		status.Usage.InputTokens,
@@ -52,6 +57,21 @@ func StatusLine(status Status) string {
 		status.Usage.TotalTokens,
 		running,
 	)
+}
+
+func gitState(root string) string {
+	if root == "" {
+		return "none"
+	}
+	cmd := exec.Command("git", "-C", root, "status", "--short")
+	out, err := cmd.Output()
+	if err != nil {
+		return "none"
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		return "clean"
+	}
+	return "dirty"
 }
 
 func Run(ctx context.Context, rt *app.Runtime) error {
