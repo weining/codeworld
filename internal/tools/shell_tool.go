@@ -775,9 +775,16 @@ func findExecRisk(fields []string) permissions.Risk {
 
 func hasShellWriteRedirection(command string) bool {
 	for _, token := range strings.Fields(command) {
+		if isFDRedirect(token) {
+			continue
+		}
 		if strings.HasPrefix(token, ">") || strings.Contains(token, ">") || strings.Contains(token, "2>") {
 			return true
 		}
 	}
 	return false
+}
+
+func isFDRedirect(token string) bool {
+	return token == "2>&1" || token == "1>&2" || token == ">&2" || token == "&>-" || strings.HasPrefix(token, "2>&") || strings.HasPrefix(token, "1>&")
 }

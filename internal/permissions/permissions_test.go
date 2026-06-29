@@ -45,3 +45,36 @@ func TestConservativePolicyDeniesOutsideWorkspace(t *testing.T) {
 		t.Fatalf("Kind = %q, want deny", decision.Kind)
 	}
 }
+
+func TestAutoPolicyAllowsWorkspaceActionsAndAsksForHighRiskShell(t *testing.T) {
+	policy := AutoPolicy{}
+	allowCases := []Request{
+		{Action: ActionPatch, Risk: RiskWrite, Target: "patch"},
+		{Action: ActionWrite, Risk: RiskWrite, Target: "main.go"},
+		{Action: ActionShell, Risk: RiskExecute, Target: "go test ./..."},
+		{Action: ActionShell, Risk: RiskWrite, Target: "go mod tidy"},
+	}
+	for _, req := range allowCases {
+		decision, err := policy.Check(context.Background(), req)
+		if err != nil {
+			t.Fatalf("Check returned error: %v", err)
+		}
+		if decision.Kind != DecisionAllow {
+			t.Fatalf("Kind for %s/%s = %q, want allow", req.Action, req.Risk, decision.Kind)
+		}
+	}
+
+	askCases := []Request{
+		{Action: ActionShell, Risk: RiskDestructive, Target: "rm -rf ."},
+		{Action: ActionShell, Risk: RiskNetwork, Target: "curl https://example.com"},
+	}
+	for _, req := range askCases {
+		decision, err := policy.Check(context.Background(), req)
+		if err != nil {
+			t.Fatalf("Check returned error: %v", err)
+		}
+		if decision.Kind != DecisionAsk {
+			t.Fatalf("Kind for %s = %q, want ask", req.Target, decision.Kind)
+		}
+	}
+}

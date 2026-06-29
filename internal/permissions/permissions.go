@@ -61,3 +61,19 @@ func (ConservativePolicy) Check(ctx context.Context, req Request) (Decision, err
 	}
 	return Decision{Kind: DecisionAsk, Reason: "action requires confirmation"}, nil
 }
+
+type AutoPolicy struct{}
+
+func (AutoPolicy) Check(ctx context.Context, req Request) (Decision, error) {
+	if err := ctx.Err(); err != nil {
+		return Decision{}, err
+	}
+	switch req.Risk {
+	case RiskOutsideWorkspace:
+		return Decision{Kind: DecisionDeny, Reason: "path is outside the workspace"}, nil
+	case RiskDestructive, RiskNetwork:
+		return Decision{Kind: DecisionAsk, Reason: "high-risk action requires confirmation"}, nil
+	default:
+		return Decision{Kind: DecisionAllow, Reason: "workspace action allowed by auto policy"}, nil
+	}
+}

@@ -775,6 +775,7 @@ func TestShellPermissionRequestClassifiesCommonRisks(t *testing.T) {
 		risk    permissions.Risk
 	}{
 		{command: "cat notes.txt", risk: permissions.RiskRead},
+		{command: "go vet ./... 2>&1", risk: permissions.RiskExecute},
 		{command: "touch notes.txt", risk: permissions.RiskWrite},
 		{command: "mkdir notes", risk: permissions.RiskWrite},
 		{command: "printf hello > notes.txt", risk: permissions.RiskWrite},

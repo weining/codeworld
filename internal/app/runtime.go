@@ -134,7 +134,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	runner := agent.Runner{
 		Model:        client,
 		Tools:        registry,
-		Policy:       permissions.ConservativePolicy{},
+		Policy:       permissions.AutoPolicy{},
 		Confirmer:    confirmer,
 		MaxSteps:     cfg.MaxSteps,
 		ModelName:    modelName,
