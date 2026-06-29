@@ -11,6 +11,7 @@ import (
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
+	"codeworld/internal/skill"
 	"codeworld/internal/tools"
 	"codeworld/internal/workspace"
 )
@@ -174,6 +175,24 @@ func TestHandleSlashCommandUpdatesModelAndTranscript(t *testing.T) {
 	}
 	if len(next.items) == 0 || !strings.Contains(next.items[len(next.items)-1].Text, "deepseek-v4-flash") {
 		t.Fatalf("items = %#v, want model notice", next.items)
+	}
+}
+
+func TestHandleSlashCommandListsSkills(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+		Skills:    []skill.Skill{{Name: "reviewer", Description: "Review Go changes."}},
+	}
+	m := NewModel(&rt)
+
+	next, quit := m.handleSlashCommand(context.Background(), "/skills")
+	if quit {
+		t.Fatalf("skills command requested quit")
+	}
+	if len(next.items) == 0 || !strings.Contains(next.items[len(next.items)-1].Text, "reviewer") || !strings.Contains(next.items[len(next.items)-1].Text, "Review Go changes.") {
+		t.Fatalf("items = %#v, want skills list", next.items)
 	}
 }
 

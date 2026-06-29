@@ -163,6 +163,31 @@ func TestNewRuntimeRegistersEnabledPluginTools(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeIncludesProjectSkillsInSystemPrompt(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+	writeFile(t, filepath.Join(root, ".codeworld", "skills", "reviewer", "SKILL.md"), `---
+name: reviewer
+description: Review Go changes.
+---
+
+Always check tests before completion.
+`)
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	if !strings.Contains(rt.Runner.SystemPrompt, "Project skills:") || !strings.Contains(rt.Runner.SystemPrompt, "Always check tests before completion.") {
+		t.Fatalf("system prompt missing project skills:\n%s", rt.Runner.SystemPrompt)
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

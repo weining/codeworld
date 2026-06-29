@@ -18,6 +18,7 @@ import (
 	"codeworld/internal/plugin"
 	"codeworld/internal/repl"
 	"codeworld/internal/session"
+	"codeworld/internal/skill"
 	"codeworld/internal/tools"
 	"codeworld/internal/workspace"
 )
@@ -36,6 +37,7 @@ type Runtime struct {
 	Session   session.Session
 	Messages  []model.Message
 	Usage     model.Usage
+	Skills    []skill.Skill
 	Runner    agent.Runner
 	Diff      func(context.Context) (string, error)
 	In        io.Reader
@@ -100,6 +102,13 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if indexSummary := loadIndexSummary(ws.Root); indexSummary != "" {
 		systemPrompt += "\n\nWorkspace index:\n" + indexSummary
 	}
+	projectSkills, err := skill.LoadProject(ws.Root)
+	if err != nil {
+		return Runtime{}, err
+	}
+	if skillContext := skill.Context(projectSkills); skillContext != "" {
+		systemPrompt += "\n\n" + skillContext
+	}
 
 	store := session.NewStore(ws.Root)
 	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
@@ -152,6 +161,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			CacheTokens:  sess.Usage.CacheTokens,
 			TotalTokens:  sess.Usage.TotalTokens,
 		},
+		Skills: projectSkills,
 		Runner: runner,
 		In:     opts.In,
 		Out:    opts.Out,

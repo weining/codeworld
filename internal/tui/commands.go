@@ -12,7 +12,7 @@ import (
 func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool) {
 	switch {
 	case line == "/help":
-		m.appendNotice("/help /model /status /diff /clear /exit")
+		m.appendNotice("/help /model /status /diff /skills /clear /exit")
 	case line == "/model":
 		m.appendNotice(m.rt.Session.Model)
 	case strings.HasPrefix(line, "/model "):
@@ -42,6 +42,20 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 			return m, false
 		}
 		m.items = append(m.items, TranscriptItem{Kind: ItemCommand, Text: diff})
+	case line == "/skills":
+		if len(m.rt.Skills) == 0 {
+			m.appendNotice("no project skills loaded")
+			return m, false
+		}
+		lines := make([]string, 0, len(m.rt.Skills))
+		for _, skill := range m.rt.Skills {
+			if skill.Description == "" {
+				lines = append(lines, skill.Name)
+				continue
+			}
+			lines = append(lines, skill.Name+" - "+skill.Description)
+		}
+		m.appendNotice(strings.Join(lines, "\n"))
 	case line == "/clear":
 		m.items = nil
 		m.rt.Messages = nil
