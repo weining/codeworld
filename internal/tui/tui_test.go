@@ -111,3 +111,20 @@ func TestRunnerAdapterUpdatesRuntimeUsageAndMessages(t *testing.T) {
 		t.Fatalf("runtime messages were not updated")
 	}
 }
+
+func TestToolReporterAppendsToolEvents(t *testing.T) {
+	reporter := NewToolReporter()
+	reporter.ReportTool(context.Background(), agent.ToolEvent{
+		Status: agent.ToolEventStart,
+		Name:   "shell",
+		Request: permissions.Request{
+			Target: "mise exec -- go test ./...",
+			Risk:   permissions.RiskExecute,
+		},
+	})
+
+	item := <-reporter.Events()
+	if item.Kind != ItemTool || !strings.Contains(item.Text, "shell start") || !strings.Contains(item.Text, "go test") {
+		t.Fatalf("item = %#v, want tool start transcript item", item)
+	}
+}

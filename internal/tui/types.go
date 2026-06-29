@@ -21,3 +21,7 @@ type turnDoneMsg struct {
 	text string
 	err  error
 }
+
+type toolEventMsg struct {
+	item TranscriptItem
+}

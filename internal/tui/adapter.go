@@ -2,7 +2,9 @@ package tui
 
 import (
 	"context"
+	"fmt"
 
+	"codeworld/internal/agent"
 	"codeworld/internal/app"
 )
 
@@ -26,4 +28,27 @@ func (a RunnerAdapter) RunTurn(ctx context.Context, input string) turnDoneMsg {
 		return turnDoneMsg{text: result.FinalText, err: err}
 	}
 	return turnDoneMsg{text: result.FinalText}
+}
+
+type ToolReporter struct {
+	events chan TranscriptItem
+}
+
+func NewToolReporter() *ToolReporter {
+	return &ToolReporter{events: make(chan TranscriptItem, 32)}
+}
+
+func (r *ToolReporter) Events() <-chan TranscriptItem {
+	return r.events
+}
+
+func (r *ToolReporter) ReportTool(ctx context.Context, event agent.ToolEvent) {
+	text := fmt.Sprintf("%s %s target=%s risk=%s", event.Name, event.Status, event.Request.Target, event.Request.Risk)
+	if event.Error != "" {
+		text += " error=" + event.Error
+	}
+	select {
+	case r.events <- TranscriptItem{Kind: ItemTool, Text: text}:
+	case <-ctx.Done():
+	}
 }
