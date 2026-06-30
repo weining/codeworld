@@ -1,0 +1,22 @@
+# Local runtime state
+.codeworld/
+
+# IDE/editor state
+.idea/
+.vscode/
+
+# Local binaries and build outputs
+codeworld
+*.test
+*.out
+bin/
+dist/
+build/
+
+# Coverage and profiling output
+coverage.out
+*.coverprofile
+*.prof
+
+# OS files
+.DS_Store
