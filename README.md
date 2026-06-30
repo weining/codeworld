@@ -14,11 +14,11 @@ The current version focuses on:
 
 ## Install
 
-This project uses Go through `mise`.
+This project requires Go 1.26.4 or newer.
 
 ```bash
-mise exec -- go test ./...
-mise exec -- go install ./cmd/codeworld
+go test ./...
+go install ./cmd/codeworld
 ```
 
 Make sure the Go bin directory is on your `PATH`.
@@ -76,8 +76,8 @@ codeworld index
 If you are running from source:
 
 ```bash
-mise exec -- go run ./cmd/codeworld
-mise exec -- go run ./cmd/codeworld run "list the Go packages"
+go run ./cmd/codeworld
+go run ./cmd/codeworld run "list the Go packages"
 ```
 
 ## TUI Commands
@@ -212,17 +212,17 @@ Model call logs keep compact `body_json` records and redact API keys.
 Run the full test suite:
 
 ```bash
-mise exec -- go test -count=1 ./...
+go test -count=1 ./...
 ```
 
 Build:
 
 ```bash
-mise exec -- go build -o /private/tmp/codeworld-build ./cmd/codeworld
+go build -o /private/tmp/codeworld-build ./cmd/codeworld
 ```
 
 Smoke-test the TUI path without opening an interactive terminal:
 
 ```bash
-printf '/exit\n' | mise exec -- go run ./cmd/codeworld tui
+printf '/exit\n' | go run ./cmd/codeworld tui
 ```
