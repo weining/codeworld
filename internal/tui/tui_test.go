@@ -225,6 +225,34 @@ func TestHandleSlashCommandShowsEmptySkillsAndMCPNotices(t *testing.T) {
 	}
 }
 
+func TestUpdateShowsSlashCommandAndResultImmediately(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+	}
+	m := NewModel(&rt)
+	m.input.SetValue("/skills")
+
+	nextModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatalf("slash command returned async command")
+	}
+	next := nextModel.(Model)
+	all := transcriptText(next.items)
+	for _, want := range []string{"/skills", "no project skills loaded"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("transcript missing %q in:\n%s", want, all)
+		}
+	}
+	if strings.TrimSpace(next.input.Value()) != "" {
+		t.Fatalf("input = %q, want cleared", next.input.Value())
+	}
+	if !strings.Contains(next.View(), "no project skills loaded") {
+		t.Fatalf("view did not render slash command result:\n%s", next.View())
+	}
+}
+
 func TestHandleAdvancedSlashCommands(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{

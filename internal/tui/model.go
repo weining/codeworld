@@ -127,12 +127,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text := strings.TrimSpace(m.input.Value())
 			if text != "" {
 				if strings.HasPrefix(text, "/") {
+					m.items = append(m.items, TranscriptItem{Kind: ItemUser, Text: text})
 					next, quit := m.handleSlashCommand(context.Background(), text)
 					if quit {
 						next.quitting = true
 						return next, tea.Quit
 					}
 					next.input.Reset()
+					next.refreshViewport()
 					return next, nil
 				}
 				m.items = append(m.items, TranscriptItem{Kind: ItemUser, Text: text})
