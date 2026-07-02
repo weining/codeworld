@@ -14,6 +14,7 @@ import (
 	contextgraph "codeworld/internal/context/graph"
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/context/summarizer"
+	"codeworld/internal/instructions"
 	"codeworld/internal/mcp"
 	"codeworld/internal/model"
 	"codeworld/internal/model/provider"
@@ -112,6 +113,13 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}
 	if graphSummary := loadContextGraphSummary(ws.Root, cfg.IndexMaxFileBytes); graphSummary != "" {
 		systemPrompt += "\n\nWorkspace context graph:\n" + graphSummary
+	}
+	projectInstructions, err := instructions.Load(ws.Root, instructions.Options{MaxBytes: instructions.DefaultMaxBytes})
+	if err != nil {
+		return Runtime{}, err
+	}
+	if projectInstructions.Text != "" {
+		systemPrompt += "\n\nProject instructions:\n" + projectInstructions.Text
 	}
 	store := session.NewStore(ws.Root)
 	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)

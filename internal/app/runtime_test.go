@@ -127,6 +127,25 @@ func RunServer() {}
 	}
 }
 
+func TestNewRuntimeIncludesAgentsInstructionsInSystemPrompt(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "AGENTS.md"), "Always run focused tests.")
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	if !strings.Contains(rt.Runner.SystemPrompt, "Project instructions:") || !strings.Contains(rt.Runner.SystemPrompt, "Always run focused tests.") {
+		t.Fatalf("system prompt missing AGENTS instructions:\n%s", rt.Runner.SystemPrompt)
+	}
+}
+
 func TestNewRuntimeIncludesSessionSummaryInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
