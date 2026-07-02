@@ -13,6 +13,7 @@ type Skill struct {
 	Description string
 	Content     string
 	Path        string
+	Source      string
 }
 
 func LoadProject(root string) ([]Skill, error) {
@@ -38,6 +39,7 @@ func LoadProject(root string) ([]Skill, error) {
 			return nil, err
 		}
 		skill := parse(entry.Name(), path, string(data))
+		skill.Source = "project"
 		if skill.Name == "" {
 			continue
 		}
@@ -45,6 +47,16 @@ func LoadProject(root string) ([]Skill, error) {
 	}
 	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
 	return skills, nil
+}
+
+func LoadFile(name, path, source string) (Skill, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Skill{}, err
+	}
+	loaded := parse(name, path, string(data))
+	loaded.Source = source
+	return loaded, nil
 }
 
 func Context(skills []Skill) string {

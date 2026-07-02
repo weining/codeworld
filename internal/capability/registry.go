@@ -3,6 +3,7 @@ package capability
 import (
 	"context"
 
+	"codeworld/internal/codexplugin"
 	"codeworld/internal/config"
 	"codeworld/internal/mcp"
 	"codeworld/internal/plugin"
@@ -32,7 +33,17 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 		return Loaded{}, err
 	}
 	loaded.Skills = projectSkills
-	loaded.SkillContext = skill.Context(projectSkills)
+
+	codexPlugins, err := codexplugin.LoadProject(opts.Root)
+	if err != nil {
+		return Loaded{}, err
+	}
+	mcpServers := append([]config.MCPServer{}, opts.MCPServers...)
+	for _, plugin := range codexPlugins {
+		loaded.Skills = append(loaded.Skills, plugin.Skills...)
+		mcpServers = append(mcpServers, plugin.MCPServers...)
+	}
+	loaded.SkillContext = skill.Context(loaded.Skills)
 
 	pluginTools, err := plugin.LoadManifests(opts.Root, opts.PluginsEnabled)
 	if err != nil {
@@ -42,7 +53,7 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 		loaded.Tools = append(loaded.Tools, tools.NewPluginTool(opts.Workspace, spec))
 	}
 
-	mcpTools, clients, err := loadMCPTools(ctx, opts.MCPServers)
+	mcpTools, clients, err := loadMCPTools(ctx, mcpServers)
 	if err != nil {
 		CloseClients(loaded.MCPClients)
 		return Loaded{}, err
