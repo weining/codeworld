@@ -257,8 +257,14 @@ Always check tests before completion.
 	if err != nil {
 		t.Fatalf("NewRuntime returned error: %v", err)
 	}
-	if !strings.Contains(rt.Runner.SystemPrompt, "Project skills:") || !strings.Contains(rt.Runner.SystemPrompt, "Always check tests before completion.") {
-		t.Fatalf("system prompt missing project skills:\n%s", rt.Runner.SystemPrompt)
+	if !strings.Contains(rt.Runner.SystemPrompt, "Available skills:") || !strings.Contains(rt.Runner.SystemPrompt, "reviewer") {
+		t.Fatalf("system prompt missing skill index:\n%s", rt.Runner.SystemPrompt)
+	}
+	if strings.Contains(rt.Runner.SystemPrompt, "Always check tests before completion.") {
+		t.Fatalf("system prompt included full skill body:\n%s", rt.Runner.SystemPrompt)
+	}
+	if _, ok := rt.Runner.Tools.Get("skill_open"); !ok {
+		t.Fatalf("skill_open tool was not registered")
 	}
 }
 

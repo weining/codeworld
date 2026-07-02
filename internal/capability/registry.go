@@ -43,7 +43,7 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 		loaded.Skills = append(loaded.Skills, plugin.Skills...)
 		mcpServers = append(mcpServers, plugin.MCPServers...)
 	}
-	loaded.SkillContext = skill.Context(loaded.Skills)
+	loaded.SkillContext = skill.Index(loaded.Skills)
 
 	pluginTools, err := plugin.LoadManifests(opts.Root, opts.PluginsEnabled)
 	if err != nil {

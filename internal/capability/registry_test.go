@@ -49,8 +49,11 @@ Run tests before completion.
 	if len(loaded.Skills) != 1 || loaded.Skills[0].Name != "reviewer" {
 		t.Fatalf("skills = %#v, want reviewer", loaded.Skills)
 	}
-	if !strings.Contains(loaded.SkillContext, "Project skills:") || !strings.Contains(loaded.SkillContext, "Run tests before completion.") {
-		t.Fatalf("skill context = %q, want loaded skill text", loaded.SkillContext)
+	if !strings.Contains(loaded.SkillContext, "Available skills:") || !strings.Contains(loaded.SkillContext, "reviewer") {
+		t.Fatalf("skill context = %q, want skill index", loaded.SkillContext)
+	}
+	if strings.Contains(loaded.SkillContext, "Run tests before completion.") {
+		t.Fatalf("skill context = %q, should not include full skill body", loaded.SkillContext)
 	}
 }
 

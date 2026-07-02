@@ -48,6 +48,24 @@ func TestContextIncludesProjectSkills(t *testing.T) {
 	}
 }
 
+func TestIndexListsSkillsWithoutFullContent(t *testing.T) {
+	skills := []Skill{{
+		Name:        "reviewer",
+		Description: "Review Go changes.",
+		Path:        "/repo/.codeworld/skills/reviewer/SKILL.md",
+		Source:      "project",
+		Content:     "secret long workflow body",
+	}}
+
+	index := Index(skills)
+	if !strings.Contains(index, "reviewer") || !strings.Contains(index, "Review Go changes.") || !strings.Contains(index, "project") {
+		t.Fatalf("index = %q, want skill metadata", index)
+	}
+	if strings.Contains(index, "secret long workflow body") {
+		t.Fatalf("index = %q, should not include full skill content", index)
+	}
+}
+
 func TestLoadProjectSkipsMissingSkillsDirectory(t *testing.T) {
 	skills, err := LoadProject(t.TempDir())
 	if err != nil {

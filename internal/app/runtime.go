@@ -153,6 +153,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	for _, tool := range loadedCapabilities.Tools {
 		registry.Register(tool)
 	}
+	if len(loadedCapabilities.Skills) > 0 {
+		registry.Register(tools.NewSkillOpenTool(loadedCapabilities.Skills))
+	}
 	if loadedCapabilities.SkillContext != "" {
 		systemPrompt += "\n\n" + loadedCapabilities.SkillContext
 	}

@@ -75,6 +75,26 @@ func Context(skills []Skill) string {
 	return strings.TrimSpace(b.String())
 }
 
+func Index(skills []Skill) string {
+	if len(skills) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Available skills:\n")
+	for _, skill := range skills {
+		source := skill.Source
+		if source == "" {
+			source = "unknown"
+		}
+		if skill.Description != "" {
+			fmt.Fprintf(&b, "- %s: %s (source=%s path=%s)\n", skill.Name, skill.Description, source, filepath.ToSlash(skill.Path))
+			continue
+		}
+		fmt.Fprintf(&b, "- %s (source=%s path=%s)\n", skill.Name, source, filepath.ToSlash(skill.Path))
+	}
+	return strings.TrimSpace(b.String())
+}
+
 func parse(dirName, path, content string) Skill {
 	skill := Skill{Name: dirName, Content: content, Path: path}
 	lines := strings.Split(content, "\n")
