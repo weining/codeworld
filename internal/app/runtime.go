@@ -129,7 +129,8 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if sess.Summary != "" {
 		systemPrompt += "\n\nConversation summary:\n" + sess.Summary
 	}
-	messages := sessionMessagesToModel(sess.Messages)
+	messages := sanitizeModelMessages(sessionMessagesToModel(sess.Messages))
+	sess.Messages = modelMessagesToSession(messages)
 	modelName := firstNonEmpty(sess.Model, cfg.Model)
 	// provider client 负责隐藏各家 API 差异；Runtime 只关心统一的 Generate/Stream 接口。
 	client, err := provider.NewClient(provider.Config{
@@ -249,14 +250,74 @@ func historyMessages(messages []model.Message) []model.Message {
 }
 
 func modelMessagesToSession(messages []model.Message) []session.Message {
-	out := make([]session.Message, 0, len(messages))
-	for _, msg := range messages {
+	sanitized := sanitizeModelMessages(messages)
+	out := make([]session.Message, 0, len(sanitized))
+	for _, msg := range sanitized {
 		out = append(out, session.Message{
 			Role:       string(msg.Role),
 			Content:    msg.Content,
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  modelToolCallsToSession(msg.ToolCalls),
 		})
+	}
+	return out
+}
+
+func sanitizeModelMessages(messages []model.Message) []model.Message {
+	out := make([]model.Message, 0, len(messages))
+	for i := 0; i < len(messages); i++ {
+		msg := messages[i]
+		if msg.Role == model.RoleTool {
+			continue
+		}
+		if msg.Role != model.RoleAssistant || len(msg.ToolCalls) == 0 {
+			out = append(out, msg)
+			continue
+		}
+
+		required := map[string]bool{}
+		for _, call := range msg.ToolCalls {
+			if call.ID != "" {
+				required[call.ID] = true
+			}
+		}
+		if len(required) == 0 {
+			out = append(out, msg)
+			continue
+		}
+
+		group := []model.Message{msg}
+		j := i + 1
+		for ; j < len(messages); j++ {
+			next := messages[j]
+			if next.Role != model.RoleTool {
+				break
+			}
+			if next.ToolCallID == "" || !required[next.ToolCallID] {
+				break
+			}
+			delete(required, next.ToolCallID)
+			group = append(group, next)
+			if len(required) == 0 {
+				j++
+				break
+			}
+		}
+		if len(required) == 0 {
+			out = append(out, group...)
+			i = j - 1
+			continue
+		}
+		// 历史里不完整的工具调用组会被 provider 拒绝；丢弃整组，保留后续普通消息。
+		for i+1 < len(messages) && messages[i+1].Role == model.RoleTool {
+			i++
+			if _, ok := required[messages[i].ToolCallID]; ok {
+				delete(required, messages[i].ToolCallID)
+				if len(required) == 0 {
+					break
+				}
+			}
+		}
 	}
 	return out
 }

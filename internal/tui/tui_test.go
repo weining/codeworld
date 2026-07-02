@@ -200,6 +200,31 @@ func TestHandleSlashCommandListsSkills(t *testing.T) {
 	}
 }
 
+func TestHandleSlashCommandShowsEmptySkillsAndMCPNotices(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+	}
+	m := NewModel(&rt)
+
+	var quit bool
+	m, quit = mustHandleCommand(t, m, "/skills")
+	if quit {
+		t.Fatalf("skills command requested quit")
+	}
+	m, quit = mustHandleCommand(t, m, "/mcp")
+	if quit {
+		t.Fatalf("mcp command requested quit")
+	}
+	all := transcriptText(m.items)
+	for _, want := range []string{"no project skills loaded", "no mcp servers configured"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("transcript missing %q in:\n%s", want, all)
+		}
+	}
+}
+
 func TestHandleAdvancedSlashCommands(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{

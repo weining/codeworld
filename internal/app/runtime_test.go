@@ -79,6 +79,84 @@ func TestNewRuntimeRestoresSessionMessagesAndUsage(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeDropsOrphanToolMessagesFromSession(t *testing.T) {
+	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	store := session.NewStore(canonicalRoot)
+	sess := session.New(canonicalRoot, "deepseek", "deepseek-v4-pro")
+	sess.Messages = []session.Message{
+		{Role: "tool", Content: "orphan", ToolCallID: "missing"},
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", ToolCalls: []session.ToolCall{{ID: "call-1", Name: "read_file", Arguments: json.RawMessage(`{"path":"go.mod"}`)}}},
+		{Role: "tool", Content: "valid", ToolCallID: "call-1"},
+	}
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	if len(rt.Messages) != 3 {
+		t.Fatalf("messages = %#v, want orphan tool dropped", rt.Messages)
+	}
+	if rt.Messages[0].Content != "hello" {
+		t.Fatalf("first message = %#v, want user hello", rt.Messages[0])
+	}
+	if rt.Messages[2].ToolCallID != "call-1" {
+		t.Fatalf("tool message = %#v, want matching call-1", rt.Messages[2])
+	}
+}
+
+func TestNewRuntimeDropsIncompleteAssistantToolCallGroups(t *testing.T) {
+	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	store := session.NewStore(canonicalRoot)
+	sess := session.New(canonicalRoot, "deepseek", "deepseek-v4-pro")
+	sess.Messages = []session.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", ToolCalls: []session.ToolCall{
+			{ID: "call-1", Name: "read_file", Arguments: json.RawMessage(`{"path":"go.mod"}`)},
+			{ID: "call-2", Name: "read_file", Arguments: json.RawMessage(`{"path":"README.md"}`)},
+		}},
+		{Role: "tool", Content: "one result", ToolCallID: "call-1"},
+		{Role: "user", Content: "next"},
+	}
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	if len(rt.Messages) != 2 {
+		t.Fatalf("messages = %#v, want incomplete tool call group dropped", rt.Messages)
+	}
+	if rt.Messages[0].Content != "hello" || rt.Messages[1].Content != "next" {
+		t.Fatalf("messages = %#v, want only user messages", rt.Messages)
+	}
+}
+
 func TestNewRuntimeIncludesWorkspaceIndexSummaryInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
