@@ -70,4 +70,6 @@ mise exec -- go test -count=1 ./cmd/codeworld ./internal/agent ./internal/app ./
 
 When changing user-visible behavior, update `README.md`.
 
+When making a major feature iteration, update both `README.md` and `README.zh-CN.md` in the same change.
+
 When changing development workflows, package boundaries, or verification commands, update this file.
