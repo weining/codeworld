@@ -177,6 +177,7 @@ func (c *Client) request(ctx context.Context, method string, params any, out any
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// stdio MCP 是单连接 JSON-RPC；串行化请求可以避免响应乱序时误读同一个 stdout。
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.nextID++
@@ -223,6 +224,7 @@ func (c *Client) request(ctx context.Context, method string, params any, out any
 
 func writeMessage(w io.Writer, data []byte) error {
 	var buf bytes.Buffer
+	// MCP stdio 使用 LSP 风格的 Content-Length 帧，而不是按行分隔 JSON。
 	fmt.Fprintf(&buf, "Content-Length: %d\r\n\r\n", len(data))
 	buf.Write(data)
 	_, err := w.Write(buf.Bytes())

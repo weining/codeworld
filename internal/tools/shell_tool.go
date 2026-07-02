@@ -104,6 +104,7 @@ func (t shellTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 	start := time.Now()
 	cmd := exec.Command("sh", "-c", parsed.Command)
 	cmd.Dir = resolvedCwd
+	// 独立进程组便于超时或取消时清理子进程，避免 shell 派生的命令残留。
 	configureCommandProcessGroup(cmd)
 
 	stdout := &cappedBuffer{limit: defaultReadLimit}
@@ -249,6 +250,7 @@ func classifyShellRisk(command string) permissions.Risk {
 }
 
 func shellCommandSegments(command string) [][]string {
+	// 这里不是完整 shell parser，只做保守拆分：遇到管道、子 shell、逻辑操作符时按独立命令评估风险。
 	normalized := normalizeShellCommandSeparators(command)
 
 	var segments [][]string

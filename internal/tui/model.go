@@ -45,6 +45,7 @@ func NewModel(rt *app.Runtime) Model {
 	turnEvents := make(chan agent.TurnEvent, 64)
 	rt.Runner.Reporter = reporter
 	rt.Runner.Confirmer = confirmer
+	// TUI 用 channel 接收 agent 事件，避免模型流式输出阻塞 Bubble Tea 的按键和绘制循环。
 	m := Model{rt: rt, adapter: NewRunnerAdapter(rt, turnEvents), toolEvents: reporter.Events(), turnEvents: turnEvents, confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24, theme: "system"}
 	m.refreshViewport()
 	return m
@@ -176,6 +177,7 @@ func (m *Model) refreshViewport() {
 func (m *Model) applyTurnEvent(event agent.TurnEvent) {
 	switch event.Kind {
 	case agent.TurnEventAssistantDelta:
+		// 文本 delta 合并到最后一个 assistant item，保证流式输出不会刷出大量碎片行。
 		if len(m.items) == 0 || m.items[len(m.items)-1].Kind != ItemAssistant {
 			m.items = append(m.items, TranscriptItem{Kind: ItemAssistant})
 		}

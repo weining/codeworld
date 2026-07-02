@@ -103,6 +103,7 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 	messages = append(messages, model.Message{Role: model.RoleUser, Content: input})
 	var usage model.Usage
 
+	// 非流式路径保留完整的“模型 -> 工具 -> 模型”循环，便于不支持 stream 的 provider 复用同一套 agent 逻辑。
 	for step := 0; step < maxSteps; step++ {
 		resp, err := r.Model.Generate(ctx, model.GenerateRequest{
 			Model:    r.ModelName,
@@ -138,6 +139,7 @@ func (r Runner) RunTurnStream(ctx context.Context, history []model.Message, inpu
 	if streamClient, ok := r.Model.(model.StreamClient); ok {
 		return r.runTurnWithStream(ctx, streamClient, history, input, emit)
 	}
+	// provider 不支持 stream 时降级到非流式结果，并通过事件接口补齐最终输出和用量。
 	result, err := r.RunTurn(ctx, history, input)
 	if err != nil {
 		if emit != nil {
@@ -174,6 +176,7 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 	messages = append(messages, model.Message{Role: model.RoleUser, Content: input})
 	var usage model.Usage
 
+	// 每一步都可能产生工具调用；工具结果写回 messages 后继续下一轮模型调用。
 	for step := 0; step < maxSteps; step++ {
 		resp, stepUsage, err := r.streamGenerate(ctx, client, model.GenerateRequest{
 			Model:    r.ModelName,
@@ -222,6 +225,7 @@ func (r Runner) streamGenerate(ctx context.Context, client model.StreamClient, r
 	var usage model.Usage
 	var final model.Message
 	var toolCalls []model.ToolCall
+	// 流式事件可能分开发送文本、工具调用和 usage，这里合并成一次完整的 GenerateResponse。
 	err := client.Stream(ctx, req, func(event model.StreamEvent) error {
 		switch event.Kind {
 		case model.StreamEventTextDelta:
@@ -278,6 +282,7 @@ func (r Runner) executeTool(ctx context.Context, call model.ToolCall) string {
 	event := ToolEvent{Name: call.Name, CallID: call.ID, Request: req}
 	r.reportTool(ctx, event.withStatus(ToolEventStart, ""))
 
+	// 权限判定在真正执行工具前完成；Ask 类型必须经 Confirmer 返回后才继续。
 	decision, err := r.permissionPolicy().Check(ctx, req)
 	if err != nil {
 		message := "permission policy error: " + err.Error()

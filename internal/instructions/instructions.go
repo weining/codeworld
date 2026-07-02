@@ -42,6 +42,7 @@ func Load(root string, opts Options) (Loaded, error) {
 	if start == "" {
 		start = absRoot
 	}
+	// 从 git 根目录到当前工作目录逐级加载，让更深层目录可以补充局部规则。
 	dirs, err := pathChain(start, absRoot)
 	if err != nil {
 		return Loaded{}, err
@@ -62,6 +63,7 @@ func Load(root string, opts Options) (Loaded, error) {
 }
 
 func readFirstInstruction(dir string) (File, bool, error) {
+	// override 文件优先级高于普通 AGENTS，便于项目在子目录覆盖默认约定。
 	for _, name := range []string{"AGENTS.override.md", "AGENTS.md"} {
 		path := filepath.Join(dir, name)
 		data, err := os.ReadFile(path)
@@ -85,6 +87,7 @@ func combine(files []File, maxBytes int) (string, bool) {
 	truncated := false
 	for _, file := range files {
 		section := fmt.Sprintf("## %s\n\n%s\n", filepath.ToSlash(file.Path), file.Text)
+		// 项目指令会进入 system prompt，必须有硬上限，避免挤掉用户问题和工具结果。
 		if b.Len()+len(section) > maxBytes {
 			remaining := maxBytes - b.Len()
 			if remaining > 0 {

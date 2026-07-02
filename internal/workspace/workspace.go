@@ -143,6 +143,7 @@ func (w Workspace) canonicalizeForSafety(path string) (string, error) {
 		return w.Root, nil
 	}
 
+	// 逐段解析路径并在遇到符号链接时重新校验边界，防止通过 symlink 跳出工作区。
 	current := w.Root
 	components := strings.Split(rel, string(filepath.Separator))
 	for i, component := range components {
@@ -188,6 +189,7 @@ func canonicalizeExistingPrefix(path string) (string, error) {
 
 	parent := filepath.Clean(path)
 	var missing []string
+	// 新文件可能还不存在；只解析已存在的父目录，再把缺失路径安全拼回去。
 	for {
 		missing = append(missing, filepath.Base(parent))
 		next := filepath.Dir(parent)

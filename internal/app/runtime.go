@@ -66,6 +66,7 @@ func (r *Runtime) MaybeSummarize(ctx context.Context) error {
 	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, r.Usage, summarizer.Options{MaxMessages: r.Config.SummaryMaxMessages}) {
 		return nil
 	}
+	// 摘要只压缩较早的对话，保留最近若干轮原文，避免工具调用上下文被过度概括。
 	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
 		MaxMessages: r.Config.SummaryMaxMessages,
 		KeepRecent:  20,
@@ -103,6 +104,8 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		fmt.Fprintln(opts.Err, "warning: current workspace is not a git repository; patch workflows are safer in git repositories")
 	}
 
+	// system prompt 由静态身份、工作区摘要、索引图、项目指令和历史摘要拼接而成。
+	// 这里集中装配，保证 REPL 和 TUI 看到的是同一套上下文。
 	summary, err := ws.Summary(120)
 	if err != nil {
 		summary = "workspace summary unavailable: " + err.Error()
@@ -128,6 +131,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}
 	messages := sessionMessagesToModel(sess.Messages)
 	modelName := firstNonEmpty(sess.Model, cfg.Model)
+	// provider client 负责隐藏各家 API 差异；Runtime 只关心统一的 Generate/Stream 接口。
 	client, err := provider.NewClient(provider.Config{
 		Provider:        cfg.Provider,
 		Model:           modelName,
@@ -140,6 +144,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if err != nil {
 		return Runtime{}, err
 	}
+	// capability loader 会合并原生 skill、Codex plugin 和 MCP 工具，再统一注册进工具表。
 	loadedCapabilities, err := capability.Load(ctx, capability.Options{
 		Root:           ws.Root,
 		Workspace:      ws,

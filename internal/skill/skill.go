@@ -17,6 +17,7 @@ type Skill struct {
 }
 
 func LoadProject(root string) ([]Skill, error) {
+	// project skill 使用渐进披露：启动时只进入索引，真正内容由 skill_open 工具按需读取。
 	skillsRoot := filepath.Join(root, ".codeworld", "skills")
 	entries, err := os.ReadDir(skillsRoot)
 	if err != nil {
@@ -101,6 +102,7 @@ func parse(dirName, path, content string) Skill {
 	if len(lines) < 2 || strings.TrimSpace(lines[0]) != "---" {
 		return skill
 	}
+	// 只解析 SKILL.md front matter 中当前需要的字段，避免引入完整 YAML 依赖。
 	for i := 1; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if line == "---" {

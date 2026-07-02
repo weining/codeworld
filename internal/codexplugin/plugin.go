@@ -28,6 +28,7 @@ type mcpFile struct {
 }
 
 func LoadProject(root string) ([]Plugin, error) {
+	// 当前只加载项目内声明的 Codex plugin 子集：skills 和 .mcp.json；不执行任意安装脚本。
 	pluginsRoot := filepath.Join(root, ".codeworld", "codex-plugins")
 	entries, err := os.ReadDir(pluginsRoot)
 	if err != nil {
@@ -56,6 +57,7 @@ func loadPlugin(path, dirName string) (Plugin, error) {
 	if err != nil {
 		return Plugin{}, err
 	}
+	// plugin 名称必须和目录一致，避免 manifest 伪造路径或覆盖其他 plugin 命名空间。
 	if manifest.Name == "" || filepath.Base(manifest.Name) != manifest.Name || strings.Contains(manifest.Name, "\\") || manifest.Name != dirName {
 		return Plugin{}, fmt.Errorf("invalid codex plugin name %q", manifest.Name)
 	}
@@ -131,6 +133,7 @@ func loadMCP(pluginPath, pluginName string) ([]config.MCPServer, error) {
 		if server.Name == "" || server.Command == "" {
 			return nil, fmt.Errorf("codex plugin %q has invalid mcp server %q", pluginName, server.Name)
 		}
+		// MCP server 名称加 plugin 前缀，避免不同 plugin 的同名 server 冲突。
 		server.Name = pluginName + "." + server.Name
 		servers = append(servers, server)
 	}

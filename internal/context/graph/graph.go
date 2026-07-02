@@ -76,6 +76,7 @@ func Build(root string, opts Options) (Graph, error) {
 			Changed:  changed[entry.Path],
 		}
 		if !entry.Skipped {
+			// 只读取索引允许的小文件；大文件留在索引摘要里，避免上下文图意外吃满内存。
 			data, err := os.ReadFile(filepath.Join(idx.Root, filepath.FromSlash(entry.Path)))
 			if err == nil {
 				file.Content = string(data)
@@ -107,6 +108,7 @@ func (g Graph) Search(query string, limit int) []SearchResult {
 	if limit <= 0 {
 		limit = 20
 	}
+	// 搜索分数偏向精确路径和符号命中，其次才是正文片段，适合 agent 快速定位代码入口。
 	var results []SearchResult
 	for _, file := range g.Files {
 		score := 0

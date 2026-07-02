@@ -20,6 +20,7 @@ Codeworld is a Go coding agent with these main layers:
 - Prefer `mise exec -- go ...` for Go commands.
 - Use `rg` or `rg --files` for search.
 - Keep changes narrow and consistent with existing package boundaries.
+- 新增或修改代码注释时使用中文；注释应解释复杂流程、边界、安全策略或非直观取舍，避免为显而易见的代码补空泛说明。
 - Do not commit local runtime state:
   - `.codeworld/`
   - `.idea/`
