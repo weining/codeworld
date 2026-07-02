@@ -266,6 +266,38 @@ func TestRunTurnExecutesToolWhenMessageHasContentAndToolCalls(t *testing.T) {
 	}
 }
 
+func TestRunTurnRepromptsAfterDeferredActionPlaceholder(t *testing.T) {
+	client := &fakeClient{responses: []model.GenerateResponse{
+		{FinalText: "让我检查一下工具注册表。"},
+		{FinalText: "当前没有 websearch 工具。"},
+	}}
+	runner := Runner{
+		Model:     client,
+		Tools:     tools.NewRegistry([]tools.Tool{newFakeTool("list_dir", permissions.ActionRead, permissions.RiskRead)}, nil),
+		Policy:    permissions.ConservativePolicy{},
+		ModelName: "test-model",
+		MaxSteps:  3,
+	}
+
+	result, err := runner.RunTurn(context.Background(), nil, "你有 websearch 工具吗")
+	if err != nil {
+		t.Fatalf("RunTurn returned error: %v", err)
+	}
+	if result.FinalText != "当前没有 websearch 工具。" {
+		t.Fatalf("FinalText = %q, want direct answer after reprompt", result.FinalText)
+	}
+	if len(client.requests) != 2 {
+		t.Fatalf("model calls = %d, want 2", len(client.requests))
+	}
+	secondMessages := client.requests[1].Messages
+	if len(secondMessages) < 1 || secondMessages[len(secondMessages)-1].Role != model.RoleSystem {
+		t.Fatalf("last reprompt message = %#v, want system reminder", secondMessages[len(secondMessages)-1])
+	}
+	if !strings.Contains(secondMessages[len(secondMessages)-1].Content, "call the appropriate tool now") {
+		t.Fatalf("reprompt = %q, want tool-call reminder", secondMessages[len(secondMessages)-1].Content)
+	}
+}
+
 func TestRunTurnReturnsPermissionDenialToModel(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "write", Arguments: json.RawMessage(`{"path":"notes.txt"}`)}}},

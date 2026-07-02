@@ -266,6 +266,39 @@ func TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone(t *testing.T) {
 	}
 }
 
+func TestStreamParsesToolCallDeltas(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"read_file","arguments":"{\"path\""}}]}}]}` + "\n\n"))
+		_, _ = w.Write([]byte(`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":":\"go.mod\"}"}}]}}]}` + "\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client := NewClient("test-key", "deepseek-v4-pro")
+	client.baseURL = server.URL
+	var events []model.StreamEvent
+	err := client.Stream(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{Role: model.RoleUser, Content: "read"}},
+	}, func(event model.StreamEvent) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Stream returned error: %v", err)
+	}
+	if len(events) != 1 || events[0].Kind != model.StreamEventDone {
+		t.Fatalf("events = %#v, want one done event", events)
+	}
+	calls := events[0].ToolCalls
+	if len(calls) != 1 {
+		t.Fatalf("tool calls = %#v, want one call", calls)
+	}
+	if calls[0].ID != "call-1" || calls[0].Name != "read_file" || string(calls[0].Arguments) != `{"path":"go.mod"}` {
+		t.Fatalf("tool call = %#v", calls[0])
+	}
+}
+
 func TestGenerateRejectsMissingAPIKey(t *testing.T) {
 	client := NewClient("", "deepseek-v4-pro")
 

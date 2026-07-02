@@ -181,12 +181,12 @@ func (c *Client) Stream(ctx context.Context, req model.GenerateRequest, emit fun
 		return err
 	}
 
-	finalText, usage, err := parseStream(ctx, httpResp.Body, emit)
+	finalText, toolCalls, usage, err := parseStream(ctx, httpResp.Body, emit)
 	if err != nil {
 		logEntry.Error = redactAPIKey(err.Error(), c.apiKey)
 		return err
 	}
-	logEntry.Response = &httpResponseLog{BodyJSON: jsonBody(redactAPIKey(streamLogBody(finalText, usage), c.apiKey))}
+	logEntry.Response = &httpResponseLog{BodyJSON: jsonBody(redactAPIKey(streamLogBody(finalText, toolCalls, usage), c.apiKey))}
 	return nil
 }
 
@@ -247,6 +247,7 @@ type providerFunction struct {
 }
 
 type providerToolCall struct {
+	Index    int                  `json:"index,omitempty"`
 	ID       string               `json:"id"`
 	Type     string               `json:"type"`
 	Function providerCallFunction `json:"function"`
@@ -312,13 +313,55 @@ func fromProviderToolCalls(calls []providerToolCall) []model.ToolCall {
 	return out
 }
 
-func parseStream(ctx context.Context, body io.Reader, emit func(model.StreamEvent) error) (string, model.Usage, error) {
+type streamToolCall struct {
+	id        string
+	name      string
+	arguments string
+}
+
+func appendStreamToolCallDeltas(order *[]int, calls map[int]*streamToolCall, deltas []providerToolCall) {
+	for _, delta := range deltas {
+		call, ok := calls[delta.Index]
+		if !ok {
+			call = &streamToolCall{}
+			calls[delta.Index] = call
+			*order = append(*order, delta.Index)
+		}
+		if delta.ID != "" {
+			call.id = delta.ID
+		}
+		if delta.Function.Name != "" {
+			call.name = delta.Function.Name
+		}
+		call.arguments += delta.Function.Arguments
+	}
+}
+
+func streamToolCalls(order []int, calls map[int]*streamToolCall) []model.ToolCall {
+	out := make([]model.ToolCall, 0, len(order))
+	for _, index := range order {
+		call := calls[index]
+		if call == nil || (call.id == "" && call.name == "" && call.arguments == "") {
+			continue
+		}
+		out = append(out, model.ToolCall{
+			ID:        call.id,
+			Name:      call.name,
+			Arguments: json.RawMessage(call.arguments),
+		})
+	}
+	return out
+}
+
+func parseStream(ctx context.Context, body io.Reader, emit func(model.StreamEvent) error) (string, []model.ToolCall, model.Usage, error) {
 	scanner := bufio.NewScanner(body)
 	var finalText string
 	var usage model.Usage
+	toolCallDeltas := map[int]*streamToolCall{}
+	var toolCallOrder []int
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
-			return finalText, usage, err
+			return finalText, nil, usage, err
 		}
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, ":") {
@@ -329,25 +372,28 @@ func parseStream(ctx context.Context, body io.Reader, emit func(model.StreamEven
 		}
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
+			toolCalls := streamToolCalls(toolCallOrder, toolCallDeltas)
 			if emit != nil {
-				if err := emit(model.StreamEvent{Kind: model.StreamEventDone, Message: model.Message{Role: model.RoleAssistant, Content: finalText}}); err != nil {
-					return finalText, usage, err
+				if err := emit(model.StreamEvent{Kind: model.StreamEventDone, Message: model.Message{Role: model.RoleAssistant, Content: finalText, ToolCalls: toolCalls}, ToolCalls: toolCalls}); err != nil {
+					return finalText, toolCalls, usage, err
 				}
 			}
-			return finalText, usage, nil
+			return finalText, toolCalls, usage, nil
 		}
 		var chunk streamChunk
 		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
-			return finalText, usage, err
+			return finalText, nil, usage, err
 		}
 		for _, choice := range chunk.Choices {
-			if choice.Delta.Content == "" {
-				continue
+			if len(choice.Delta.ToolCalls) > 0 {
+				appendStreamToolCallDeltas(&toolCallOrder, toolCallDeltas, choice.Delta.ToolCalls)
 			}
-			finalText += choice.Delta.Content
-			if emit != nil {
-				if err := emit(model.StreamEvent{Kind: model.StreamEventTextDelta, Delta: choice.Delta.Content}); err != nil {
-					return finalText, usage, err
+			if choice.Delta.Content != "" {
+				finalText += choice.Delta.Content
+				if emit != nil {
+					if err := emit(model.StreamEvent{Kind: model.StreamEventTextDelta, Delta: choice.Delta.Content}); err != nil {
+						return finalText, nil, usage, err
+					}
 				}
 			}
 		}
@@ -356,25 +402,30 @@ func parseStream(ctx context.Context, body io.Reader, emit func(model.StreamEven
 			usage = usage.Add(nextUsage)
 			if emit != nil {
 				if err := emit(model.StreamEvent{Kind: model.StreamEventUsage, Usage: nextUsage}); err != nil {
-					return finalText, usage, err
+					return finalText, nil, usage, err
 				}
 			}
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return finalText, usage, err
+		return finalText, nil, usage, err
 	}
+	toolCalls := streamToolCalls(toolCallOrder, toolCallDeltas)
 	if emit != nil {
-		if err := emit(model.StreamEvent{Kind: model.StreamEventDone, Message: model.Message{Role: model.RoleAssistant, Content: finalText}}); err != nil {
-			return finalText, usage, err
+		if err := emit(model.StreamEvent{Kind: model.StreamEventDone, Message: model.Message{Role: model.RoleAssistant, Content: finalText, ToolCalls: toolCalls}, ToolCalls: toolCalls}); err != nil {
+			return finalText, toolCalls, usage, err
 		}
 	}
-	return finalText, usage, nil
+	return finalText, toolCalls, usage, nil
 }
 
-func streamLogBody(finalText string, usage model.Usage) string {
+func streamLogBody(finalText string, toolCalls []model.ToolCall, usage model.Usage) string {
+	message := map[string]any{"role": "assistant", "content": finalText}
+	if len(toolCalls) > 0 {
+		message["tool_calls"] = toProviderToolCalls(toolCalls)
+	}
 	data, err := json.Marshal(map[string]any{
-		"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": finalText}}},
+		"choices": []map[string]any{{"message": message}},
 		"usage": map[string]any{
 			"prompt_tokens":     usage.InputTokens,
 			"completion_tokens": usage.OutputTokens,

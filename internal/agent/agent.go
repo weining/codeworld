@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
@@ -15,7 +16,10 @@ Inspect files before editing them.
 Keep changes narrow and explain why permissioned actions are needed.
 Prefer apply_patch for existing source files.
 Never invent file contents, command output, or test results.
-When a tool fails, use the error result to decide the next step.`
+When a tool fails, use the error result to decide the next step.
+If you need to inspect files, search, or run commands, call the appropriate tool in the same turn. Do not reply only that you will check something.`
+
+const deferredActionReprompt = "The previous assistant message said it would inspect, search, check, read, or run something, but it did not call a tool. If a tool is needed, call the appropriate tool now. Otherwise answer directly with the information already available. Do not say you will do something later."
 
 type Confirmer interface {
 	Confirm(ctx context.Context, req permissions.Request, decision permissions.Decision) (bool, error)
@@ -130,6 +134,10 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 			return TurnResult{}, fmt.Errorf("model returned no final text and no tool calls")
 		}
 		messages = append(messages, model.Message{Role: model.RoleAssistant, Content: finalText})
+		if isDeferredActionPlaceholder(finalText) {
+			messages = append(messages, model.Message{Role: model.RoleSystem, Content: deferredActionReprompt})
+			continue
+		}
 		return TurnResult{FinalText: finalText, Messages: messages, Usage: usage}, nil
 	}
 	return TurnResult{}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
@@ -210,6 +218,10 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 			return TurnResult{}, err
 		}
 		messages = append(messages, model.Message{Role: model.RoleAssistant, Content: finalText})
+		if isDeferredActionPlaceholder(finalText) {
+			messages = append(messages, model.Message{Role: model.RoleSystem, Content: deferredActionReprompt})
+			continue
+		}
 		if emit != nil {
 			if err := emit(TurnEvent{Kind: TurnEventAssistantDone, Text: finalText}); err != nil {
 				return TurnResult{}, err
@@ -383,4 +395,54 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func isDeferredActionPlaceholder(text string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "" {
+		return false
+	}
+	prefixes := []string{
+		"let me ",
+		"i'll ",
+		"i will ",
+		"i'm going to ",
+		"i am going to ",
+		"让我",
+		"我来",
+		"我先",
+		"我会",
+		"我将",
+	}
+	hasPrefix := false
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(normalized, prefix) {
+			hasPrefix = true
+			break
+		}
+	}
+	if !hasPrefix {
+		return false
+	}
+	actions := []string{
+		"check",
+		"inspect",
+		"search",
+		"read",
+		"run",
+		"look",
+		"查看",
+		"检查",
+		"查一下",
+		"搜索",
+		"读取",
+		"运行",
+		"看看",
+	}
+	for _, action := range actions {
+		if strings.Contains(normalized, action) {
+			return true
+		}
+	}
+	return false
 }
