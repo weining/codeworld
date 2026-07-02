@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +37,14 @@ func TestDefaultRegistryIncludesIndexWorkspaceTool(t *testing.T) {
 
 	if _, ok := registry.Get("index_workspace"); !ok {
 		t.Fatalf("default registry missing index_workspace")
+	}
+}
+
+func TestDefaultRegistryIncludesWebSearchTool(t *testing.T) {
+	registry := NewDefaultRegistry(newTestWorkspace(t))
+
+	if _, ok := registry.Get("web_search"); !ok {
+		t.Fatalf("default registry missing web_search")
 	}
 }
 
@@ -1093,6 +1103,69 @@ func TestShellCapturesNonZeroExitOutputAndCapsOutput(t *testing.T) {
 	}
 	if _, ok := result.Metadata["duration_ms"].(int64); !ok {
 		t.Fatalf("metadata duration_ms = %#v, want int64", result.Metadata["duration_ms"])
+	}
+}
+
+func TestWebSearchPermissionRequestRequiresNetworkConfirmation(t *testing.T) {
+	tool := NewWebSearchTool()
+
+	req, err := tool.PermissionRequest(json.RawMessage(`{"query":"golang testing"}`))
+	if err != nil {
+		t.Fatalf("PermissionRequest returned error: %v", err)
+	}
+	if req.Action != permissions.ActionRead || req.Risk != permissions.RiskNetwork {
+		t.Fatalf("PermissionRequest = (%q, %q), want read/network", req.Action, req.Risk)
+	}
+	if req.Target != "golang testing" {
+		t.Fatalf("Target = %q, want query", req.Target)
+	}
+}
+
+func TestWebSearchExecutesAgainstSearchEndpoint(t *testing.T) {
+	var requestedQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedQuery = r.URL.Query().Get("q")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(`
+<html><body>
+  <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgo.dev%2Fdoc%2F" class="result-link">The Go Documentation</a>
+  <td class="result-snippet">Documentation for the Go programming language.</td>
+  <a class="result-link" href="https://pkg.go.dev/testing">testing package</a>
+  <td class="result-snippet">Package testing provides support for automated testing.</td>
+</body></html>`))
+	}))
+	defer server.Close()
+
+	tool := webSearchTool{endpoint: server.URL, client: server.Client()}
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"query":"golang docs","limit":2}`))
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if requestedQuery != "golang docs" {
+		t.Fatalf("query = %q, want golang docs", requestedQuery)
+	}
+	if !strings.Contains(result.Content, "1. The Go Documentation") || !strings.Contains(result.Content, "https://go.dev/doc/") {
+		t.Fatalf("Content missing decoded first result:\n%s", result.Content)
+	}
+	if !strings.Contains(result.Content, "2. testing package") || !strings.Contains(result.Content, "Package testing provides") {
+		t.Fatalf("Content missing second result:\n%s", result.Content)
+	}
+	if got := result.Metadata["results"]; got != 2 {
+		t.Fatalf("metadata results = %#v, want 2", got)
+	}
+	if got := result.Metadata["truncated"]; got != false {
+		t.Fatalf("metadata truncated = %#v, want false", got)
+	}
+}
+
+func TestWebSearchRejectsEmptyQuery(t *testing.T) {
+	tool := NewWebSearchTool()
+
+	if _, err := tool.PermissionRequest(json.RawMessage(`{"query":""}`)); err == nil {
+		t.Fatalf("PermissionRequest accepted empty query")
+	}
+	if _, err := tool.Execute(context.Background(), json.RawMessage(`{"query":""}`)); err == nil {
+		t.Fatalf("Execute accepted empty query")
 	}
 }
 

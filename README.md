@@ -8,7 +8,7 @@ The current version focuses on:
 - a Bubble Tea TUI as the default interactive entry point;
 - DeepSeek by default, with OpenAI-compatible and Anthropic providers;
 - streaming assistant output for OpenAI-compatible providers;
-- workspace-safe tools for reading, writing, patching, shell commands, git, and context search;
+- workspace-safe tools for reading, writing, patching, shell commands, git, context search, and native web search;
 - project skills, plugin tools, and stdio MCP tools;
 - session persistence, token accounting, and model call logs.
 
@@ -18,10 +18,10 @@ Chinese documentation is available in [README.zh-CN.md](README.zh-CN.md).
 
 Codeworld is usable as a local coding agent, but it is still intentionally
 smaller than Codex. The current implementation covers local TUI workflows,
-provider calls, workspace tools, permissions, skills, plugins, MCP stdio, and
-deterministic context. Larger Codex-style surfaces such as cloud tasks,
-subagents, HTTP/OAuth MCP, hooks, IDE integration, browser control, and hosted
-review workflows are future work.
+provider calls, workspace tools, native web search, permissions, skills,
+plugins, MCP stdio, and deterministic context. Larger Codex-style surfaces such
+as cloud tasks, subagents, HTTP/OAuth MCP, hooks, IDE integration, browser
+control, and hosted review workflows are future work.
 
 ## Install
 
@@ -148,7 +148,7 @@ internal/model
   Provider-neutral model types and provider clients
 
 internal/tools
-  Workspace tools, shell, git, patching, plugin tools, MCP bridge, context tools
+  Workspace tools, shell, git, patching, web search, plugin tools, MCP bridge, context tools
 
 internal/capability
   Project skills, Codeworld plugins, Codex plugin bundles, MCP setup
@@ -280,13 +280,24 @@ context_open      open a graph file with symbol metadata
 The graph is deterministic and local. It extracts file metadata, Go symbols,
 git changed state, project skills, summaries, and other configured context.
 
+## Web Search
+
+The native `web_search` tool searches DuckDuckGo Lite without requiring a
+separate search API key. It accepts a `query` and optional `limit` and returns
+numbered results with title, URL, and snippet.
+
+Because it performs network access, `web_search` is registered as a read action
+with network risk. The TUI and REPL permission flow can ask before the request
+is made.
+
 ## Permissions
 
 Every tool exposes a permission request with an action, target, risk, and
 reason. The default runtime uses an auto policy that allows ordinary workspace
 actions but still asks for high-risk actions such as destructive or networked
-shell commands. The TUI shows permission prompts inline and supports allowing
-once, denying, or approving similar shell commands for the current session.
+shell commands and web search. The TUI shows permission prompts inline and
+supports allowing once, denying, or approving similar shell commands for the
+current session.
 
 This is not full sandbox parity with Codex yet. Fine-grained filesystem
 profiles, network policy, and hook trust remain future work.

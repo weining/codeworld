@@ -83,6 +83,7 @@ func NewDefaultRegistry(ws workspace.Workspace) *Registry {
 		NewShellTool(ws),
 		NewGitStatusTool(ws),
 		NewGitDiffTool(ws),
+		NewWebSearchTool(),
 		NewIndexWorkspaceTool(ws),
 		NewContextRefreshTool(contextStore),
 		NewContextSearchTool(contextStore),

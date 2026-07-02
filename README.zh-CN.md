@@ -7,7 +7,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 - 默认进入 Bubble Tea TUI；
 - 默认使用 DeepSeek，并支持 OpenAI-compatible 与 Anthropic provider；
 - OpenAI-compatible provider 的流式输出；
-- 面向 workspace 的读写、patch、shell、git 和 context 工具；
+- 面向 workspace 的读写、patch、shell、git、context 和原生 web search 工具；
 - project skills、plugin tools、Codex plugin bundle 基础兼容和 stdio MCP tools；
 - session 持久化、token 统计、模型调用日志；
 - `AGENTS.md` / `AGENTS.override.md` 项目指令加载；
@@ -15,7 +15,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 
 ## 当前状态
 
-Codeworld 已经可以作为本地 coding agent 使用，但还不是完整 Codex 替代品。当前重点是本地 TUI、模型调用、workspace 工具、权限确认、skills/plugins/MCP 和确定性的上下文系统。
+Codeworld 已经可以作为本地 coding agent 使用，但还不是完整 Codex 替代品。当前重点是本地 TUI、模型调用、workspace 工具、原生 web search、权限确认、skills/plugins/MCP 和确定性的上下文系统。
 
 尚未实现的 Codex 类能力包括：cloud tasks、subagents、HTTP/OAuth MCP、hooks、IDE 集成、浏览器控制、Computer Use、GitHub PR review、图片输入/生成等。
 
@@ -148,7 +148,7 @@ internal/model
   provider-neutral 模型类型和 provider client
 
 internal/tools
-  workspace、shell、git、patch、plugin、MCP bridge、context 工具
+  workspace、shell、git、patch、web search、plugin、MCP bridge、context 工具
 
 internal/capability
   project skills、Codeworld plugins、Codex plugin bundles、MCP setup
@@ -281,9 +281,15 @@ context_open      打开 graph 中的文件，并附带 symbol 信息
 
 Context graph 是本地、确定性的，不依赖 embedding。它会提取文件元数据、Go symbols、git changed 状态、skills、summary 和其他配置上下文。
 
+## Web Search
+
+原生 `web_search` 工具通过 DuckDuckGo Lite 搜索网页，不需要额外的搜索 API key。参数包括必填的 `query` 和可选的 `limit`，返回带标题、URL 和摘要的编号结果。
+
+因为它会访问网络，`web_search` 的权限声明是 read action + network risk。TUI 和 REPL 的权限流程会在请求发出前要求确认。
+
 ## 权限
 
-每个工具都会声明权限请求，包括 action、target、risk 和 reason。默认 runtime 使用 auto policy：普通 workspace 操作会自动允许，高风险操作如破坏性 shell 或网络 shell 会要求确认。
+每个工具都会声明权限请求，包括 action、target、risk 和 reason。默认 runtime 使用 auto policy：普通 workspace 操作会自动允许，高风险操作如破坏性 shell、网络 shell 或 web search 会要求确认。
 
 TUI 会内联展示权限请求，并支持：
 
