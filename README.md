@@ -132,6 +132,11 @@ Inside the TUI:
 /context       show context system status
 /theme <mode>  set system, dark, or light mode state
 /resume        list recent archived sessions
+/goal <text>   set or show the current task goal
+/goal clear    clear the current task goal
+/plan          enable plan mode for the session
+/plan off      return to the default mode
+/compact       summarize older conversation history
 /repl          show how to restart in line REPL mode
 /clear         clear session messages, approvals, and token counters
 /exit          quit
@@ -140,6 +145,10 @@ Inside the TUI:
 Type `/` to show slash command suggestions. Scroll the transcript with
 `PageUp`, `PageDown`, `Ctrl+U`, and `Ctrl+D`. Use `Up` and `Down` in the
 composer to restore submitted drafts.
+
+`/goal` persists a durable objective in the session and injects it into future
+model calls. `/plan` asks the agent to propose a concise plan before edit-heavy
+work. `/compact` manually summarizes older history using the configured model.
 
 ## Architecture
 

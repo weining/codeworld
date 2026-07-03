@@ -103,6 +103,37 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		m.appendNotice(strings.Join(lines, "\n"))
 	case line == "/context":
 		m.appendNotice(fmt.Sprintf("messages=%d skills=%d mcp_servers=%d context_tools=3", len(m.rt.Messages), len(m.rt.Skills), len(m.rt.Config.MCPServers)))
+	case line == "/goal":
+		if m.rt.Session.Goal == "" {
+			m.appendNotice("goal not set")
+			return m, false
+		}
+		m.appendNotice(m.rt.Session.Goal)
+	case strings.HasPrefix(line, "/goal "):
+		next := strings.TrimSpace(strings.TrimPrefix(line, "/goal "))
+		if next == "clear" {
+			m.rt.Session.Goal = ""
+			m.appendNotice("goal cleared")
+		} else {
+			m.rt.Session.Goal = next
+			m.appendNotice("goal=" + next)
+		}
+		_ = m.rt.Store.SaveCurrent(m.rt.Session)
+	case line == "/plan":
+		m.rt.Session.Mode = "plan"
+		m.appendNotice("mode=plan")
+		_ = m.rt.Store.SaveCurrent(m.rt.Session)
+	case line == "/plan off":
+		m.rt.Session.Mode = ""
+		m.appendNotice("mode=default")
+		_ = m.rt.Store.SaveCurrent(m.rt.Session)
+	case line == "/compact":
+		message, err := m.rt.Compact(ctx)
+		if err != nil {
+			m.appendError("compact error: " + err.Error())
+			return m, false
+		}
+		m.appendNotice(message)
 	case strings.HasPrefix(line, "/resume"):
 		m.handleResumeCommand(line)
 	case line == "/repl":

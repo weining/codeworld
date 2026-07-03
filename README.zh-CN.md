@@ -125,12 +125,19 @@ TUI 使用接近 Codex CLI 的终端布局：顶部单行状态栏、按角色�
 /context       查看上下文系统状态
 /theme <mode>  设置 system、dark 或 light 状态
 /resume        查看最近可恢复 sessions
+/goal <text>   设置或查看当前任务目标
+/goal clear    清除当前任务目标
+/plan          开启当前 session 的 plan mode
+/plan off      回到默认模式
+/compact       手动摘要较早的对话历史
 /repl          显示如何切换到 REPL
 /clear         清空 session 消息、权限和 token 计数
 /exit          退出
 ```
 
 输入 `/` 会显示 slash command 建议；composer 中可以用 `Up` / `Down` 恢复已提交草稿。
+
+`/goal` 会把长期目标持久化到当前 session，并注入后续模型上下文。`/plan` 会要求 agent 在偏代码改动的任务前先给出简短计划。`/compact` 会使用当前模型手动压缩较早历史。
 
 滚动 transcript：
 

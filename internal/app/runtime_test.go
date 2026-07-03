@@ -261,6 +261,38 @@ func TestNewRuntimeIncludesSessionSummaryInSystemPrompt(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeIncludesGoalAndPlanModeInSystemPrompt 验证 goal 和 plan mode 会进入模型上下文。
+func TestNewRuntimeIncludesGoalAndPlanModeInSystemPrompt(t *testing.T) {
+	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	store := session.NewStore(canonicalRoot)
+	sess := session.New(canonicalRoot, "deepseek", "deepseek-v4-pro")
+	sess.Goal = "finish the migration"
+	sess.Mode = "plan"
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	for _, want := range []string{"Current goal:", "finish the migration", "Plan mode:"} {
+		if !strings.Contains(rt.Runner.SystemPrompt, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, rt.Runner.SystemPrompt)
+		}
+	}
+}
+
 // TestNewRuntimeRegistersEnabledPluginTools 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeRegistersEnabledPluginTools(t *testing.T) {
 	root := t.TempDir()

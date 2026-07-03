@@ -134,6 +134,32 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 			return false
 		}
 		fmt.Fprintln(r.Out, diff)
+	case line == "/goal":
+		if r.Session.Goal == "" {
+			fmt.Fprintln(r.Out, "goal not set")
+			return false
+		}
+		fmt.Fprintln(r.Out, r.Session.Goal)
+	case strings.HasPrefix(line, "/goal "):
+		next := strings.TrimSpace(strings.TrimPrefix(line, "/goal "))
+		if next == "clear" {
+			r.Session.Goal = ""
+			fmt.Fprintln(r.Out, "goal cleared")
+		} else {
+			r.Session.Goal = next
+			fmt.Fprintf(r.Out, "goal=%s\n", next)
+		}
+		r.saveSession()
+	case line == "/plan":
+		r.Session.Mode = "plan"
+		fmt.Fprintln(r.Out, "mode=plan")
+		r.saveSession()
+	case line == "/plan off":
+		r.Session.Mode = ""
+		fmt.Fprintln(r.Out, "mode=default")
+		r.saveSession()
+	case line == "/compact":
+		r.compact(ctx)
 	case line == "/clear":
 		r.Messages = nil
 		r.Session.Messages = nil
@@ -149,6 +175,32 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 		fmt.Fprintf(r.Out, "unknown command: %s\n", line)
 	}
 	return false
+}
+
+// compact 手动压缩 REPL 历史，复用自动摘要使用的 summarizer。
+func (r *REPL) compact(ctx context.Context) {
+	if len(r.Messages) == 0 {
+		fmt.Fprintln(r.Out, "nothing to compact")
+		return
+	}
+	if r.Runner.Model == nil {
+		fmt.Fprintln(r.Out, "compact unavailable: model is required")
+		return
+	}
+	before := len(r.Messages)
+	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
+		MaxMessages: r.SummaryMaxMessages,
+		KeepRecent:  20,
+	})
+	if err != nil {
+		fmt.Fprintf(r.Out, "compact error: %v\n", err)
+		return
+	}
+	r.Session.Summary = summary
+	r.Messages = recent
+	r.syncSession()
+	r.saveSession()
+	fmt.Fprintf(r.Out, "compacted messages=%d kept=%d\n", before, len(recent))
 }
 
 // syncSession 封装局部逻辑，保持调用方流程清晰。

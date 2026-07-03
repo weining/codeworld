@@ -440,6 +440,43 @@ func TestHandleAdvancedSlashCommands(t *testing.T) {
 	}
 }
 
+// TestHandleGoalPlanAndCompactCommands 验证 TUI 能设置目标、切换 plan mode 并手动 compact。
+func TestHandleGoalPlanAndCompactCommands(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Store:     session.NewStore(root),
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+	}
+	m := NewModel(&rt)
+
+	var quit bool
+	m, quit = mustHandleCommand(t, m, "/goal ship the feature")
+	if quit {
+		t.Fatalf("goal command requested quit")
+	}
+	if m.rt.Session.Goal != "ship the feature" {
+		t.Fatalf("goal = %q, want ship the feature", m.rt.Session.Goal)
+	}
+	m, quit = mustHandleCommand(t, m, "/plan")
+	if quit {
+		t.Fatalf("plan command requested quit")
+	}
+	if m.rt.Session.Mode != "plan" {
+		t.Fatalf("mode = %q, want plan", m.rt.Session.Mode)
+	}
+	m, quit = mustHandleCommand(t, m, "/compact")
+	if quit {
+		t.Fatalf("compact command requested quit")
+	}
+	all := transcriptText(m.items)
+	for _, want := range []string{"goal=ship the feature", "mode=plan", "nothing to compact"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("transcript missing %q in:\n%s", want, all)
+		}
+	}
+}
+
 // TestModelScrollKeysMoveViewport 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestModelScrollKeysMoveViewport(t *testing.T) {
 	root := t.TempDir()

@@ -174,6 +174,36 @@ func TestRunHandlesSlashCommands(t *testing.T) {
 	}
 }
 
+// TestRunHandlesGoalPlanAndCompactCommands 验证 REPL 暴露 goal、plan 和 compact 控制。
+func TestRunHandlesGoalPlanAndCompactCommands(t *testing.T) {
+	var out bytes.Buffer
+	store := session.NewStore(t.TempDir())
+	app := REPL{
+		In:      strings.NewReader("/goal finish docs\n/goal\n/plan\n/compact\n/exit\n"),
+		Out:     &out,
+		Runner:  agent.Runner{ModelName: "deepseek-v4-pro"},
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+		Store:   store,
+	}
+
+	if err := app.Run(context.Background()); err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{"goal=finish docs", "finish docs", "mode=plan", "nothing to compact"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q in:\n%s", want, output)
+		}
+	}
+	saved, err := store.LoadCurrent()
+	if err != nil {
+		t.Fatalf("LoadCurrent returned error: %v", err)
+	}
+	if saved.Goal != "finish docs" || saved.Mode != "plan" {
+		t.Fatalf("saved goal/mode = %q/%q, want finish docs/plan", saved.Goal, saved.Mode)
+	}
+}
+
 // TestRunUsesSingleInputBufferForPermissionConfirmation 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunUsesSingleInputBufferForPermissionConfirmation(t *testing.T) {
 	input := strings.NewReader("change\ny\n/exit\n")

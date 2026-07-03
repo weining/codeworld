@@ -152,6 +152,12 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if sess.Summary != "" {
 		systemPrompt += "\n\nConversation summary:\n" + sess.Summary
 	}
+	if sess.Goal != "" {
+		systemPrompt += "\n\nCurrent goal:\n" + sess.Goal
+	}
+	if sess.Mode == "plan" {
+		systemPrompt += "\n\nPlan mode:\nBefore making code changes, propose a concise implementation plan and wait for explicit approval unless the user has already approved the plan."
+	}
 	messages := sanitizeModelMessages(sessionMessagesToModel(sess.Messages))
 	sess.Messages = modelMessagesToSession(messages)
 	modelName := firstNonEmpty(sess.Model, cfg.Model)
@@ -223,6 +229,31 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return result.Content, err
 		},
 	}, nil
+}
+
+// Compact 手动压缩当前会话历史，并返回面向用户的结果文案。
+func (r *Runtime) Compact(ctx context.Context) (string, error) {
+	if len(r.Messages) == 0 {
+		return "nothing to compact", nil
+	}
+	if r.Runner.Model == nil {
+		return "", fmt.Errorf("compact requires a model client")
+	}
+	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
+		MaxMessages: r.Config.SummaryMaxMessages,
+		KeepRecent:  20,
+	})
+	if err != nil {
+		return "", err
+	}
+	before := len(r.Messages)
+	r.Session.Summary = summary
+	r.Messages = recent
+	r.Session.Messages = modelMessagesToSession(recent)
+	if err := r.Store.SaveCurrent(r.Session); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("compacted messages=%d kept=%d", before, len(recent)), nil
 }
 
 // loadOrCreateSession 复用同 workspace/provider 的当前会话，否则创建新的会话状态。

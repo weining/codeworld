@@ -47,13 +47,13 @@
 - Modify: `README.md`
 - Modify: `README.zh-CN.md`
 
-- [ ] Add session fields for `Goal`, `Mode`, and compact metadata.
-- [ ] Add focused tests for `/goal`, `/plan`, and `/compact`.
-- [ ] Implement goal injection into the runtime system prompt.
-- [ ] Implement plan mode as a session mode that asks for a plan before edit-heavy work.
-- [ ] Expose manual compact through TUI and REPL commands using the existing summarizer.
-- [ ] Verify with `go test -count=1 ./internal/agent ./internal/app ./internal/tui ./internal/repl ./internal/session`.
-- [ ] Commit as `feat: add goal plan and compact controls`.
+- [x] Add session fields for `Goal`, `Mode`, and compact metadata.
+- [x] Add focused tests for `/goal`, `/plan`, and `/compact`.
+- [x] Implement goal injection into the runtime system prompt.
+- [x] Implement plan mode as a session mode that asks for a plan before edit-heavy work.
+- [x] Expose manual compact through TUI and REPL commands using the existing summarizer.
+- [x] Verify with `go test -count=1 ./internal/agent ./internal/app ./internal/tui ./internal/repl ./internal/session`.
+- [x] Commit as `feat: add goal plan and compact controls`.
 
 ### Task 3: Image Input
 
