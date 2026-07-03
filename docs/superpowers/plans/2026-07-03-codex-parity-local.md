@@ -145,9 +145,9 @@
 - Modify: `README.zh-CN.md`
 - Modify: `Agent.md`
 
-- [ ] Run `go test -count=1 ./...`.
-- [ ] Run `go build -o /private/tmp/codeworld-build ./cmd/codeworld`.
-- [ ] Run `printf '/exit\n' | go run ./cmd/codeworld tui`.
-- [ ] Update both README files with all new user-visible behavior.
-- [ ] Update `Agent.md` with any new verification commands and durable conventions.
-- [ ] Commit as `docs: document codex parity features`.
+- [x] Run `go test -count=1 ./...`.
+- [x] Run `go build -o /private/tmp/codeworld-build ./cmd/codeworld`.
+- [x] Run `printf '/exit\n' | go run ./cmd/codeworld tui`.
+- [x] Update both README files with all new user-visible behavior.
+- [x] Update `Agent.md` with any new verification commands and durable conventions.
+- [x] Commit as `docs: document codex parity features`.
