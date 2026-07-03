@@ -24,6 +24,7 @@ type Client struct {
 	logger     CallLogger
 }
 
+// NewClient 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewClient(apiKey, modelName string) *Client {
 	return &Client{
 		apiKey:     apiKey,
@@ -34,10 +35,12 @@ func NewClient(apiKey, modelName string) *Client {
 	}
 }
 
+// SetLogger 提供对外可复用的能力，并隐藏内部实现细节。
 func (c *Client) SetLogger(logger CallLogger) {
 	c.logger = logger
 }
 
+// Generate 发起一次非流式模型调用，并解析文本、工具调用和用量信息。
 func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
 	system, messages := toProviderMessages(req.Messages)
 	body := requestBody{
@@ -133,6 +136,7 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 	}, nil
 }
 
+// logCall 封装局部逻辑，保持调用方流程清晰。
 func (c *Client) logCall(ctx context.Context, entry callLogEntry) {
 	if c.logger != nil {
 		_ = c.logger.LogCall(ctx, entry)
@@ -181,6 +185,7 @@ type providerUsage struct {
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 }
 
+// toProviderMessages 在不同层的数据结构之间做显式转换。
 func toProviderMessages(messages []model.Message) (string, []providerMessage) {
 	var system []string
 	out := make([]providerMessage, 0, len(messages))
@@ -211,6 +216,7 @@ func toProviderMessages(messages []model.Message) (string, []providerMessage) {
 	return strings.Join(system, "\n\n"), out
 }
 
+// textContent 封装局部逻辑，保持调用方流程清晰。
 func textContent(text string) []contentBlock {
 	if text == "" {
 		return nil
@@ -218,6 +224,7 @@ func textContent(text string) []contentBlock {
 	return []contentBlock{{Type: "text", Text: text}}
 }
 
+// assistantContent 封装局部逻辑，保持调用方流程清晰。
 func assistantContent(msg model.Message) []contentBlock {
 	blocks := textContent(msg.Content)
 	for _, call := range msg.ToolCalls {
@@ -235,6 +242,7 @@ func assistantContent(msg model.Message) []contentBlock {
 	return blocks
 }
 
+// toProviderTools 在不同层的数据结构之间做显式转换。
 func toProviderTools(defs []model.ToolDefinition) []providerTool {
 	out := make([]providerTool, 0, len(defs))
 	for _, def := range defs {
@@ -247,6 +255,7 @@ func toProviderTools(defs []model.ToolDefinition) []providerTool {
 	return out
 }
 
+// responseContent 封装局部逻辑，保持调用方流程清晰。
 func responseContent(blocks []contentBlock) (string, []model.ToolCall) {
 	var texts []string
 	var calls []model.ToolCall
@@ -271,6 +280,7 @@ func responseContent(blocks []contentBlock) (string, []model.ToolCall) {
 	return strings.Join(texts, "\n"), calls
 }
 
+// toModelUsage 在不同层的数据结构之间做显式转换。
 func (u providerUsage) toModelUsage() model.Usage {
 	return model.Usage{
 		InputTokens:  u.InputTokens,
@@ -280,6 +290,7 @@ func (u providerUsage) toModelUsage() model.Usage {
 	}
 }
 
+// firstNonEmpty 从候选值中选择满足条件的结果。
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -289,6 +300,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// redactAPIKey 封装局部逻辑，保持调用方流程清晰。
 func redactAPIKey(text, apiKey string) string {
 	if apiKey == "" {
 		return text
@@ -296,6 +308,7 @@ func redactAPIKey(text, apiKey string) string {
 	return strings.ReplaceAll(text, apiKey, "[redacted]")
 }
 
+// loggedHTTPResponse 封装局部逻辑，保持调用方流程清晰。
 func loggedHTTPResponse(body []byte, apiKey string) *httpResponseLog {
 	redactedBody := redactAPIKey(string(body), apiKey)
 	return &httpResponseLog{
@@ -303,6 +316,7 @@ func loggedHTTPResponse(body []byte, apiKey string) *httpResponseLog {
 	}
 }
 
+// jsonBody 封装局部逻辑，保持调用方流程清晰。
 func jsonBody(body string) json.RawMessage {
 	if body == "" || !json.Valid([]byte(body)) {
 		return nil

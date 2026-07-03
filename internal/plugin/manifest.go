@@ -22,6 +22,7 @@ type Tool struct {
 	Risk        string         `json:"risk"`
 }
 
+// LoadManifests 加载外部或项目内配置，并把原始数据转换为内部结构。
 func LoadManifests(root string, enabled bool) ([]Tool, error) {
 	if !enabled {
 		return nil, nil
@@ -51,6 +52,7 @@ func LoadManifests(root string, enabled bool) ([]Tool, error) {
 	return tools, nil
 }
 
+// loadManifest 加载外部或项目内配置，并把原始数据转换为内部结构。
 func loadManifest(path string) (Manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -63,6 +65,7 @@ func loadManifest(path string) (Manifest, error) {
 	return manifest, nil
 }
 
+// validateManifest 校验输入结构，尽早拒绝不安全或不一致的数据。
 func validateManifest(dirName string, manifest Manifest) error {
 	if manifest.Name == "" || filepath.Base(manifest.Name) != manifest.Name || strings.Contains(manifest.Name, "\\") || manifest.Name != dirName {
 		return fmt.Errorf("invalid plugin name %q", manifest.Name)

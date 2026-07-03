@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestLoadProjectSkillsParsesFrontmatter 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadProjectSkillsParsesFrontmatter(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "reviewer", `---
@@ -34,6 +35,7 @@ Check tests before claiming completion.
 	}
 }
 
+// TestContextIncludesProjectSkills 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestContextIncludesProjectSkills(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "go-style", "# Go Style\n\nPrefer small interfaces.\n")
@@ -48,6 +50,7 @@ func TestContextIncludesProjectSkills(t *testing.T) {
 	}
 }
 
+// TestIndexListsSkillsWithoutFullContent 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestIndexListsSkillsWithoutFullContent(t *testing.T) {
 	skills := []Skill{{
 		Name:        "reviewer",
@@ -66,6 +69,7 @@ func TestIndexListsSkillsWithoutFullContent(t *testing.T) {
 	}
 }
 
+// TestLoadProjectSkipsMissingSkillsDirectory 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadProjectSkipsMissingSkillsDirectory(t *testing.T) {
 	skills, err := LoadProject(t.TempDir())
 	if err != nil {
@@ -76,6 +80,7 @@ func TestLoadProjectSkipsMissingSkillsDirectory(t *testing.T) {
 	}
 }
 
+// writeSkill 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeSkill(t *testing.T, root, name, content string) {
 	t.Helper()
 	path := filepath.Join(root, ".codeworld", "skills", name, "SKILL.md")

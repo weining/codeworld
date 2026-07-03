@@ -27,6 +27,7 @@ type Status struct {
 	Running   bool
 }
 
+// RuntimeStatus 执行主要流程，并把运行结果或错误返回给调用方。
 func RuntimeStatus(rt *app.Runtime) Status {
 	return Status{
 		Workspace: rt.Workspace.Root,
@@ -39,6 +40,7 @@ func RuntimeStatus(rt *app.Runtime) Status {
 	}
 }
 
+// StatusLine 提供对外可复用的能力，并隐藏内部实现细节。
 func StatusLine(status Status) string {
 	running := ""
 	if status.Running {
@@ -59,6 +61,7 @@ func StatusLine(status Status) string {
 	)
 }
 
+// gitState 封装局部逻辑，保持调用方流程清晰。
 func gitState(root string) string {
 	if root == "" {
 		return "none"
@@ -74,10 +77,12 @@ func gitState(root string) string {
 	return "dirty"
 }
 
+// Run 执行主要流程，并把运行结果或错误返回给调用方。
 func Run(ctx context.Context, rt *app.Runtime) error {
 	return RunWithOptions(ctx, rt, Options{})
 }
 
+// RunWithOptions 执行主要流程，并把运行结果或错误返回给调用方。
 func RunWithOptions(ctx context.Context, rt *app.Runtime, opts Options) error {
 	m := NewModel(rt)
 	if opts.TestMode {

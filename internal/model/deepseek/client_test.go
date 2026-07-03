@@ -14,6 +14,7 @@ import (
 	"codeworld/internal/model"
 )
 
+// TestGenerateSendsAuthorizationRequestBodyAndParsesFinalText 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateSendsAuthorizationRequestBodyAndParsesFinalText(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +73,7 @@ func TestGenerateSendsAuthorizationRequestBodyAndParsesFinalText(t *testing.T) {
 	}
 }
 
+// TestGenerateUsesRequestModelAndMapsToolMessages 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateUsesRequestModelAndMapsToolMessages(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +125,7 @@ func TestGenerateUsesRequestModelAndMapsToolMessages(t *testing.T) {
 	}
 }
 
+// TestGenerateParsesToolCallAndLeavesFinalTextEmpty 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateParsesToolCallAndLeavesFinalTextEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -156,6 +159,7 @@ func TestGenerateParsesToolCallAndLeavesFinalTextEmpty(t *testing.T) {
 	}
 }
 
+// TestGenerateParsesUsageIncludingCachedInputTokens 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateParsesUsageIncludingCachedInputTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -187,6 +191,7 @@ func TestGenerateParsesUsageIncludingCachedInputTokens(t *testing.T) {
 	}
 }
 
+// TestGenerateParsesOpenAIStyleCachedInputTokens 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateParsesOpenAIStyleCachedInputTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -217,6 +222,7 @@ func TestGenerateParsesOpenAIStyleCachedInputTokens(t *testing.T) {
 	}
 }
 
+// TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -266,6 +272,7 @@ func TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone(t *testing.T) {
 	}
 }
 
+// TestStreamParsesToolCallDeltas 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStreamParsesToolCallDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -299,6 +306,7 @@ func TestStreamParsesToolCallDeltas(t *testing.T) {
 	}
 }
 
+// TestGenerateRejectsMissingAPIKey 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateRejectsMissingAPIKey(t *testing.T) {
 	client := NewClient("", "deepseek-v4-pro")
 
@@ -307,6 +315,7 @@ func TestGenerateRejectsMissingAPIKey(t *testing.T) {
 	}
 }
 
+// TestGenerateReturnsHTTPErrorWithoutLeakingAPIKey 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateReturnsHTTPErrorWithoutLeakingAPIKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key secret-key", http.StatusUnauthorized)
@@ -330,6 +339,7 @@ func TestGenerateReturnsHTTPErrorWithoutLeakingAPIKey(t *testing.T) {
 	}
 }
 
+// TestGenerateRejectsEmptyChoices 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateRejectsEmptyChoices(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -345,6 +355,7 @@ func TestGenerateRejectsEmptyChoices(t *testing.T) {
 	}
 }
 
+// TestGenerateLogsOnlyRequestAndResponseBodyJSON 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateLogsOnlyRequestAndResponseBodyJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Request-ID", "req-1")
@@ -413,6 +424,7 @@ func TestGenerateLogsOnlyRequestAndResponseBodyJSON(t *testing.T) {
 	}
 }
 
+// TestGenerateLogsHTTPErrorWithRedactedBody 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateLogsHTTPErrorWithRedactedBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad secret-key", http.StatusUnauthorized)
@@ -445,6 +457,7 @@ func TestGenerateLogsHTTPErrorWithRedactedBody(t *testing.T) {
 	}
 }
 
+// TestFileJSONLLoggerCreatesRestrictiveLogFile 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestFileJSONLLoggerCreatesRestrictiveLogFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".codeworld", "logs", "model-calls.jsonl")
 	logger := NewFileJSONLLogger(path)

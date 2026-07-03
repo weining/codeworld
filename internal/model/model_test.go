@@ -2,6 +2,7 @@ package model
 
 import "testing"
 
+// TestStreamEventsAccumulateTextAndUsage 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStreamEventsAccumulateTextAndUsage(t *testing.T) {
 	events := []StreamEvent{
 		{Kind: StreamEventTextDelta, Delta: "你"},

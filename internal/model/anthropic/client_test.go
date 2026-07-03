@@ -12,6 +12,7 @@ import (
 	"codeworld/internal/model"
 )
 
+// TestGenerateSendsMessagesRequestAndParsesFinalTextUsageAndLog 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateSendsMessagesRequestAndParsesFinalTextUsageAndLog(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +81,7 @@ func TestGenerateSendsMessagesRequestAndParsesFinalTextUsageAndLog(t *testing.T)
 	}
 }
 
+// TestGenerateParsesToolUseAndLeavesFinalTextEmpty 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateParsesToolUseAndLeavesFinalTextEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -116,6 +118,7 @@ func TestGenerateParsesToolUseAndLeavesFinalTextEmpty(t *testing.T) {
 	}
 }
 
+// TestGenerateMapsToolResultsBackToAnthropicMessages 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateMapsToolResultsBackToAnthropicMessages(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +163,7 @@ func TestGenerateMapsToolResultsBackToAnthropicMessages(t *testing.T) {
 	}
 }
 
+// TestGenerateReturnsHTTPError 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
@@ -174,6 +178,7 @@ func TestGenerateReturnsHTTPError(t *testing.T) {
 	}
 }
 
+// assertJSONEqual 是测试辅助函数，用于复用测试准备或断言逻辑。
 func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
 	t.Helper()
 	var gotValue any

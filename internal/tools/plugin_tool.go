@@ -19,10 +19,12 @@ type pluginTool struct {
 	spec      plugin.Tool
 }
 
+// NewPluginTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewPluginTool(ws workspace.Workspace, spec plugin.Tool) Tool {
 	return pluginTool{workspace: ws, spec: spec}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t pluginTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        t.spec.Name,
@@ -31,6 +33,7 @@ func (t pluginTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t pluginTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	command, err := t.renderCommand(args)
 	if err != nil {
@@ -44,6 +47,7 @@ func (t pluginTool) PermissionRequest(args json.RawMessage) (permissions.Request
 	}, nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t pluginTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -78,6 +82,7 @@ func (t pluginTool) Execute(ctx context.Context, args json.RawMessage) (Result, 
 	}, err
 }
 
+// renderCommand 封装局部逻辑，保持调用方流程清晰。
 func (t pluginTool) renderCommand(args json.RawMessage) (string, error) {
 	rendered, err := t.renderArgs(args)
 	if err != nil {
@@ -86,6 +91,7 @@ func (t pluginTool) renderCommand(args json.RawMessage) (string, error) {
 	return strings.TrimSpace(t.spec.Command + " " + strings.Join(rendered, " ")), nil
 }
 
+// renderArgs 封装局部逻辑，保持调用方流程清晰。
 func (t pluginTool) renderArgs(args json.RawMessage) ([]string, error) {
 	values := map[string]any{}
 	if err := decodeArgs(args, &values); err != nil {
@@ -102,6 +108,7 @@ func (t pluginTool) renderArgs(args json.RawMessage) ([]string, error) {
 	return rendered, nil
 }
 
+// renderTemplate 封装局部逻辑，保持调用方流程清晰。
 func renderTemplate(template string, values map[string]any) (string, bool) {
 	if !strings.HasPrefix(template, "{{") || !strings.HasSuffix(template, "}}") {
 		return template, true
@@ -125,6 +132,7 @@ func renderTemplate(template string, values map[string]any) (string, bool) {
 	}
 }
 
+// pluginRisk 封装局部逻辑，保持调用方流程清晰。
 func pluginRisk(risk string) permissions.Risk {
 	switch risk {
 	case "read":

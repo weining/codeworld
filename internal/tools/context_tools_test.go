@@ -7,10 +7,12 @@ import (
 	"testing"
 )
 
+// TestContextToolsRefreshSearchAndOpen 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestContextToolsRefreshSearchAndOpen(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "main.go", `package main
 
+// RunServer 是测试辅助函数，用于复用测试准备或断言逻辑。
 func RunServer() {}
 `)
 	store := NewContextStore(ws, 256*1024)
@@ -43,6 +45,7 @@ func RunServer() {}
 	}
 }
 
+// TestDefaultRegistryIncludesContextTools 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestDefaultRegistryIncludesContextTools(t *testing.T) {
 	registry := NewDefaultRegistry(newTestWorkspace(t))
 	for _, name := range []string{"context_refresh", "context_search", "context_open"} {

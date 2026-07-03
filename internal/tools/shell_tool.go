@@ -32,10 +32,12 @@ type shellArgs struct {
 	Reason    string `json:"reason"`
 }
 
+// NewShellTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewShellTool(ws workspace.Workspace) Tool {
 	return shellTool{workspace: ws}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t shellTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "shell",
@@ -49,6 +51,7 @@ func (t shellTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t shellTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parseShellArgs(args)
 	if err != nil {
@@ -69,6 +72,7 @@ func (t shellTool) PermissionRequest(args json.RawMessage) (permissions.Request,
 	}, nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t shellTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -171,6 +175,7 @@ func (t shellTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 	return result, err
 }
 
+// readCommandOutput 读取外部输入，并保持调用方可处理的错误语义。
 func readCommandOutput(wg *sync.WaitGroup, reader *os.File, buffer *cappedBuffer) {
 	wg.Add(1)
 	go func() {
@@ -180,6 +185,7 @@ func readCommandOutput(wg *sync.WaitGroup, reader *os.File, buffer *cappedBuffer
 	}()
 }
 
+// waitForShellCommand 封装局部逻辑，保持调用方流程清晰。
 func waitForShellCommand(ctx context.Context, cmd *exec.Cmd) error {
 	type waitResult struct {
 		state *os.ProcessState
@@ -211,6 +217,7 @@ func waitForShellCommand(ctx context.Context, cmd *exec.Cmd) error {
 	return nil
 }
 
+// waitForCommandReaders 封装局部逻辑，保持调用方流程清晰。
 func waitForCommandReaders(wg *sync.WaitGroup, readers ...*os.File) {
 	done := make(chan struct{})
 	go func() {
@@ -227,6 +234,7 @@ func waitForCommandReaders(wg *sync.WaitGroup, readers ...*os.File) {
 	}
 }
 
+// parseShellArgs 解析输入数据，并执行必要的格式校验。
 func parseShellArgs(args json.RawMessage) (shellArgs, error) {
 	var parsed shellArgs
 	if err := decodeArgs(args, &parsed); err != nil {
@@ -235,6 +243,7 @@ func parseShellArgs(args json.RawMessage) (shellArgs, error) {
 	return parsed, nil
 }
 
+// classifyShellRisk 封装局部逻辑，保持调用方流程清晰。
 func classifyShellRisk(command string) permissions.Risk {
 	risks := make([]permissions.Risk, 0, 2)
 	if hasShellWriteRedirection(command) {
@@ -249,6 +258,7 @@ func classifyShellRisk(command string) permissions.Risk {
 	return highestShellRisk(risks)
 }
 
+// shellCommandSegments 封装局部逻辑，保持调用方流程清晰。
 func shellCommandSegments(command string) [][]string {
 	// 这里不是完整 shell parser，只做保守拆分：遇到管道、子 shell、逻辑操作符时按独立命令评估风险。
 	normalized := normalizeShellCommandSeparators(command)
@@ -271,6 +281,7 @@ func shellCommandSegments(command string) [][]string {
 	return segments
 }
 
+// normalizeShellCommandSeparators 规范化输入，减少等价写法对后续判断的影响。
 func normalizeShellCommandSeparators(command string) string {
 	var normalized strings.Builder
 	for i := 0; i < len(command); i++ {
@@ -298,6 +309,7 @@ func normalizeShellCommandSeparators(command string) string {
 	return normalized.String()
 }
 
+// classifyShellCommandFields 封装局部逻辑，保持调用方流程清晰。
 func classifyShellCommandFields(fields []string) permissions.Risk {
 	fields = trimLeadingEnvAssignments(fields)
 	if len(fields) == 0 {
@@ -323,6 +335,7 @@ func classifyShellCommandFields(fields []string) permissions.Risk {
 	return permissions.RiskExecute
 }
 
+// trimLeadingEnvAssignments 封装局部逻辑，保持调用方流程清晰。
 func trimLeadingEnvAssignments(fields []string) []string {
 	for len(fields) > 0 && isShellAssignmentField(fields[0]) {
 		fields = fields[1:]
@@ -330,6 +343,7 @@ func trimLeadingEnvAssignments(fields []string) []string {
 	return fields
 }
 
+// isShellAssignmentField 判断输入是否满足特定条件，并用于后续分支决策。
 func isShellAssignmentField(field string) bool {
 	equal := strings.IndexByte(field, '=')
 	if equal <= 0 {
@@ -349,6 +363,7 @@ func isShellAssignmentField(field string) bool {
 	return true
 }
 
+// shellCommandName 封装局部逻辑，保持调用方流程清晰。
 func shellCommandName(token string) string {
 	token = strings.Trim(token, "'\"`")
 	if strings.Contains(token, "/") {
@@ -358,6 +373,7 @@ func shellCommandName(token string) string {
 	return strings.Trim(token, "'\"`")
 }
 
+// classifyShellWrapper 封装局部逻辑，保持调用方流程清晰。
 func classifyShellWrapper(first string, fields []string) (permissions.Risk, bool) {
 	switch first {
 	case "sudo", "doas", "command", "time", "nohup":
@@ -386,6 +402,7 @@ func classifyShellWrapper(first string, fields []string) (permissions.Risk, bool
 	return permissions.RiskExecute, false
 }
 
+// firstSudoCommandField 从候选值中选择满足条件的结果。
 func firstSudoCommandField(fields []string, start int) int {
 	optionsWithOperand := map[string]bool{
 		"-u": true, "--user": true,
@@ -411,6 +428,7 @@ func firstSudoCommandField(fields []string, start int) int {
 	return len(fields)
 }
 
+// firstEnvCommandField 从候选值中选择满足条件的结果。
 func firstEnvCommandField(fields []string, start int) int {
 	for i := start; i < len(fields); i++ {
 		field := fields[i]
@@ -440,6 +458,7 @@ func firstEnvCommandField(fields []string, start int) int {
 	return len(fields)
 }
 
+// firstTimeoutCommandField 从候选值中选择满足条件的结果。
 func firstTimeoutCommandField(fields []string, start int) int {
 	i := start
 	for i < len(fields) {
@@ -479,10 +498,12 @@ func firstTimeoutCommandField(fields []string, start int) int {
 	return i + 1
 }
 
+// isShellCommandStringOption 判断输入是否满足特定条件，并用于后续分支决策。
 func isShellCommandStringOption(field string) bool {
 	return strings.HasPrefix(field, "-") && strings.Contains(field, "c")
 }
 
+// firstXargsCommandField 从候选值中选择满足条件的结果。
 func firstXargsCommandField(fields []string, start int) int {
 	optionsWithOperand := map[string]bool{
 		"-a": true, "--arg-file": true,
@@ -513,6 +534,7 @@ func firstXargsCommandField(fields []string, start int) int {
 	return len(fields)
 }
 
+// highestShellRisk 封装局部逻辑，保持调用方流程清晰。
 func highestShellRisk(risks []permissions.Risk) permissions.Risk {
 	highest := risks[0]
 	for _, risk := range risks[1:] {
@@ -523,6 +545,7 @@ func highestShellRisk(risks []permissions.Risk) permissions.Risk {
 	return highest
 }
 
+// shellRiskRank 封装局部逻辑，保持调用方流程清晰。
 func shellRiskRank(risk permissions.Risk) int {
 	switch risk {
 	case permissions.RiskDestructive:
@@ -540,6 +563,7 @@ func shellRiskRank(risk permissions.Risk) int {
 	}
 }
 
+// isDestructiveShellCommand 判断输入是否满足特定条件，并用于后续分支决策。
 func isDestructiveShellCommand(first string, fields []string) bool {
 	switch first {
 	case "rm", "rmdir", "mv", "chmod", "chown", "dd", "mkfs":
@@ -557,6 +581,7 @@ func isDestructiveShellCommand(first string, fields []string) bool {
 	return false
 }
 
+// isNetworkShellCommand 判断输入是否满足特定条件，并用于后续分支决策。
 func isNetworkShellCommand(first string, fields []string) bool {
 	switch first {
 	case "curl", "wget", "ssh", "scp", "rsync", "nc", "telnet":
@@ -588,6 +613,7 @@ func isNetworkShellCommand(first string, fields []string) bool {
 	return false
 }
 
+// isWriteShellCommand 判断输入是否满足特定条件，并用于后续分支决策。
 func isWriteShellCommand(first string, fields []string) bool {
 	switch first {
 	case "touch", "mkdir", "cp", "tee":
@@ -609,6 +635,7 @@ func isWriteShellCommand(first string, fields []string) bool {
 	return false
 }
 
+// gitSubmoduleCommandIsNetwork 封装局部逻辑，保持调用方流程清晰。
 func gitSubmoduleCommandIsNetwork(fields []string) bool {
 	submoduleSeen := false
 	for _, field := range fields[1:] {
@@ -626,6 +653,7 @@ func gitSubmoduleCommandIsNetwork(fields []string) bool {
 	return false
 }
 
+// isPackageInstallSubcommand 判断输入是否满足特定条件，并用于后续分支决策。
 func isPackageInstallSubcommand(field string) bool {
 	switch field {
 	case "install", "update", "upgrade", "download", "sync", "add":
@@ -635,6 +663,7 @@ func isPackageInstallSubcommand(field string) bool {
 	}
 }
 
+// goCommandIsNetwork 封装局部逻辑，保持调用方流程清晰。
 func goCommandIsNetwork(fields []string) bool {
 	if len(fields) < 2 {
 		return false
@@ -645,6 +674,7 @@ func goCommandIsNetwork(fields []string) bool {
 	return fields[1] == "install" && commandContainsVersionSuffix(fields[2:])
 }
 
+// goCommandIsWrite 封装局部逻辑，保持调用方流程清晰。
 func goCommandIsWrite(fields []string) bool {
 	if len(fields) < 2 {
 		return false
@@ -655,6 +685,7 @@ func goCommandIsWrite(fields []string) bool {
 	return len(fields) > 2 && fields[1] == "mod" && fields[2] == "tidy"
 }
 
+// commandContainsVersionSuffix 封装局部逻辑，保持调用方流程清晰。
 func commandContainsVersionSuffix(fields []string) bool {
 	for _, field := range fields {
 		if strings.Contains(field, "@") {
@@ -664,6 +695,7 @@ func commandContainsVersionSuffix(fields []string) bool {
 	return false
 }
 
+// pythonRunsPipInstall 封装局部逻辑，保持调用方流程清晰。
 func pythonRunsPipInstall(fields []string) bool {
 	for i := 1; i < len(fields)-2; i++ {
 		if fields[i] == "-m" && fields[i+1] == "pip" {
@@ -673,6 +705,7 @@ func pythonRunsPipInstall(fields []string) bool {
 	return false
 }
 
+// tarExtracts 封装局部逻辑，保持调用方流程清晰。
 func tarExtracts(fields []string) bool {
 	for _, field := range fields[1:] {
 		if field == "--extract" || field == "--get" {
@@ -688,6 +721,7 @@ func tarExtracts(fields []string) bool {
 	return false
 }
 
+// isReadShellCommand 判断输入是否满足特定条件，并用于后续分支决策。
 func isReadShellCommand(first string, fields []string) bool {
 	switch first {
 	case "ls", "pwd", "cat", "grep", "rg", "find", "sed", "awk", "head", "tail", "wc":
@@ -701,6 +735,7 @@ func isReadShellCommand(first string, fields []string) bool {
 	return false
 }
 
+// gitSubcommand 封装局部逻辑，保持调用方流程清晰。
 func gitSubcommand(fields []string) string {
 	optionsWithOperand := map[string]bool{
 		"-C": true, "-c": true, "--exec-path": true, "--git-dir": true, "--work-tree": true,
@@ -730,6 +765,7 @@ func gitSubcommand(fields []string) string {
 	return ""
 }
 
+// hasField 判断输入是否满足特定条件，并用于后续分支决策。
 func hasField(fields []string, needle string) bool {
 	for _, field := range fields[1:] {
 		if field == needle {
@@ -739,6 +775,7 @@ func hasField(fields []string, needle string) bool {
 	return false
 }
 
+// hasShortOption 判断输入是否满足特定条件，并用于后续分支决策。
 func hasShortOption(fields []string, option string) bool {
 	for _, field := range fields[1:] {
 		if field == "-"+option || (strings.HasPrefix(field, "-") && !strings.HasPrefix(field, "--") && strings.Contains(field[1:], option)) {
@@ -748,6 +785,7 @@ func hasShortOption(fields []string, option string) bool {
 	return false
 }
 
+// hasLongOption 判断输入是否满足特定条件，并用于后续分支决策。
 func hasLongOption(fields []string, option string) bool {
 	for _, field := range fields[1:] {
 		if field == option || strings.HasPrefix(field, option+"=") {
@@ -757,10 +795,12 @@ func hasLongOption(fields []string, option string) bool {
 	return false
 }
 
+// findExecsDestructiveCommand 封装局部逻辑，保持调用方流程清晰。
 func findExecsDestructiveCommand(fields []string) bool {
 	return findExecRisk(fields) == permissions.RiskDestructive
 }
 
+// findExecRisk 封装局部逻辑，保持调用方流程清晰。
 func findExecRisk(fields []string) permissions.Risk {
 	var risks []permissions.Risk
 	for i := 1; i < len(fields)-1; i++ {
@@ -775,6 +815,7 @@ func findExecRisk(fields []string) permissions.Risk {
 	return highestShellRisk(risks)
 }
 
+// hasShellWriteRedirection 判断输入是否满足特定条件，并用于后续分支决策。
 func hasShellWriteRedirection(command string) bool {
 	for _, token := range strings.Fields(command) {
 		if isFDRedirect(token) {
@@ -787,6 +828,7 @@ func hasShellWriteRedirection(command string) bool {
 	return false
 }
 
+// isFDRedirect 判断输入是否满足特定条件，并用于后续分支决策。
 func isFDRedirect(token string) bool {
 	return token == "2>&1" || token == "1>&2" || token == ">&2" || token == "&>-" || strings.HasPrefix(token, "2>&") || strings.HasPrefix(token, "1>&")
 }

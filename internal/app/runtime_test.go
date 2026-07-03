@@ -16,6 +16,7 @@ import (
 	"codeworld/internal/session"
 )
 
+// TestNewRuntimeBuildsREPLDependencies 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
@@ -47,6 +48,7 @@ func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeRestoresSessionMessagesAndUsage 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeRestoresSessionMessagesAndUsage(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
@@ -79,6 +81,7 @@ func TestNewRuntimeRestoresSessionMessagesAndUsage(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeDropsOrphanToolMessagesFromSession 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeDropsOrphanToolMessagesFromSession(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
@@ -118,6 +121,7 @@ func TestNewRuntimeDropsOrphanToolMessagesFromSession(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeDropsIncompleteAssistantToolCallGroups 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeDropsIncompleteAssistantToolCallGroups(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
@@ -157,6 +161,7 @@ func TestNewRuntimeDropsIncompleteAssistantToolCallGroups(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeIncludesWorkspaceIndexSummaryInSystemPrompt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeIncludesWorkspaceIndexSummaryInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
@@ -183,10 +188,12 @@ func TestNewRuntimeIncludesWorkspaceIndexSummaryInSystemPrompt(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeIncludesContextGraphSummaryInSystemPrompt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeIncludesContextGraphSummaryInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "main.go"), `package main
 
+// RunServer 是测试辅助函数，用于复用测试准备或断言逻辑。
 func RunServer() {}
 `)
 	t.Setenv("DEEPSEEK_API_KEY", "test-key")
@@ -205,6 +212,7 @@ func RunServer() {}
 	}
 }
 
+// TestNewRuntimeIncludesAgentsInstructionsInSystemPrompt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeIncludesAgentsInstructionsInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "AGENTS.md"), "Always run focused tests.")
@@ -224,6 +232,7 @@ func TestNewRuntimeIncludesAgentsInstructionsInSystemPrompt(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeIncludesSessionSummaryInSystemPrompt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeIncludesSessionSummaryInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	canonicalRoot, err := filepath.EvalSymlinks(root)
@@ -252,6 +261,7 @@ func TestNewRuntimeIncludesSessionSummaryInSystemPrompt(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeRegistersEnabledPluginTools 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeRegistersEnabledPluginTools(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("DEEPSEEK_API_KEY", "test-key")
@@ -286,6 +296,7 @@ func TestNewRuntimeRegistersEnabledPluginTools(t *testing.T) {
 	}
 }
 
+// TestNewRuntimeRegistersMCPTools 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeRegistersMCPTools(t *testing.T) {
 	if os.Getenv("CODEWORLD_APP_MCP_TEST_SERVER") == "1" {
 		runAppFakeMCPServer()
@@ -315,6 +326,7 @@ args = ["-test.run=TestNewRuntimeRegistersMCPTools"]
 	}
 }
 
+// TestNewRuntimeIncludesProjectSkillsInSystemPrompt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeIncludesProjectSkillsInSystemPrompt(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("DEEPSEEK_API_KEY", "test-key")
@@ -346,6 +358,7 @@ Always check tests before completion.
 	}
 }
 
+// writeFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -356,6 +369,7 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+// runAppFakeMCPServer 是测试辅助函数，用于复用测试准备或断言逻辑。
 func runAppFakeMCPServer() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -387,6 +401,7 @@ func runAppFakeMCPServer() {
 	}
 }
 
+// readAppMCPMessage 是测试辅助函数，用于复用测试准备或断言逻辑。
 func readAppMCPMessage(reader *bufio.Reader) ([]byte, error) {
 	var length int
 	for {

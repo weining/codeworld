@@ -14,10 +14,12 @@ type indexWorkspaceTool struct {
 	workspace workspace.Workspace
 }
 
+// NewIndexWorkspaceTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewIndexWorkspaceTool(ws workspace.Workspace) Tool {
 	return indexWorkspaceTool{workspace: ws}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t indexWorkspaceTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "index_workspace",
@@ -26,6 +28,7 @@ func (t indexWorkspaceTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t indexWorkspaceTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	if err := parseEmptyArgs(args); err != nil {
 		return permissions.Request{}, err
@@ -38,6 +41,7 @@ func (t indexWorkspaceTool) PermissionRequest(args json.RawMessage) (permissions
 	}, nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t indexWorkspaceTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err

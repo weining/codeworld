@@ -26,6 +26,7 @@ type Loaded struct {
 	MCPClients   []*mcp.Client
 }
 
+// Load 加载外部或项目内配置，并把原始数据转换为内部结构。
 func Load(ctx context.Context, opts Options) (Loaded, error) {
 	var loaded Loaded
 	projectSkills, err := skill.LoadProject(opts.Root)
@@ -63,12 +64,14 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 	return loaded, nil
 }
 
+// CloseClients 释放持有的资源，避免后台进程或句柄泄漏。
 func CloseClients(clients []*mcp.Client) {
 	for _, client := range clients {
 		_ = client.Close()
 	}
 }
 
+// loadMCPTools 加载外部或项目内配置，并把原始数据转换为内部结构。
 func loadMCPTools(ctx context.Context, servers []config.MCPServer) ([]tools.Tool, []*mcp.Client, error) {
 	var out []tools.Tool
 	clients := make([]*mcp.Client, 0, len(servers))

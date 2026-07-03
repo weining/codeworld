@@ -61,6 +61,7 @@ type Store struct {
 	root string
 }
 
+// New 创建并返回对应组件，集中设置默认依赖和初始状态。
 func New(workspace, provider, model string) Session {
 	now := time.Now().UTC()
 	return Session{
@@ -73,14 +74,17 @@ func New(workspace, provider, model string) Session {
 	}
 }
 
+// NewStore 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewStore(root string) Store {
 	return Store{root: filepath.Clean(root)}
 }
 
+// CurrentPath 提供对外可复用的能力，并隐藏内部实现细节。
 func (s Store) CurrentPath() string {
 	return filepath.Join(s.root, ".codeworld", "current-session.json")
 }
 
+// SaveCurrent 持久化当前状态，并处理路径、权限或归档细节。
 func (s Store) SaveCurrent(sess Session) error {
 	currentPath := s.CurrentPath()
 	archivePath, err := s.archivePath(sess.ID)
@@ -101,6 +105,7 @@ func (s Store) SaveCurrent(sess Session) error {
 	return writeSessionFile(archivePath, data)
 }
 
+// archivePath 封装局部逻辑，保持调用方流程清晰。
 func (s Store) archivePath(id string) (string, error) {
 	if id == "" || id == "." || id == ".." || filepath.IsAbs(id) || filepath.Base(id) != id || strings.Contains(id, "\\") {
 		return "", fmt.Errorf("invalid session ID %q", id)
@@ -108,6 +113,7 @@ func (s Store) archivePath(id string) (string, error) {
 	return filepath.Join(s.root, ".codeworld", "sessions", id+".json"), nil
 }
 
+// LoadCurrent 加载外部或项目内配置，并把原始数据转换为内部结构。
 func (s Store) LoadCurrent() (Session, error) {
 	data, err := os.ReadFile(s.CurrentPath())
 	if err != nil {
@@ -121,6 +127,7 @@ func (s Store) LoadCurrent() (Session, error) {
 	return sess, nil
 }
 
+// writeSessionFile 写入输出数据，并保证必要的目录或权限约束。
 func writeSessionFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -131,6 +138,7 @@ func writeSessionFile(path string, data []byte) error {
 	return os.Chmod(path, 0o600)
 }
 
+// newID 封装局部逻辑，保持调用方流程清晰。
 func newID(now time.Time) string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {

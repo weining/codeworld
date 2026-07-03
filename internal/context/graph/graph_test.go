@@ -7,12 +7,14 @@ import (
 	"testing"
 )
 
+// TestBuildExtractsFilesGoSymbolsAndGitChanges 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestBuildExtractsFilesGoSymbolsAndGitChanges(t *testing.T) {
 	root := t.TempDir()
 	writeGraphFile(t, root, "main.go", `package main
 
 type Server struct{}
 
+// Hello 是测试辅助函数，用于复用测试准备或断言逻辑。
 func Hello() {}
 `)
 	writeGraphFile(t, root, "README.md", "hello docs\n")
@@ -36,10 +38,12 @@ func Hello() {}
 	}
 }
 
+// TestSearchMatchesPathsContentAndSymbols 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSearchMatchesPathsContentAndSymbols(t *testing.T) {
 	root := t.TempDir()
 	writeGraphFile(t, root, "cmd/app/main.go", `package main
 
+// RunServer 是测试辅助函数，用于复用测试准备或断言逻辑。
 func RunServer() {}
 `)
 	writeGraphFile(t, root, "docs/notes.md", "deployment notes\n")
@@ -58,6 +62,7 @@ func RunServer() {}
 	}
 }
 
+// hasSymbol 是测试辅助函数，用于复用测试准备或断言逻辑。
 func hasSymbol(symbols []Symbol, kind, name string) bool {
 	for _, symbol := range symbols {
 		if symbol.Kind == kind && symbol.Name == name {
@@ -67,6 +72,7 @@ func hasSymbol(symbols []Symbol, kind, name string) bool {
 	return false
 }
 
+// writeGraphFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeGraphFile(t *testing.T, root, rel, content string) {
 	t.Helper()
 	path := filepath.Join(root, rel)

@@ -12,6 +12,7 @@ import (
 	"testing"
 )
 
+// TestStdioClientListsAndCallsTools 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStdioClientListsAndCallsTools(t *testing.T) {
 	if os.Getenv("CODEWORLD_MCP_TEST_SERVER") == "1" {
 		runFakeServer()
@@ -46,6 +47,7 @@ func TestStdioClientListsAndCallsTools(t *testing.T) {
 	}
 }
 
+// TestStdioClientListsResourcesAndPrompts 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStdioClientListsResourcesAndPrompts(t *testing.T) {
 	if os.Getenv("CODEWORLD_MCP_TEST_SERVER") == "1" {
 		runFakeServer()
@@ -87,6 +89,7 @@ func TestStdioClientListsResourcesAndPrompts(t *testing.T) {
 	}
 }
 
+// runFakeServer 是测试辅助函数，用于复用测试准备或断言逻辑。
 func runFakeServer() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -131,6 +134,7 @@ func runFakeServer() {
 	}
 }
 
+// readFramed 是测试辅助函数，用于复用测试准备或断言逻辑。
 func readFramed(reader *bufio.Reader) ([]byte, error) {
 	var length int
 	for {

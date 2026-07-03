@@ -16,6 +16,7 @@ type Skill struct {
 	Source      string
 }
 
+// LoadProject 加载外部或项目内配置，并把原始数据转换为内部结构。
 func LoadProject(root string) ([]Skill, error) {
 	// project skill 使用渐进披露：启动时只进入索引，真正内容由 skill_open 工具按需读取。
 	skillsRoot := filepath.Join(root, ".codeworld", "skills")
@@ -50,6 +51,7 @@ func LoadProject(root string) ([]Skill, error) {
 	return skills, nil
 }
 
+// LoadFile 加载外部或项目内配置，并把原始数据转换为内部结构。
 func LoadFile(name, path, source string) (Skill, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -60,6 +62,7 @@ func LoadFile(name, path, source string) (Skill, error) {
 	return loaded, nil
 }
 
+// Context 提供对外可复用的能力，并隐藏内部实现细节。
 func Context(skills []Skill) string {
 	if len(skills) == 0 {
 		return ""
@@ -76,6 +79,7 @@ func Context(skills []Skill) string {
 	return strings.TrimSpace(b.String())
 }
 
+// Index 提供对外可复用的能力，并隐藏内部实现细节。
 func Index(skills []Skill) string {
 	if len(skills) == 0 {
 		return ""
@@ -96,6 +100,7 @@ func Index(skills []Skill) string {
 	return strings.TrimSpace(b.String())
 }
 
+// parse 解析输入数据，并执行必要的格式校验。
 func parse(dirName, path, content string) Skill {
 	skill := Skill{Name: dirName, Content: content, Path: path}
 	lines := strings.Split(content, "\n")

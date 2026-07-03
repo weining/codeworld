@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// TestCurrentPathReturnsWorkspaceCodeworldPath 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestCurrentPathReturnsWorkspaceCodeworldPath(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
@@ -19,6 +20,7 @@ func TestCurrentPathReturnsWorkspaceCodeworldPath(t *testing.T) {
 	}
 }
 
+// TestSaveCurrentWritesCurrentAndArchiveWithRestrictivePermissions 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSaveCurrentWritesCurrentAndArchiveWithRestrictivePermissions(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
@@ -56,6 +58,7 @@ func TestSaveCurrentWritesCurrentAndArchiveWithRestrictivePermissions(t *testing
 	}
 }
 
+// TestSaveCurrentRejectsTraversalSessionID 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSaveCurrentRejectsTraversalSessionID(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
@@ -71,6 +74,7 @@ func TestSaveCurrentRejectsTraversalSessionID(t *testing.T) {
 	}
 }
 
+// TestSaveCurrentRefreshesUpdatedAt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSaveCurrentRefreshesUpdatedAt(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
@@ -104,6 +108,7 @@ func TestSaveCurrentRefreshesUpdatedAt(t *testing.T) {
 	}
 }
 
+// TestLoadCurrentReturnsSavedSession 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	root := t.TempDir()
 	store := NewStore(root)
@@ -168,6 +173,7 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	}
 }
 
+// requireRegularFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func requireRegularFile(t *testing.T, path string) os.FileInfo {
 	t.Helper()
 
@@ -181,6 +187,7 @@ func requireRegularFile(t *testing.T, path string) os.FileInfo {
 	return info
 }
 
+// assertJSONEqual 是测试辅助函数，用于复用测试准备或断言逻辑。
 func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
 	t.Helper()
 	var gotValue any

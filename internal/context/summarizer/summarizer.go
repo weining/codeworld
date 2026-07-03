@@ -12,6 +12,7 @@ type Options struct {
 	KeepRecent  int
 }
 
+// ShouldSummarize 提供对外可复用的能力，并隐藏内部实现细节。
 func ShouldSummarize(messages []model.Message, usage model.Usage, opts Options) bool {
 	maxMessages := opts.MaxMessages
 	if maxMessages <= 0 {
@@ -20,6 +21,7 @@ func ShouldSummarize(messages []model.Message, usage model.Usage, opts Options) 
 	return len(messages) > maxMessages
 }
 
+// Summarize 提供对外可复用的能力，并隐藏内部实现细节。
 func Summarize(ctx context.Context, client model.Client, summary string, messages []model.Message, opts Options) (string, []model.Message, error) {
 	keepRecent := opts.KeepRecent
 	if keepRecent <= 0 {
@@ -44,6 +46,7 @@ func Summarize(ctx context.Context, client model.Client, summary string, message
 	return resp.FinalText, recent, nil
 }
 
+// buildPrompt 构建运行所需的数据结构，并在过程中收集必要的上下文。
 func buildPrompt(summary string, messages []model.Message) string {
 	var b strings.Builder
 	b.WriteString("Summarize the older conversation for a coding agent. Preserve user goals, files changed, commands run, decisions, and unresolved tasks.\n")

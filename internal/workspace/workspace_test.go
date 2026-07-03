@@ -9,6 +9,7 @@ import (
 	"testing"
 )
 
+// TestResolveAllowsWorkspacePath 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestResolveAllowsWorkspacePath(t *testing.T) {
 	root := t.TempDir()
 	ws, err := New(root)
@@ -26,6 +27,7 @@ func TestResolveAllowsWorkspacePath(t *testing.T) {
 	}
 }
 
+// TestResolveRejectsPathEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestResolveRejectsPathEscape(t *testing.T) {
 	root := t.TempDir()
 	ws, err := New(root)
@@ -38,6 +40,7 @@ func TestResolveRejectsPathEscape(t *testing.T) {
 	}
 }
 
+// TestResolveRejectsAbsolutePathOutsideWorkspaceWithSharedPrefix 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestResolveRejectsAbsolutePathOutsideWorkspaceWithSharedPrefix(t *testing.T) {
 	parent := t.TempDir()
 	root := filepath.Join(parent, "work")
@@ -59,6 +62,7 @@ func TestResolveRejectsAbsolutePathOutsideWorkspaceWithSharedPrefix(t *testing.T
 	}
 }
 
+// TestResolveRejectsSymlinkedFileEscapingWorkspace 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestResolveRejectsSymlinkedFileEscapingWorkspace(t *testing.T) {
 	parent := t.TempDir()
 	root := filepath.Join(parent, "work")
@@ -82,6 +86,7 @@ func TestResolveRejectsSymlinkedFileEscapingWorkspace(t *testing.T) {
 	}
 }
 
+// TestResolveRejectsSymlinkedDirectoryEscapingWorkspace 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestResolveRejectsSymlinkedDirectoryEscapingWorkspace(t *testing.T) {
 	parent := t.TempDir()
 	root := filepath.Join(parent, "work")
@@ -105,6 +110,7 @@ func TestResolveRejectsSymlinkedDirectoryEscapingWorkspace(t *testing.T) {
 	}
 }
 
+// TestResolveRejectsDanglingSymlinkLeafEscapingWorkspace 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestResolveRejectsDanglingSymlinkLeafEscapingWorkspace(t *testing.T) {
 	parent := t.TempDir()
 	root := filepath.Join(parent, "work")
@@ -125,6 +131,7 @@ func TestResolveRejectsDanglingSymlinkLeafEscapingWorkspace(t *testing.T) {
 	}
 }
 
+// TestResolveRejectsDanglingSymlinkParentEscapingWorkspace 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestResolveRejectsDanglingSymlinkParentEscapingWorkspace(t *testing.T) {
 	parent := t.TempDir()
 	root := filepath.Join(parent, "work")
@@ -145,6 +152,7 @@ func TestResolveRejectsDanglingSymlinkParentEscapingWorkspace(t *testing.T) {
 	}
 }
 
+// TestRelReturnsSlashNormalizedWorkspacePath 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRelReturnsSlashNormalizedWorkspacePath(t *testing.T) {
 	root := t.TempDir()
 	ws, err := New(root)
@@ -161,6 +169,7 @@ func TestRelReturnsSlashNormalizedWorkspacePath(t *testing.T) {
 	}
 }
 
+// TestIsGitRepoDetectsDotGitDirectory 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestIsGitRepoDetectsDotGitDirectory(t *testing.T) {
 	root := t.TempDir()
 	ws, err := New(root)
@@ -179,6 +188,7 @@ func TestIsGitRepoDetectsDotGitDirectory(t *testing.T) {
 	}
 }
 
+// TestIsGitRepoDetectsDotGitFile 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestIsGitRepoDetectsDotGitFile(t *testing.T) {
 	git := requireGit(t)
 	root := t.TempDir()
@@ -194,6 +204,7 @@ func TestIsGitRepoDetectsDotGitFile(t *testing.T) {
 	}
 }
 
+// TestIsGitRepoDetectsSubdirectoryInsideWorktree 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestIsGitRepoDetectsSubdirectoryInsideWorktree(t *testing.T) {
 	git := requireGit(t)
 	root := t.TempDir()
@@ -212,6 +223,7 @@ func TestIsGitRepoDetectsSubdirectoryInsideWorktree(t *testing.T) {
 	}
 }
 
+// TestSummarySkipsHeavyDirectories 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummarySkipsHeavyDirectories(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "README.md"), "readme")
@@ -246,6 +258,7 @@ func TestSummarySkipsHeavyDirectories(t *testing.T) {
 	}
 }
 
+// TestSummaryStopsAfterLimitPlusOneIncludedFiles 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummaryStopsAfterLimitPlusOneIncludedFiles(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod unreadable directory behavior is platform-specific on windows")
@@ -278,6 +291,7 @@ func TestSummaryStopsAfterLimitPlusOneIncludedFiles(t *testing.T) {
 	}
 }
 
+// TestSummaryLimitsAfterGlobalPathSort 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummaryLimitsAfterGlobalPathSort(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "a", "y.txt"), "nested")
@@ -299,6 +313,7 @@ func TestSummaryLimitsAfterGlobalPathSort(t *testing.T) {
 	}
 }
 
+// TestSummarySortsFilesWithinLimit 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummarySortsFilesWithinLimit(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "c.txt"), "c")
@@ -320,6 +335,7 @@ func TestSummarySortsFilesWithinLimit(t *testing.T) {
 	}
 }
 
+// TestSummaryDefaultsNonPositiveLimitTo100 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummaryDefaultsNonPositiveLimitTo100(t *testing.T) {
 	root := t.TempDir()
 	for i := 0; i < 3; i++ {
@@ -341,6 +357,7 @@ func TestSummaryDefaultsNonPositiveLimitTo100(t *testing.T) {
 	}
 }
 
+// TestSummaryAppendsTruncatedMarkerWhenFilesExceedLimit 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummaryAppendsTruncatedMarkerWhenFilesExceedLimit(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "c.txt"), "c")
@@ -362,6 +379,7 @@ func TestSummaryAppendsTruncatedMarkerWhenFilesExceedLimit(t *testing.T) {
 	}
 }
 
+// requireGit 是测试辅助函数，用于复用测试准备或断言逻辑。
 func requireGit(t *testing.T) string {
 	t.Helper()
 	git, err := exec.LookPath("git")
@@ -371,6 +389,7 @@ func requireGit(t *testing.T) string {
 	return git
 }
 
+// runGit 是测试辅助函数，用于复用测试准备或断言逻辑。
 func runGit(t *testing.T, git string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(git, args...)
@@ -380,6 +399,7 @@ func runGit(t *testing.T, git string, args ...string) {
 	}
 }
 
+// writeFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

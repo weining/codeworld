@@ -19,6 +19,7 @@ import (
 	"codeworld/internal/workspace"
 )
 
+// TestStatusLineShowsTokenBreakdown 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStatusLineShowsTokenBreakdown(t *testing.T) {
 	line := StatusLine(Status{
 		Workspace: "repo",
@@ -37,6 +38,7 @@ func TestStatusLineShowsTokenBreakdown(t *testing.T) {
 	}
 }
 
+// TestRunReturnsWithoutTerminalRendererInTestMode 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunReturnsWithoutTerminalRendererInTestMode(t *testing.T) {
 	root := t.TempDir()
 	var out bytes.Buffer
@@ -57,6 +59,7 @@ func TestRunReturnsWithoutTerminalRendererInTestMode(t *testing.T) {
 	}
 }
 
+// TestModelViewContainsTranscriptStatusAndComposer 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestModelViewContainsTranscriptStatusAndComposer(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -82,10 +85,12 @@ type fakeModelClient struct {
 	resp model.GenerateResponse
 }
 
+// Generate 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f fakeModelClient) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
 	return f.resp, nil
 }
 
+// TestRunnerAdapterUpdatesRuntimeUsageAndMessages 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunnerAdapterUpdatesRuntimeUsageAndMessages(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -117,6 +122,7 @@ func TestRunnerAdapterUpdatesRuntimeUsageAndMessages(t *testing.T) {
 	}
 }
 
+// TestToolReporterAppendsToolEvents 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestToolReporterAppendsToolEvents(t *testing.T) {
 	reporter := NewToolReporter()
 	reporter.ReportTool(context.Background(), agent.ToolEvent{
@@ -134,6 +140,7 @@ func TestToolReporterAppendsToolEvents(t *testing.T) {
 	}
 }
 
+// TestTUIConfirmerAllowsSessionApproval 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestTUIConfirmerAllowsSessionApproval(t *testing.T) {
 	confirmer := NewTUIConfirmer()
 	done := make(chan bool, 1)
@@ -160,6 +167,7 @@ func TestTUIConfirmerAllowsSessionApproval(t *testing.T) {
 	}
 }
 
+// TestHandleSlashCommandUpdatesModelAndTranscript 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestHandleSlashCommandUpdatesModelAndTranscript(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -182,6 +190,7 @@ func TestHandleSlashCommandUpdatesModelAndTranscript(t *testing.T) {
 	}
 }
 
+// TestHandleSlashCommandListsSkills 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestHandleSlashCommandListsSkills(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -200,6 +209,7 @@ func TestHandleSlashCommandListsSkills(t *testing.T) {
 	}
 }
 
+// TestHandleSlashCommandShowsEmptySkillsAndMCPNotices 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestHandleSlashCommandShowsEmptySkillsAndMCPNotices(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -225,6 +235,7 @@ func TestHandleSlashCommandShowsEmptySkillsAndMCPNotices(t *testing.T) {
 	}
 }
 
+// TestUpdateShowsSlashCommandAndResultImmediately 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestUpdateShowsSlashCommandAndResultImmediately(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -253,6 +264,7 @@ func TestUpdateShowsSlashCommandAndResultImmediately(t *testing.T) {
 	}
 }
 
+// TestHandleAdvancedSlashCommands 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestHandleAdvancedSlashCommands(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -285,6 +297,7 @@ func TestHandleAdvancedSlashCommands(t *testing.T) {
 	}
 }
 
+// TestModelScrollKeysMoveViewport 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestModelScrollKeysMoveViewport(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -315,6 +328,7 @@ func TestModelScrollKeysMoveViewport(t *testing.T) {
 	}
 }
 
+// TestModelAppliesAssistantDeltaToActiveTranscriptItem 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestModelAppliesAssistantDeltaToActiveTranscriptItem(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{
@@ -336,12 +350,14 @@ func TestModelAppliesAssistantDeltaToActiveTranscriptItem(t *testing.T) {
 	}
 }
 
+// mustHandleCommand 是测试辅助函数，用于复用测试准备或断言逻辑。
 func mustHandleCommand(t *testing.T, m Model, cmd string) (Model, bool) {
 	t.Helper()
 	next, quit := m.handleSlashCommand(context.Background(), cmd)
 	return next, quit
 }
 
+// transcriptText 是测试辅助函数，用于复用测试准备或断言逻辑。
 func transcriptText(items []TranscriptItem) string {
 	lines := make([]string, 0, len(items))
 	for _, item := range items {

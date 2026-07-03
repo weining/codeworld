@@ -21,10 +21,12 @@ type ContextStore struct {
 	loaded       bool
 }
 
+// NewContextStore 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewContextStore(ws workspace.Workspace, maxFileBytes int64) *ContextStore {
 	return &ContextStore{workspace: ws, maxFileBytes: maxFileBytes}
 }
 
+// Refresh 提供对外可复用的能力，并隐藏内部实现细节。
 func (s *ContextStore) Refresh() (graph.Graph, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -37,6 +39,7 @@ func (s *ContextStore) Refresh() (graph.Graph, error) {
 	return g, nil
 }
 
+// Graph 提供对外可复用的能力，并隐藏内部实现细节。
 func (s *ContextStore) Graph() (graph.Graph, error) {
 	s.mu.Lock()
 	if s.loaded {
@@ -52,10 +55,12 @@ type contextRefreshTool struct {
 	store *ContextStore
 }
 
+// NewContextRefreshTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewContextRefreshTool(store *ContextStore) Tool {
 	return contextRefreshTool{store: store}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t contextRefreshTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "context_refresh",
@@ -64,6 +69,7 @@ func (t contextRefreshTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t contextRefreshTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	if err := parseEmptyArgs(args); err != nil {
 		return permissions.Request{}, err
@@ -71,6 +77,7 @@ func (t contextRefreshTool) PermissionRequest(args json.RawMessage) (permissions
 	return readRequest("context_refresh", "."), nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t contextRefreshTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -94,10 +101,12 @@ type contextSearchArgs struct {
 	Limit int    `json:"limit"`
 }
 
+// NewContextSearchTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewContextSearchTool(store *ContextStore) Tool {
 	return contextSearchTool{store: store}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t contextSearchTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "context_search",
@@ -109,6 +118,7 @@ func (t contextSearchTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t contextSearchTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parseContextSearchArgs(args)
 	if err != nil {
@@ -117,6 +127,7 @@ func (t contextSearchTool) PermissionRequest(args json.RawMessage) (permissions.
 	return readRequest("context_search", parsed.Query), nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t contextSearchTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -141,6 +152,7 @@ func (t contextSearchTool) Execute(ctx context.Context, args json.RawMessage) (R
 	return Result{Content: strings.Join(lines, "\n"), Metadata: map[string]any{"matches": len(results)}}, nil
 }
 
+// parseContextSearchArgs 解析输入数据，并执行必要的格式校验。
 func parseContextSearchArgs(args json.RawMessage) (contextSearchArgs, error) {
 	var parsed contextSearchArgs
 	if err := decodeArgs(args, &parsed); err != nil {
@@ -160,10 +172,12 @@ type contextOpenTool struct {
 	store *ContextStore
 }
 
+// NewContextOpenTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewContextOpenTool(store *ContextStore) Tool {
 	return contextOpenTool{store: store}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t contextOpenTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "context_open",
@@ -174,6 +188,7 @@ func (t contextOpenTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t contextOpenTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parsePathArgs(args, "")
 	if err != nil {
@@ -182,6 +197,7 @@ func (t contextOpenTool) PermissionRequest(args json.RawMessage) (permissions.Re
 	return readRequest("context_open", parsed.Path), nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t contextOpenTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err

@@ -9,6 +9,7 @@ import (
 	"codeworld/internal/session"
 )
 
+// handleSlashCommand 封装局部逻辑，保持调用方流程清晰。
 func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool) {
 	switch {
 	case line == "/help":
@@ -115,10 +116,12 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 	return m, false
 }
 
+// appendNotice 封装局部逻辑，保持调用方流程清晰。
 func (m *Model) appendNotice(text string) {
 	m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: text})
 }
 
+// appendError 封装局部逻辑，保持调用方流程清晰。
 func (m *Model) appendError(text string) {
 	m.items = append(m.items, TranscriptItem{Kind: ItemError, Text: text})
 }

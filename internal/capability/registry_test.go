@@ -10,6 +10,7 @@ import (
 	"codeworld/internal/workspace"
 )
 
+// TestLoadCombinesPluginToolsAndSkillContext 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadCombinesPluginToolsAndSkillContext(t *testing.T) {
 	root := t.TempDir()
 	writeCapabilityFile(t, filepath.Join(root, ".codeworld", "plugins", "demo", "plugin.json"), `{
@@ -57,6 +58,7 @@ Run tests before completion.
 	}
 }
 
+// TestLoadIncludesCodexPluginSkills 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadIncludesCodexPluginSkills(t *testing.T) {
 	root := t.TempDir()
 	writeCapabilityFile(t, filepath.Join(root, ".codeworld", "codex-plugins", "super", ".codex-plugin", "plugin.json"), `{"name":"super"}`)
@@ -81,6 +83,7 @@ Run focused tests.
 	}
 }
 
+// writeCapabilityFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeCapabilityFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

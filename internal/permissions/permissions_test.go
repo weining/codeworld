@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// TestConservativePolicyAllowsRead 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestConservativePolicyAllowsRead(t *testing.T) {
 	policy := ConservativePolicy{}
 	decision, err := policy.Check(context.Background(), Request{Action: ActionRead, Risk: RiskRead, Target: "README.md"})
@@ -16,6 +17,7 @@ func TestConservativePolicyAllowsRead(t *testing.T) {
 	}
 }
 
+// TestConservativePolicyAsksForPatchWriteAndShell 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestConservativePolicyAsksForPatchWriteAndShell(t *testing.T) {
 	policy := ConservativePolicy{}
 	cases := []Request{
@@ -35,6 +37,7 @@ func TestConservativePolicyAsksForPatchWriteAndShell(t *testing.T) {
 	}
 }
 
+// TestConservativePolicyDeniesOutsideWorkspace 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestConservativePolicyDeniesOutsideWorkspace(t *testing.T) {
 	policy := ConservativePolicy{}
 	decision, err := policy.Check(context.Background(), Request{Action: ActionRead, Risk: RiskOutsideWorkspace, Target: "../secret"})
@@ -46,6 +49,7 @@ func TestConservativePolicyDeniesOutsideWorkspace(t *testing.T) {
 	}
 }
 
+// TestAutoPolicyAllowsWorkspaceActionsAndAsksForHighRiskShell 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestAutoPolicyAllowsWorkspaceActionsAndAsksForHighRiskShell(t *testing.T) {
 	policy := AutoPolicy{}
 	allowCases := []Request{

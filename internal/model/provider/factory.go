@@ -19,6 +19,7 @@ type Config struct {
 	LogPath         string
 }
 
+// NewClient 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewClient(cfg Config) (model.Client, error) {
 	switch cfg.Provider {
 	case "", "deepseek":

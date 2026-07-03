@@ -33,6 +33,7 @@ type Model struct {
 	quitting          bool
 }
 
+// NewModel 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewModel(rt *app.Runtime) Model {
 	input := textarea.New()
 	input.Placeholder = "Ask codeworld..."
@@ -51,10 +52,12 @@ func NewModel(rt *app.Runtime) Model {
 	return m
 }
 
+// Init 返回 TUI 启动时需要并行监听的初始命令。
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(textarea.Blink, m.waitToolEvent(), m.waitPermissionRequest(), m.waitTurnEvent())
 }
 
+// Update 处理 TUI 消息并返回下一版模型状态和后续命令。
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case turnEventMsg:
@@ -154,6 +157,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// View 渲染当前 TUI 状态，包括状态栏、对话区和输入框。
 func (m Model) View() string {
 	if m.quitting {
 		return ""
@@ -166,6 +170,7 @@ func (m Model) View() string {
 	return fmt.Sprintf("%s\n%s\n%s", header, body, composer)
 }
 
+// refreshViewport 封装局部逻辑，保持调用方流程清晰。
 func (m *Model) refreshViewport() {
 	lines := make([]string, 0, len(m.items)*2)
 	for _, item := range m.items {
@@ -176,6 +181,7 @@ func (m *Model) refreshViewport() {
 	m.viewport.GotoBottom()
 }
 
+// applyTurnEvent 封装局部逻辑，保持调用方流程清晰。
 func (m *Model) applyTurnEvent(event agent.TurnEvent) {
 	switch event.Kind {
 	case agent.TurnEventAssistantDelta:
@@ -197,6 +203,7 @@ func (m *Model) applyTurnEvent(event agent.TurnEvent) {
 	}
 }
 
+// waitToolEvent 封装局部逻辑，保持调用方流程清晰。
 func (m Model) waitToolEvent() tea.Cmd {
 	return func() tea.Msg {
 		item, ok := <-m.toolEvents
@@ -207,6 +214,7 @@ func (m Model) waitToolEvent() tea.Cmd {
 	}
 }
 
+// waitTurnEvent 封装局部逻辑，保持调用方流程清晰。
 func (m Model) waitTurnEvent() tea.Cmd {
 	return func() tea.Msg {
 		event, ok := <-m.turnEvents
@@ -217,6 +225,7 @@ func (m Model) waitTurnEvent() tea.Cmd {
 	}
 }
 
+// waitPermissionRequest 封装局部逻辑，保持调用方流程清晰。
 func (m Model) waitPermissionRequest() tea.Cmd {
 	return func() tea.Msg {
 		req, ok := <-m.confirmer.Requests()
@@ -227,6 +236,7 @@ func (m Model) waitPermissionRequest() tea.Cmd {
 	}
 }
 
+// max 从候选值中选择满足条件的结果。
 func max(a, b int) int {
 	if a > b {
 		return a

@@ -11,6 +11,7 @@ import (
 	"codeworld/internal/session"
 )
 
+// Once 提供对外可复用的能力，并隐藏内部实现细节。
 func Once(ctx context.Context, rt *app.Runtime, input string) error {
 	if input == "" {
 		return fmt.Errorf("run input is empty")
@@ -37,6 +38,7 @@ type reporter struct {
 	}
 }
 
+// ReportTool 把工具执行状态转换为用户可见的进度事件。
 func (r reporter) ReportTool(ctx context.Context, event agent.ToolEvent) {
 	if r.out == nil {
 		return
@@ -57,6 +59,7 @@ type nonInteractiveConfirmer struct {
 	approvals []session.Approval
 }
 
+// Confirm 向用户确认权限请求，并把选择返回给 agent 流程。
 func (c nonInteractiveConfirmer) Confirm(ctx context.Context, req permissions.Request, decision permissions.Decision) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -67,6 +70,7 @@ func (c nonInteractiveConfirmer) Confirm(ctx context.Context, req permissions.Re
 	return false, nil
 }
 
+// approvalSet 封装局部逻辑，保持调用方流程清晰。
 func approvalSet(items []session.Approval) approvals.Set {
 	set := approvals.Set{}
 	for _, item := range items {

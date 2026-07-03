@@ -47,10 +47,12 @@ type searchArgs struct {
 	Path  string `json:"path"`
 }
 
+// NewListDirTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewListDirTool(ws workspace.Workspace) Tool {
 	return listDirTool{workspace: ws}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t listDirTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "list_dir",
@@ -61,6 +63,7 @@ func (t listDirTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t listDirTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parsePathArgs(args, ".")
 	if err != nil {
@@ -69,6 +72,7 @@ func (t listDirTool) PermissionRequest(args json.RawMessage) (permissions.Reques
 	return readRequest("list_dir", parsed.Path), nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t listDirTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -133,10 +137,12 @@ type readFileTool struct {
 	workspace workspace.Workspace
 }
 
+// NewReadFileTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewReadFileTool(ws workspace.Workspace) Tool {
 	return readFileTool{workspace: ws}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t readFileTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "read_file",
@@ -149,6 +155,7 @@ func (t readFileTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t readFileTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parseReadFileArgs(args)
 	if err != nil {
@@ -160,6 +167,7 @@ func (t readFileTool) PermissionRequest(args json.RawMessage) (permissions.Reque
 	return readRequest("read_file", parsed.Path), nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t readFileTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -234,10 +242,12 @@ type searchTool struct {
 	workspace workspace.Workspace
 }
 
+// NewSearchTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewSearchTool(ws workspace.Workspace) Tool {
 	return searchTool{workspace: ws}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t searchTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "search",
@@ -249,6 +259,7 @@ func (t searchTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t searchTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parseSearchArgs(args)
 	if err != nil {
@@ -260,6 +271,7 @@ func (t searchTool) PermissionRequest(args json.RawMessage) (permissions.Request
 	return readRequest("search", parsed.Path), nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t searchTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -438,6 +450,7 @@ type searchFileResult struct {
 	scannedBytes  int64
 }
 
+// searchFile 在受控范围内搜索数据，并返回截断后的结果集。
 func searchFile(ws workspace.Workspace, path string, query string, remaining int, byteLimit int64) (searchFileResult, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -493,6 +506,7 @@ func searchFile(ws workspace.Workspace, path string, query string, remaining int
 	}, nil
 }
 
+// joinCapped 封装局部逻辑，保持调用方流程清晰。
 func joinCapped(items []string, limit int64) (string, bool) {
 	var builder strings.Builder
 	truncated := false
@@ -517,6 +531,7 @@ func joinCapped(items []string, limit int64) (string, bool) {
 	return builder.String(), truncated
 }
 
+// minInt64 从候选值中选择满足条件的结果。
 func minInt64(a, b int64) int64 {
 	if a < b {
 		return a
@@ -524,6 +539,7 @@ func minInt64(a, b int64) int64 {
 	return b
 }
 
+// readRequest 读取外部输入，并保持调用方可处理的错误语义。
 func readRequest(reason string, target string) permissions.Request {
 	return permissions.Request{
 		Action: permissions.ActionRead,
@@ -533,6 +549,7 @@ func readRequest(reason string, target string) permissions.Request {
 	}
 }
 
+// objectSchema 封装局部逻辑，保持调用方流程清晰。
 func objectSchema(properties map[string]any, required []string) map[string]any {
 	schema := map[string]any{
 		"type":                 "object",
@@ -545,6 +562,7 @@ func objectSchema(properties map[string]any, required []string) map[string]any {
 	return schema
 }
 
+// parsePathArgs 解析输入数据，并执行必要的格式校验。
 func parsePathArgs(args json.RawMessage, defaultPath string) (pathArgs, error) {
 	var parsed pathArgs
 	if err := decodeArgs(args, &parsed); err != nil {
@@ -556,6 +574,7 @@ func parsePathArgs(args json.RawMessage, defaultPath string) (pathArgs, error) {
 	return parsed, nil
 }
 
+// parseReadFileArgs 解析输入数据，并执行必要的格式校验。
 func parseReadFileArgs(args json.RawMessage) (readFileArgs, error) {
 	var parsed readFileArgs
 	if err := decodeArgs(args, &parsed); err != nil {
@@ -564,6 +583,7 @@ func parseReadFileArgs(args json.RawMessage) (readFileArgs, error) {
 	return parsed, nil
 }
 
+// parseSearchArgs 解析输入数据，并执行必要的格式校验。
 func parseSearchArgs(args json.RawMessage) (searchArgs, error) {
 	var parsed searchArgs
 	if err := decodeArgs(args, &parsed); err != nil {
@@ -572,6 +592,7 @@ func parseSearchArgs(args json.RawMessage) (searchArgs, error) {
 	return parsed, nil
 }
 
+// decodeArgs 封装局部逻辑，保持调用方流程清晰。
 func decodeArgs(args json.RawMessage, target any) error {
 	if len(args) == 0 {
 		args = json.RawMessage(`{}`)
@@ -591,6 +612,7 @@ func decodeArgs(args json.RawMessage, target any) error {
 	return nil
 }
 
+// isHeavyDir 判断输入是否满足特定条件，并用于后续分支决策。
 func isHeavyDir(name string) bool {
 	switch name {
 	case ".git", ".codeworld", "node_modules", "vendor", "dist", "build", "target", ".cache":

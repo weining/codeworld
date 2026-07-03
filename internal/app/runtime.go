@@ -49,6 +49,7 @@ type Runtime struct {
 	Err        io.Writer
 }
 
+// SaveTurn 持久化当前状态，并处理路径、权限或归档细节。
 func (r *Runtime) SaveTurn(result agent.TurnResult) error {
 	r.Messages = historyMessages(result.Messages)
 	r.Usage = r.Usage.Add(result.Usage)
@@ -57,11 +58,13 @@ func (r *Runtime) SaveTurn(result agent.TurnResult) error {
 	return r.Store.SaveCurrent(r.Session)
 }
 
+// Close 释放持有的资源，避免后台进程或句柄泄漏。
 func (r *Runtime) Close() error {
 	capability.CloseClients(r.MCPClients)
 	return nil
 }
 
+// MaybeSummarize 在会话过长时压缩旧历史，降低后续模型调用的上下文压力。
 func (r *Runtime) MaybeSummarize(ctx context.Context) error {
 	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, r.Usage, summarizer.Options{MaxMessages: r.Config.SummaryMaxMessages}) {
 		return nil
@@ -80,6 +83,7 @@ func (r *Runtime) MaybeSummarize(ctx context.Context) error {
 	return r.Store.SaveCurrent(r.Session)
 }
 
+// NewRuntime 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if err := ctx.Err(); err != nil {
 		return Runtime{}, err
@@ -202,6 +206,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}, nil
 }
 
+// loadOrCreateSession 复用同 workspace/provider 的当前会话，否则创建新的会话状态。
 func loadOrCreateSession(store session.Store, workspaceRoot, provider, modelName string) session.Session {
 	sess, err := store.LoadCurrent()
 	if err == nil && sess.Workspace == workspaceRoot && sess.Provider == provider {
@@ -213,6 +218,7 @@ func loadOrCreateSession(store session.Store, workspaceRoot, provider, modelName
 	return session.New(workspaceRoot, provider, modelName)
 }
 
+// sessionMessagesToModel 把持久化会话消息转换为模型层消息结构。
 func sessionMessagesToModel(messages []session.Message) []model.Message {
 	out := make([]model.Message, 0, len(messages))
 	for _, msg := range messages {
@@ -226,6 +232,7 @@ func sessionMessagesToModel(messages []session.Message) []model.Message {
 	return out
 }
 
+// sessionToolCallsToModel 把会话中的工具调用恢复为模型可发送的工具调用。
 func sessionToolCallsToModel(calls []session.ToolCall) []model.ToolCall {
 	out := make([]model.ToolCall, 0, len(calls))
 	for _, call := range calls {
@@ -238,6 +245,7 @@ func sessionToolCallsToModel(calls []session.ToolCall) []model.ToolCall {
 	return out
 }
 
+// historyMessages 去掉 system 消息，只把可持久化的对话历史写回 session。
 func historyMessages(messages []model.Message) []model.Message {
 	history := make([]model.Message, 0, len(messages))
 	for _, msg := range messages {
@@ -249,6 +257,7 @@ func historyMessages(messages []model.Message) []model.Message {
 	return history
 }
 
+// modelMessagesToSession 清理并转换模型消息，避免非法工具历史进入持久化文件。
 func modelMessagesToSession(messages []model.Message) []session.Message {
 	sanitized := sanitizeModelMessages(messages)
 	out := make([]session.Message, 0, len(sanitized))
@@ -263,6 +272,7 @@ func modelMessagesToSession(messages []model.Message) []session.Message {
 	return out
 }
 
+// sanitizeModelMessages 移除孤立或不完整的 tool 消息组，避免 provider 拒绝历史请求。
 func sanitizeModelMessages(messages []model.Message) []model.Message {
 	out := make([]model.Message, 0, len(messages))
 	for i := 0; i < len(messages); i++ {
@@ -322,6 +332,7 @@ func sanitizeModelMessages(messages []model.Message) []model.Message {
 	return out
 }
 
+// modelToolCallsToSession 把模型工具调用转换为可写入 session JSON 的结构。
 func modelToolCallsToSession(calls []model.ToolCall) []session.ToolCall {
 	out := make([]session.ToolCall, 0, len(calls))
 	for _, call := range calls {
@@ -334,6 +345,7 @@ func modelToolCallsToSession(calls []model.ToolCall) []session.ToolCall {
 	return out
 }
 
+// sessionUsage 把运行时 token 用量转换为 session 持久化格式。
 func sessionUsage(usage model.Usage) session.Usage {
 	return session.Usage{
 		InputTokens:  usage.InputTokens,
@@ -343,10 +355,12 @@ func sessionUsage(usage model.Usage) session.Usage {
 	}
 }
 
+// modelCallLogPath 返回当前 workspace 的模型调用日志路径。
 func modelCallLogPath(root string) string {
 	return filepath.Join(root, ".codeworld", "logs", "model-calls.jsonl")
 }
 
+// loadIndexSummary 读取已有文件索引摘要；索引不存在时静默跳过。
 func loadIndexSummary(root string) string {
 	idx, err := indexer.Load(indexer.DefaultPath(root))
 	if err != nil {
@@ -355,6 +369,7 @@ func loadIndexSummary(root string) string {
 	return indexer.Summary(idx, 120)
 }
 
+// loadContextGraphSummary 构建轻量上下文图摘要，用于补充 system prompt。
 func loadContextGraphSummary(root string, maxFileBytes int) string {
 	g, err := contextgraph.Build(root, contextgraph.Options{MaxFileBytes: int64(maxFileBytes)})
 	if err != nil {
@@ -363,6 +378,7 @@ func loadContextGraphSummary(root string, maxFileBytes int) string {
 	return g.SummaryText(120)
 }
 
+// firstNonEmpty 从候选值中选择满足条件的结果。
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {

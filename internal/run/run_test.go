@@ -16,6 +16,7 @@ import (
 	"codeworld/internal/tools"
 )
 
+// TestOnceRunsTurnPrintsFinalTextAndSavesSession 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestOnceRunsTurnPrintsFinalTextAndSavesSession(t *testing.T) {
 	store := session.NewStore(t.TempDir())
 	out := &bytes.Buffer{}
@@ -57,6 +58,7 @@ func TestOnceRunsTurnPrintsFinalTextAndSavesSession(t *testing.T) {
 	}
 }
 
+// TestOnceRejectsEmptyInput 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestOnceRejectsEmptyInput(t *testing.T) {
 	err := Once(context.Background(), &app.Runtime{Out: &bytes.Buffer{}}, "")
 	if err == nil || !strings.Contains(err.Error(), "run input is empty") {
@@ -64,6 +66,7 @@ func TestOnceRejectsEmptyInput(t *testing.T) {
 	}
 }
 
+// TestOnceUsesSessionShellApprovalWithoutPrompt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestOnceUsesSessionShellApprovalWithoutPrompt(t *testing.T) {
 	store := session.NewStore(t.TempDir())
 	tool := &fakeShellTool{}
@@ -97,6 +100,7 @@ func TestOnceUsesSessionShellApprovalWithoutPrompt(t *testing.T) {
 	}
 }
 
+// TestOnceSummarizesWhenMessageCountExceedsThreshold 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestOnceSummarizesWhenMessageCountExceedsThreshold(t *testing.T) {
 	store := session.NewStore(t.TempDir())
 	out := &bytes.Buffer{}
@@ -140,19 +144,23 @@ type fakeShellTool struct {
 	executeCalls int
 }
 
+// Definition 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeShellTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{Name: "shell", Description: "shell", InputSchema: map[string]any{"type": "object"}}
 }
 
+// PermissionRequest 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeShellTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	return permissions.Request{Action: permissions.ActionShell, Risk: permissions.RiskExecute, Target: " go   test ./... ", Reason: "run tests"}, nil
 }
 
+// Execute 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeShellTool) Execute(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 	f.executeCalls++
 	return tools.Result{Content: "ok"}, nil
 }
 
+// Generate 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeModel) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return model.GenerateResponse{}, err

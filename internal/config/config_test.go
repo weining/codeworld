@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestDefaultConfig 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestDefaultConfig(t *testing.T) {
 	cfg := Default()
 
@@ -30,6 +31,7 @@ func TestDefaultConfig(t *testing.T) {
 	}
 }
 
+// TestLoadProjectConfig 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadProjectConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DEEPSEEK_API_KEY", "test-key")
@@ -51,6 +53,7 @@ func TestLoadProjectConfig(t *testing.T) {
 	}
 }
 
+// TestLoadExtendedProjectConfig 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadExtendedProjectConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OPENAI_API_KEY", "openai-key")
@@ -88,6 +91,7 @@ func TestLoadExtendedProjectConfig(t *testing.T) {
 	}
 }
 
+// TestLoadMCPServers 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadMCPServers(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), strings.Join([]string{
@@ -110,6 +114,7 @@ func TestLoadMCPServers(t *testing.T) {
 	}
 }
 
+// TestLoadLocalBaseURLFromEnvironment 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadLocalBaseURLFromEnvironment(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("CODEWORLD_LOCAL_BASE_URL", "http://localhost:1234/v1")
@@ -123,6 +128,7 @@ func TestLoadLocalBaseURLFromEnvironment(t *testing.T) {
 	}
 }
 
+// TestLoadRejectsUnknownConfigKeys 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadRejectsUnknownConfigKeys(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), "provider = \"deepseek\"\nextra = \"nope\"\n")
@@ -132,6 +138,7 @@ func TestLoadRejectsUnknownConfigKeys(t *testing.T) {
 	}
 }
 
+// writeFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

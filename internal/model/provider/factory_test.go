@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestNewClientCreatesDeepSeekByDefault 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientCreatesDeepSeekByDefault(t *testing.T) {
 	client, err := NewClient(Config{
 		Provider:       "deepseek",
@@ -21,6 +22,7 @@ func TestNewClientCreatesDeepSeekByDefault(t *testing.T) {
 	}
 }
 
+// TestNewClientCreatesOpenAIClient 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientCreatesOpenAIClient(t *testing.T) {
 	client, err := NewClient(Config{
 		Provider:     "openai",
@@ -36,6 +38,7 @@ func TestNewClientCreatesOpenAIClient(t *testing.T) {
 	}
 }
 
+// TestNewClientCreatesLocalClientWithoutAPIKey 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientCreatesLocalClientWithoutAPIKey(t *testing.T) {
 	client, err := NewClient(Config{
 		Provider:     "local",
@@ -51,6 +54,7 @@ func TestNewClientCreatesLocalClientWithoutAPIKey(t *testing.T) {
 	}
 }
 
+// TestNewClientCreatesAnthropicClient 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientCreatesAnthropicClient(t *testing.T) {
 	client, err := NewClient(Config{
 		Provider:        "anthropic",
@@ -66,6 +70,7 @@ func TestNewClientCreatesAnthropicClient(t *testing.T) {
 	}
 }
 
+// TestNewClientRejectsMissingAnthropicAPIKey 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientRejectsMissingAnthropicAPIKey(t *testing.T) {
 	_, err := NewClient(Config{Provider: "anthropic", Model: "claude-sonnet-4-5"})
 	if err == nil || !strings.Contains(err.Error(), "ANTHROPIC_API_KEY is not set") {
@@ -73,6 +78,7 @@ func TestNewClientRejectsMissingAnthropicAPIKey(t *testing.T) {
 	}
 }
 
+// TestNewClientRejectsMissingOpenAIAPIKey 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientRejectsMissingOpenAIAPIKey(t *testing.T) {
 	_, err := NewClient(Config{Provider: "openai", Model: "gpt-4.1"})
 	if err == nil || !strings.Contains(err.Error(), "OPENAI_API_KEY is not set") {
@@ -80,6 +86,7 @@ func TestNewClientRejectsMissingOpenAIAPIKey(t *testing.T) {
 	}
 }
 
+// TestNewClientRejectsUnknownProvider 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientRejectsUnknownProvider(t *testing.T) {
 	_, err := NewClient(Config{Provider: "unknown"})
 	if err == nil || !strings.Contains(err.Error(), "unknown provider") {

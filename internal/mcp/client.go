@@ -63,6 +63,7 @@ type CallToolResult struct {
 	IsError bool      `json:"isError,omitempty"`
 }
 
+// Text 提供对外可复用的能力，并隐藏内部实现细节。
 func (r CallToolResult) Text() string {
 	parts := make([]string, 0, len(r.Content))
 	for _, content := range r.Content {
@@ -73,6 +74,7 @@ func (r CallToolResult) Text() string {
 	return strings.Join(parts, "\n")
 }
 
+// StartStdio 提供对外可复用的能力，并隐藏内部实现细节。
 func StartStdio(ctx context.Context, cfg ServerConfig) (*Client, error) {
 	if cfg.Command == "" {
 		return nil, fmt.Errorf("mcp server %q command is required", cfg.Name)
@@ -95,6 +97,7 @@ func StartStdio(ctx context.Context, cfg ServerConfig) (*Client, error) {
 	return &Client{name: cfg.Name, cmd: cmd, stdin: stdin, reader: bufio.NewReader(stdout)}, nil
 }
 
+// Close 释放持有的资源，避免后台进程或句柄泄漏。
 func (c *Client) Close() error {
 	if c.stdin != nil {
 		_ = c.stdin.Close()
@@ -108,6 +111,7 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// Initialize 提供对外可复用的能力，并隐藏内部实现细节。
 func (c *Client) Initialize(ctx context.Context) error {
 	params := map[string]any{
 		"protocolVersion": "2024-11-05",
@@ -118,6 +122,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 	return c.request(ctx, "initialize", params, &result)
 }
 
+// ListTools 列出可用资源，并把 provider 结果转换为本地结构。
 func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 	var result struct {
 		Tools []Tool `json:"tools"`
@@ -128,6 +133,7 @@ func (c *Client) ListTools(ctx context.Context) ([]Tool, error) {
 	return result.Tools, nil
 }
 
+// CallTool 调用外部能力，并把响应转换为统一结果。
 func (c *Client) CallTool(ctx context.Context, name string, args json.RawMessage) (CallToolResult, error) {
 	var arguments map[string]any
 	if len(args) > 0 {
@@ -143,6 +149,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args json.RawMessage
 	return result, nil
 }
 
+// ListResources 列出可用资源，并把 provider 结果转换为本地结构。
 func (c *Client) ListResources(ctx context.Context) ([]Resource, error) {
 	var result struct {
 		Resources []Resource `json:"resources"`
@@ -153,6 +160,7 @@ func (c *Client) ListResources(ctx context.Context) ([]Resource, error) {
 	return result.Resources, nil
 }
 
+// ReadResource 读取外部输入，并保持调用方可处理的错误语义。
 func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceContent, error) {
 	var result struct {
 		Contents []ResourceContent `json:"contents"`
@@ -163,6 +171,7 @@ func (c *Client) ReadResource(ctx context.Context, uri string) ([]ResourceConten
 	return result.Contents, nil
 }
 
+// ListPrompts 列出可用资源，并把 provider 结果转换为本地结构。
 func (c *Client) ListPrompts(ctx context.Context) ([]Prompt, error) {
 	var result struct {
 		Prompts []Prompt `json:"prompts"`
@@ -173,6 +182,7 @@ func (c *Client) ListPrompts(ctx context.Context) ([]Prompt, error) {
 	return result.Prompts, nil
 }
 
+// request 封装局部逻辑，保持调用方流程清晰。
 func (c *Client) request(ctx context.Context, method string, params any, out any) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -222,6 +232,7 @@ func (c *Client) request(ctx context.Context, method string, params any, out any
 	}
 }
 
+// writeMessage 写入输出数据，并保证必要的目录或权限约束。
 func writeMessage(w io.Writer, data []byte) error {
 	var buf bytes.Buffer
 	// MCP stdio 使用 LSP 风格的 Content-Length 帧，而不是按行分隔 JSON。
@@ -231,6 +242,7 @@ func writeMessage(w io.Writer, data []byte) error {
 	return err
 }
 
+// readMessage 读取外部输入，并保持调用方可处理的错误语义。
 func readMessage(reader *bufio.Reader) ([]byte, error) {
 	var length int
 	for {

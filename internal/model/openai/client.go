@@ -22,6 +22,7 @@ type Client struct {
 	logger     CallLogger
 }
 
+// NewClient 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewClient(apiKey, modelName, baseURL string) *Client {
 	if baseURL == "" {
 		baseURL = "https://api.openai.com/v1"
@@ -34,10 +35,12 @@ func NewClient(apiKey, modelName, baseURL string) *Client {
 	}
 }
 
+// SetLogger 提供对外可复用的能力，并隐藏内部实现细节。
 func (c *Client) SetLogger(logger CallLogger) {
 	c.logger = logger
 }
 
+// Generate 发起一次非流式模型调用，并解析文本、工具调用和用量信息。
 func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
 	body := requestBody{
 		Model:    firstNonEmpty(req.Model, c.model),
@@ -128,6 +131,7 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 	}, nil
 }
 
+// Stream 发起一次流式模型调用，并把增量事件转换为统一事件。
 func (c *Client) Stream(ctx context.Context, req model.GenerateRequest, emit func(model.StreamEvent) error) error {
 	body := requestBody{
 		Model:    firstNonEmpty(req.Model, c.model),
@@ -190,6 +194,7 @@ func (c *Client) Stream(ctx context.Context, req model.GenerateRequest, emit fun
 	return nil
 }
 
+// logCall 封装局部逻辑，保持调用方流程清晰。
 func (c *Client) logCall(ctx context.Context, entry callLogEntry) {
 	if c.logger != nil {
 		_ = c.logger.LogCall(ctx, entry)
@@ -258,6 +263,7 @@ type providerCallFunction struct {
 	Arguments string `json:"arguments"`
 }
 
+// toProviderMessages 在不同层的数据结构之间做显式转换。
 func toProviderMessages(messages []model.Message) []providerMessage {
 	out := make([]providerMessage, 0, len(messages))
 	for _, msg := range messages {
@@ -271,6 +277,7 @@ func toProviderMessages(messages []model.Message) []providerMessage {
 	return out
 }
 
+// toProviderTools 在不同层的数据结构之间做显式转换。
 func toProviderTools(defs []model.ToolDefinition) []providerTool {
 	out := make([]providerTool, 0, len(defs))
 	for _, def := range defs {
@@ -286,6 +293,7 @@ func toProviderTools(defs []model.ToolDefinition) []providerTool {
 	return out
 }
 
+// toProviderToolCalls 在不同层的数据结构之间做显式转换。
 func toProviderToolCalls(calls []model.ToolCall) []providerToolCall {
 	out := make([]providerToolCall, 0, len(calls))
 	for _, call := range calls {
@@ -301,6 +309,7 @@ func toProviderToolCalls(calls []model.ToolCall) []providerToolCall {
 	return out
 }
 
+// fromProviderToolCalls 在不同层的数据结构之间做显式转换。
 func fromProviderToolCalls(calls []providerToolCall) []model.ToolCall {
 	out := make([]model.ToolCall, 0, len(calls))
 	for _, call := range calls {
@@ -319,6 +328,7 @@ type streamToolCall struct {
 	arguments string
 }
 
+// appendStreamToolCallDeltas 封装局部逻辑，保持调用方流程清晰。
 func appendStreamToolCallDeltas(order *[]int, calls map[int]*streamToolCall, deltas []providerToolCall) {
 	for _, delta := range deltas {
 		call, ok := calls[delta.Index]
@@ -337,6 +347,7 @@ func appendStreamToolCallDeltas(order *[]int, calls map[int]*streamToolCall, del
 	}
 }
 
+// streamToolCalls 封装局部逻辑，保持调用方流程清晰。
 func streamToolCalls(order []int, calls map[int]*streamToolCall) []model.ToolCall {
 	out := make([]model.ToolCall, 0, len(order))
 	for _, index := range order {
@@ -353,6 +364,7 @@ func streamToolCalls(order []int, calls map[int]*streamToolCall) []model.ToolCal
 	return out
 }
 
+// parseStream 解析输入数据，并执行必要的格式校验。
 func parseStream(ctx context.Context, body io.Reader, emit func(model.StreamEvent) error) (string, []model.ToolCall, model.Usage, error) {
 	scanner := bufio.NewScanner(body)
 	var finalText string
@@ -419,6 +431,7 @@ func parseStream(ctx context.Context, body io.Reader, emit func(model.StreamEven
 	return finalText, toolCalls, usage, nil
 }
 
+// streamLogBody 封装局部逻辑，保持调用方流程清晰。
 func streamLogBody(finalText string, toolCalls []model.ToolCall, usage model.Usage) string {
 	message := map[string]any{"role": "assistant", "content": finalText}
 	if len(toolCalls) > 0 {
@@ -441,6 +454,7 @@ func streamLogBody(finalText string, toolCalls []model.ToolCall, usage model.Usa
 	return string(data)
 }
 
+// toModelUsage 在不同层的数据结构之间做显式转换。
 func (u providerUsage) toModelUsage() model.Usage {
 	totalTokens := u.TotalTokens
 	if totalTokens == 0 && (u.PromptTokens != 0 || u.CompletionTokens != 0) {
@@ -454,6 +468,7 @@ func (u providerUsage) toModelUsage() model.Usage {
 	}
 }
 
+// firstNonEmpty 从候选值中选择满足条件的结果。
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -463,6 +478,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// redactAPIKey 封装局部逻辑，保持调用方流程清晰。
 func redactAPIKey(text, apiKey string) string {
 	if apiKey == "" {
 		return text
@@ -470,6 +486,7 @@ func redactAPIKey(text, apiKey string) string {
 	return strings.ReplaceAll(text, apiKey, "[redacted]")
 }
 
+// loggedHTTPResponse 封装局部逻辑，保持调用方流程清晰。
 func loggedHTTPResponse(body []byte, apiKey string) *httpResponseLog {
 	redactedBody := redactAPIKey(string(body), apiKey)
 	return &httpResponseLog{
@@ -477,6 +494,7 @@ func loggedHTTPResponse(body []byte, apiKey string) *httpResponseLog {
 	}
 }
 
+// jsonBody 封装局部逻辑，保持调用方流程清晰。
 func jsonBody(body string) json.RawMessage {
 	if body == "" || !json.Valid([]byte(body)) {
 		return nil

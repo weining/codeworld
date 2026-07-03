@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestLoadProjectPluginsLoadsBundledSkills 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadProjectPluginsLoadsBundledSkills(t *testing.T) {
 	root := t.TempDir()
 	writePluginFile(t, root, "super", ".codex-plugin/plugin.json", `{"name":"super","version":"0.1.0"}`)
@@ -32,6 +33,7 @@ Run focused tests.
 	}
 }
 
+// TestLoadProjectPluginsLoadsMCPServers 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadProjectPluginsLoadsMCPServers(t *testing.T) {
 	root := t.TempDir()
 	writePluginFile(t, root, "docs", ".codex-plugin/plugin.json", `{"name":"docs"}`)
@@ -56,6 +58,7 @@ func TestLoadProjectPluginsLoadsMCPServers(t *testing.T) {
 	}
 }
 
+// TestLoadProjectPluginsRejectsManifestNameMismatch 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadProjectPluginsRejectsManifestNameMismatch(t *testing.T) {
 	root := t.TempDir()
 	writePluginFile(t, root, "actual", ".codex-plugin/plugin.json", `{"name":"other"}`)
@@ -66,6 +69,7 @@ func TestLoadProjectPluginsRejectsManifestNameMismatch(t *testing.T) {
 	}
 }
 
+// writePluginFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writePluginFile(t *testing.T, root, pluginName, rel, content string) {
 	t.Helper()
 	path := filepath.Join(root, ".codeworld", "codex-plugins", pluginName, rel)

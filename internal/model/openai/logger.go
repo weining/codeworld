@@ -19,10 +19,12 @@ type JSONLLogger struct {
 	out io.Writer
 }
 
+// NewJSONLLogger 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewJSONLLogger(out io.Writer) *JSONLLogger {
 	return &JSONLLogger{out: out}
 }
 
+// LogCall 提供对外可复用的能力，并隐藏内部实现细节。
 func (l *JSONLLogger) LogCall(ctx context.Context, entry callLogEntry) error {
 	if l == nil || l.out == nil {
 		return nil
@@ -47,10 +49,12 @@ type FileJSONLLogger struct {
 	path string
 }
 
+// NewFileJSONLLogger 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewFileJSONLLogger(path string) *FileJSONLLogger {
 	return &FileJSONLLogger{path: filepath.Clean(path)}
 }
 
+// LogCall 提供对外可复用的能力，并隐藏内部实现细节。
 func (l *FileJSONLLogger) LogCall(ctx context.Context, entry callLogEntry) error {
 	if l == nil || l.path == "" {
 		return nil

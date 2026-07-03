@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// TestLoadPrefersOverrideInSameDirectory 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadPrefersOverrideInSameDirectory(t *testing.T) {
 	root := t.TempDir()
 	writeInstructionFile(t, root, "AGENTS.md", "base instruction")
@@ -28,6 +29,7 @@ func TestLoadPrefersOverrideInSameDirectory(t *testing.T) {
 	}
 }
 
+// TestLoadOrdersParentBeforeChild 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadOrdersParentBeforeChild(t *testing.T) {
 	root := t.TempDir()
 	child := filepath.Join(root, "services", "api")
@@ -50,6 +52,7 @@ func TestLoadOrdersParentBeforeChild(t *testing.T) {
 	}
 }
 
+// TestLoadAppliesByteBudget 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadAppliesByteBudget(t *testing.T) {
 	root := t.TempDir()
 	writeInstructionFile(t, root, "AGENTS.md", strings.Repeat("a", 64))
@@ -66,6 +69,7 @@ func TestLoadAppliesByteBudget(t *testing.T) {
 	}
 }
 
+// writeInstructionFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeInstructionFile(t *testing.T, dir, name, content string) {
 	t.Helper()
 	if err := os.MkdirAll(dir, 0o755); err != nil {

@@ -2,6 +2,7 @@ package approvals
 
 import "testing"
 
+// TestNormalizeCommandCollapsesWhitespace 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNormalizeCommandCollapsesWhitespace(t *testing.T) {
 	got := NormalizeCommand("  go   test   ./...  ")
 	want := "go test ./..."
@@ -10,6 +11,7 @@ func TestNormalizeCommandCollapsesWhitespace(t *testing.T) {
 	}
 }
 
+// TestSetAllowsExactNormalizedShellCommand 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSetAllowsExactNormalizedShellCommand(t *testing.T) {
 	set := Set{Commands: []string{"go test ./..."}}
 	if !set.Allows(" go   test ./... ") {
@@ -20,6 +22,7 @@ func TestSetAllowsExactNormalizedShellCommand(t *testing.T) {
 	}
 }
 
+// TestSetAddNormalizesAndDeduplicatesCommands 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSetAddNormalizesAndDeduplicatesCommands(t *testing.T) {
 	var set Set
 	set.Add(" go   test ./... ")

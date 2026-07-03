@@ -11,6 +11,7 @@ import (
 	"codeworld/internal/workspace"
 )
 
+// TestPluginToolRendersJSONFieldTemplates 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestPluginToolRendersJSONFieldTemplates(t *testing.T) {
 	tool := NewPluginTool(workspace.Workspace{Root: t.TempDir()}, plugin.Tool{
 		Name:        "example.echo",
@@ -30,6 +31,7 @@ func TestPluginToolRendersJSONFieldTemplates(t *testing.T) {
 	}
 }
 
+// TestPluginToolRejectsMissingTemplateValue 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestPluginToolRejectsMissingTemplateValue(t *testing.T) {
 	tool := NewPluginTool(workspace.Workspace{Root: t.TempDir()}, plugin.Tool{
 		Name:        "example.echo",
@@ -46,6 +48,7 @@ func TestPluginToolRejectsMissingTemplateValue(t *testing.T) {
 	}
 }
 
+// TestPluginToolPermissionUsesConfiguredRisk 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestPluginToolPermissionUsesConfiguredRisk(t *testing.T) {
 	tool := NewPluginTool(workspace.Workspace{Root: t.TempDir()}, plugin.Tool{
 		Name:        "example.test",

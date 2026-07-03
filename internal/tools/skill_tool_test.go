@@ -10,6 +10,7 @@ import (
 	"codeworld/internal/skill"
 )
 
+// TestSkillOpenToolReturnsFullSkillContent 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSkillOpenToolReturnsFullSkillContent(t *testing.T) {
 	tool := NewSkillOpenTool([]skill.Skill{{
 		Name:        "reviewer",
@@ -28,6 +29,7 @@ func TestSkillOpenToolReturnsFullSkillContent(t *testing.T) {
 	}
 }
 
+// TestSkillOpenToolPermissionIsRead 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSkillOpenToolPermissionIsRead(t *testing.T) {
 	tool := NewSkillOpenTool([]skill.Skill{{Name: "reviewer"}})
 

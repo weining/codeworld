@@ -15,6 +15,7 @@ import (
 	"codeworld/internal/tools"
 )
 
+// TestRunSavesTurnsAndDoesNotFeedSystemPromptBackAsHistory 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunSavesTurnsAndDoesNotFeedSystemPromptBackAsHistory(t *testing.T) {
 	client := &fakeModelClient{responses: []model.GenerateResponse{
 		{FinalText: "first answer"},
@@ -69,6 +70,7 @@ func TestRunSavesTurnsAndDoesNotFeedSystemPromptBackAsHistory(t *testing.T) {
 	}
 }
 
+// TestRunSavesToolCallsInSessionHistory 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunSavesToolCallsInSessionHistory(t *testing.T) {
 	client := &fakeModelClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "read", Arguments: json.RawMessage(`{"path":"go.mod"}`)}}},
@@ -112,6 +114,7 @@ func TestRunSavesToolCallsInSessionHistory(t *testing.T) {
 	}
 }
 
+// TestRunHandlesSlashCommands 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunHandlesSlashCommands(t *testing.T) {
 	var out bytes.Buffer
 	store := session.NewStore(t.TempDir())
@@ -171,6 +174,7 @@ func TestRunHandlesSlashCommands(t *testing.T) {
 	}
 }
 
+// TestRunUsesSingleInputBufferForPermissionConfirmation 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunUsesSingleInputBufferForPermissionConfirmation(t *testing.T) {
 	input := strings.NewReader("change\ny\n/exit\n")
 	client := &fakeModelClient{responses: []model.GenerateResponse{
@@ -206,6 +210,7 @@ func TestRunUsesSingleInputBufferForPermissionConfirmation(t *testing.T) {
 	}
 }
 
+// TestRunPrintsToolProgress 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunPrintsToolProgress(t *testing.T) {
 	client := &fakeModelClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "read", Arguments: json.RawMessage(`{}`)}}},
@@ -241,6 +246,7 @@ func TestRunPrintsToolProgress(t *testing.T) {
 	}
 }
 
+// TestRunDisplaysTitlePromptAndPersistsTokenUsage 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunDisplaysTitlePromptAndPersistsTokenUsage(t *testing.T) {
 	client := &fakeModelClient{responses: []model.GenerateResponse{
 		{
@@ -297,6 +303,7 @@ func TestRunDisplaysTitlePromptAndPersistsTokenUsage(t *testing.T) {
 	}
 }
 
+// TestRunRestoresTokenUsageFromSession 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunRestoresTokenUsageFromSession(t *testing.T) {
 	var out bytes.Buffer
 	app := REPL{
@@ -320,6 +327,7 @@ func TestRunRestoresTokenUsageFromSession(t *testing.T) {
 	}
 }
 
+// TestRunPrintsToolDeniedAndErrorProgress 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunPrintsToolDeniedAndErrorProgress(t *testing.T) {
 	client := &fakeModelClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "write", Arguments: json.RawMessage(`{}`)}}},
@@ -364,6 +372,7 @@ func TestRunPrintsToolDeniedAndErrorProgress(t *testing.T) {
 	}
 }
 
+// TestConfirmerPromptsAndAcceptsY 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestConfirmerPromptsAndAcceptsY(t *testing.T) {
 	var out bytes.Buffer
 	confirmer := Confirmer{In: strings.NewReader("y\n"), Out: &out}
@@ -389,6 +398,7 @@ func TestConfirmerPromptsAndAcceptsY(t *testing.T) {
 	}
 }
 
+// TestConfirmerAddsSessionShellApprovalOnA 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestConfirmerAddsSessionShellApprovalOnA(t *testing.T) {
 	var out bytes.Buffer
 	var approvals []session.Approval
@@ -414,6 +424,7 @@ func TestConfirmerAddsSessionShellApprovalOnA(t *testing.T) {
 	}
 }
 
+// TestConfirmerUsesExistingSessionShellApprovalWithoutPrompt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestConfirmerUsesExistingSessionShellApprovalWithoutPrompt(t *testing.T) {
 	approvals := []session.Approval{{Kind: "shell", Command: "go test ./..."}}
 	var out bytes.Buffer
@@ -436,6 +447,7 @@ func TestConfirmerUsesExistingSessionShellApprovalWithoutPrompt(t *testing.T) {
 	}
 }
 
+// TestConfirmerDefaultsToDeny 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestConfirmerDefaultsToDeny(t *testing.T) {
 	confirmer := Confirmer{In: strings.NewReader("\n"), Out: &bytes.Buffer{}}
 
@@ -453,6 +465,7 @@ type fakeModelClient struct {
 	requests  []model.GenerateRequest
 }
 
+// Generate 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeModelClient) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return model.GenerateResponse{}, err
@@ -472,23 +485,28 @@ type replFakeTool struct {
 	executeCalls int
 }
 
+// newReplFakeTool 是测试辅助函数，用于复用测试准备或断言逻辑。
 func newReplFakeTool(name string, action permissions.Action, risk permissions.Risk) *replFakeTool {
 	return &replFakeTool{name: name, action: action, risk: risk}
 }
 
+// Definition 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *replFakeTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{Name: f.name, Description: f.name, InputSchema: map[string]any{"type": "object"}}
 }
 
+// PermissionRequest 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *replFakeTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	return permissions.Request{Action: f.action, Risk: f.risk, Target: f.name, Reason: "test"}, nil
 }
 
+// Execute 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *replFakeTool) Execute(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 	f.executeCalls++
 	return tools.Result{Content: "ok"}, f.executeErr
 }
 
+// cloneGenerateRequest 是测试辅助函数，用于复用测试准备或断言逻辑。
 func cloneGenerateRequest(req model.GenerateRequest) model.GenerateRequest {
 	data, _ := json.Marshal(req)
 	var clone model.GenerateRequest
@@ -496,6 +514,7 @@ func cloneGenerateRequest(req model.GenerateRequest) model.GenerateRequest {
 	return clone
 }
 
+// countRole 是测试辅助函数，用于复用测试准备或断言逻辑。
 func countRole(messages []model.Message, role model.Role) int {
 	count := 0
 	for _, msg := range messages {
@@ -506,6 +525,7 @@ func countRole(messages []model.Message, role model.Role) int {
 	return count
 }
 
+// assertJSONEqual 是测试辅助函数，用于复用测试准备或断言逻辑。
 func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
 	t.Helper()
 	var gotValue any
@@ -521,6 +541,7 @@ func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
 	}
 }
 
+// jsonString 是测试辅助函数，用于复用测试准备或断言逻辑。
 func jsonString(value any) string {
 	data, _ := json.Marshal(value)
 	return string(data)

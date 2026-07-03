@@ -27,6 +27,7 @@ type mcpFile struct {
 	MCPServers []config.MCPServer `json:"mcp_servers"`
 }
 
+// LoadProject 加载外部或项目内配置，并把原始数据转换为内部结构。
 func LoadProject(root string) ([]Plugin, error) {
 	// 当前只加载项目内声明的 Codex plugin 子集：skills 和 .mcp.json；不执行任意安装脚本。
 	pluginsRoot := filepath.Join(root, ".codeworld", "codex-plugins")
@@ -52,6 +53,7 @@ func LoadProject(root string) ([]Plugin, error) {
 	return plugins, nil
 }
 
+// loadPlugin 加载外部或项目内配置，并把原始数据转换为内部结构。
 func loadPlugin(path, dirName string) (Plugin, error) {
 	manifest, err := readManifest(filepath.Join(path, ".codex-plugin", "plugin.json"))
 	if err != nil {
@@ -75,6 +77,7 @@ func loadPlugin(path, dirName string) (Plugin, error) {
 	return plugin, nil
 }
 
+// readManifest 读取外部输入，并保持调用方可处理的错误语义。
 func readManifest(path string) (manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -87,6 +90,7 @@ func readManifest(path string) (manifest, error) {
 	return out, nil
 }
 
+// loadSkills 加载外部或项目内配置，并把原始数据转换为内部结构。
 func loadSkills(pluginPath, pluginName string) ([]skill.Skill, error) {
 	skillsRoot := filepath.Join(pluginPath, "skills")
 	entries, err := os.ReadDir(skillsRoot)
@@ -115,6 +119,7 @@ func loadSkills(pluginPath, pluginName string) ([]skill.Skill, error) {
 	return out, nil
 }
 
+// loadMCP 加载外部或项目内配置，并把原始数据转换为内部结构。
 func loadMCP(pluginPath, pluginName string) ([]config.MCPServer, error) {
 	path := filepath.Join(pluginPath, ".mcp.json")
 	data, err := os.ReadFile(path)

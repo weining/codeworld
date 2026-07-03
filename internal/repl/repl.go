@@ -29,6 +29,7 @@ type REPL struct {
 	Diff               func(context.Context) (string, error)
 }
 
+// Run 执行主要流程，并把运行结果或错误返回给调用方。
 func (r *REPL) Run(ctx context.Context) error {
 	if r.In == nil {
 		return fmt.Errorf("input is nil")
@@ -85,6 +86,7 @@ func (r *REPL) Run(ctx context.Context) error {
 	}
 }
 
+// bindConfirmerInput 封装局部逻辑，保持调用方流程清晰。
 func (r *REPL) bindConfirmerInput(reader *bufio.Reader) {
 	switch confirmer := r.Runner.Confirmer.(type) {
 	case Confirmer:
@@ -97,6 +99,7 @@ func (r *REPL) bindConfirmerInput(reader *bufio.Reader) {
 	}
 }
 
+// handleCommand 封装局部逻辑，保持调用方流程清晰。
 func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 	switch {
 	case line == "/help":
@@ -148,6 +151,7 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 	return false
 }
 
+// syncSession 封装局部逻辑，保持调用方流程清晰。
 func (r *REPL) syncSession() {
 	r.Session.Messages = r.Session.Messages[:0]
 	for _, msg := range r.Messages {
@@ -161,6 +165,7 @@ func (r *REPL) syncSession() {
 	r.Session.Usage = toSessionUsage(r.Usage)
 }
 
+// toSessionToolCalls 在不同层的数据结构之间做显式转换。
 func toSessionToolCalls(calls []model.ToolCall) []session.ToolCall {
 	out := make([]session.ToolCall, 0, len(calls))
 	for _, call := range calls {
@@ -173,12 +178,14 @@ func toSessionToolCalls(calls []model.ToolCall) []session.ToolCall {
 	return out
 }
 
+// saveSession 持久化当前状态，并处理路径、权限或归档细节。
 func (r *REPL) saveSession() {
 	if err := r.Store.SaveCurrent(r.Session); err != nil {
 		fmt.Fprintf(r.Out, "session save error: %v\n", err)
 	}
 }
 
+// maybeSummarize 封装局部逻辑，保持调用方流程清晰。
 func (r *REPL) maybeSummarize(ctx context.Context) {
 	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, r.Usage, summarizer.Options{MaxMessages: r.SummaryMaxMessages}) {
 		return
@@ -197,6 +204,7 @@ func (r *REPL) maybeSummarize(ctx context.Context) {
 	r.saveSession()
 }
 
+// restoreUsageFromSession 封装局部逻辑，保持调用方流程清晰。
 func (r *REPL) restoreUsageFromSession() {
 	if !r.Usage.IsZero() {
 		return
@@ -209,6 +217,7 @@ func (r *REPL) restoreUsageFromSession() {
 	}
 }
 
+// toSessionUsage 在不同层的数据结构之间做显式转换。
 func toSessionUsage(usage model.Usage) session.Usage {
 	return session.Usage{
 		InputTokens:  usage.InputTokens,
@@ -218,6 +227,7 @@ func toSessionUsage(usage model.Usage) session.Usage {
 	}
 }
 
+// writeTerminalTitle 写入输出数据，并保证必要的目录或权限约束。
 func (r *REPL) writeTerminalTitle() {
 	if !r.ShowTerminalTitle {
 		return
@@ -225,6 +235,7 @@ func (r *REPL) writeTerminalTitle() {
 	fmt.Fprintf(r.Out, "\x1b]0;%s\x07", terminalTitle(r.currentModelName(), r.Usage))
 }
 
+// writeStatusLine 写入输出数据，并保证必要的目录或权限约束。
 func (r *REPL) writeStatusLine() {
 	if !r.ShowStatusLine {
 		return
@@ -239,6 +250,7 @@ func (r *REPL) writeStatusLine() {
 	)
 }
 
+// currentModelName 封装局部逻辑，保持调用方流程清晰。
 func (r *REPL) currentModelName() string {
 	switch {
 	case r.Session.Model != "":
@@ -250,14 +262,17 @@ func (r *REPL) currentModelName() string {
 	}
 }
 
+// terminalTitle 封装局部逻辑，保持调用方流程清晰。
 func terminalTitle(modelName string, usage model.Usage) string {
 	return fmt.Sprintf("codeworld | %s | %s", modelName, formatUsage(usage))
 }
 
+// formatUsage 将内部数据格式化为面向用户或模型的文本。
 func formatUsage(usage model.Usage) string {
 	return fmt.Sprintf("input=%d output=%d cache=%d total=%d", usage.InputTokens, usage.OutputTokens, usage.CacheTokens, usage.TotalTokens)
 }
 
+// ReportTool 把工具执行状态转换为用户可见的进度事件。
 func (r *REPL) ReportTool(ctx context.Context, event agent.ToolEvent) {
 	switch event.Status {
 	case agent.ToolEventStart:
@@ -271,6 +286,7 @@ func (r *REPL) ReportTool(ctx context.Context, event agent.ToolEvent) {
 	}
 }
 
+// historyMessages 封装局部逻辑，保持调用方流程清晰。
 func historyMessages(messages []model.Message) []model.Message {
 	history := make([]model.Message, 0, len(messages))
 	for _, msg := range messages {
@@ -288,6 +304,7 @@ type Confirmer struct {
 	Approvals *[]session.Approval
 }
 
+// Confirm 向用户确认权限请求，并把选择返回给 agent 流程。
 func (c Confirmer) Confirm(ctx context.Context, req permissions.Request, decision permissions.Decision) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -328,6 +345,7 @@ func (c Confirmer) Confirm(ctx context.Context, req permissions.Request, decisio
 	return strings.EqualFold(answer, "y"), nil
 }
 
+// isApproved 判断输入是否满足特定条件，并用于后续分支决策。
 func (c Confirmer) isApproved(req permissions.Request) bool {
 	if req.Action != permissions.ActionShell || c.Approvals == nil {
 		return false
@@ -335,6 +353,7 @@ func (c Confirmer) isApproved(req permissions.Request) bool {
 	return approvalSet(*c.Approvals).Allows(req.Target)
 }
 
+// addApproval 封装局部逻辑，保持调用方流程清晰。
 func (c Confirmer) addApproval(req permissions.Request) {
 	if req.Action != permissions.ActionShell || c.Approvals == nil {
 		return
@@ -344,6 +363,7 @@ func (c Confirmer) addApproval(req permissions.Request) {
 	*c.Approvals = approvalsToSession(set)
 }
 
+// approvalSet 封装局部逻辑，保持调用方流程清晰。
 func approvalSet(items []session.Approval) approvals.Set {
 	set := approvals.Set{}
 	for _, item := range items {
@@ -354,6 +374,7 @@ func approvalSet(items []session.Approval) approvals.Set {
 	return set
 }
 
+// approvalsToSession 封装局部逻辑，保持调用方流程清晰。
 func approvalsToSession(set approvals.Set) []session.Approval {
 	items := make([]session.Approval, 0, len(set.Commands))
 	for _, command := range set.Commands {

@@ -61,6 +61,7 @@ type SearchResult struct {
 	Preview string
 }
 
+// Build 构建运行所需的数据结构，并在过程中收集必要的上下文。
 func Build(root string, opts Options) (Graph, error) {
 	idx, err := indexer.Build(root, opts.MaxFileBytes)
 	if err != nil {
@@ -90,6 +91,7 @@ func Build(root string, opts Options) (Graph, error) {
 	return Graph{Root: idx.Root, Files: files, Summary: opts.Summary, Skills: opts.Skills, MCPResources: opts.MCPResources, Mentions: opts.Mentions}, nil
 }
 
+// File 提供对外可复用的能力，并隐藏内部实现细节。
 func (g Graph) File(path string) (File, bool) {
 	path = filepath.ToSlash(path)
 	for _, file := range g.Files {
@@ -100,6 +102,7 @@ func (g Graph) File(path string) (File, bool) {
 	return File{}, false
 }
 
+// Search 在受控范围内搜索数据，并返回截断后的结果集。
 func (g Graph) Search(query string, limit int) []SearchResult {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
@@ -152,6 +155,7 @@ func (g Graph) Search(query string, limit int) []SearchResult {
 	return results
 }
 
+// parseGoSymbols 解析输入数据，并执行必要的格式校验。
 func parseGoSymbols(path string, data []byte) []Symbol {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, data, 0)
@@ -180,6 +184,7 @@ func parseGoSymbols(path string, data []byte) []Symbol {
 	return symbols
 }
 
+// gitChanged 封装局部逻辑，保持调用方流程清晰。
 func gitChanged(root string) map[string]bool {
 	changed := map[string]bool{}
 	cmd := exec.Command("git", "-C", root, "status", "--short")
@@ -203,6 +208,7 @@ func gitChanged(root string) map[string]bool {
 	return changed
 }
 
+// previewAround 封装局部逻辑，保持调用方流程清晰。
 func previewAround(content string, idx int) string {
 	start := idx - 40
 	if start < 0 {
@@ -215,6 +221,7 @@ func previewAround(content string, idx int) string {
 	return strings.TrimSpace(content[start:end])
 }
 
+// SummaryText 提供对外可复用的能力，并隐藏内部实现细节。
 func (g Graph) SummaryText(limit int) string {
 	if limit <= 0 {
 		limit = 80

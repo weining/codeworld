@@ -14,12 +14,14 @@ type fakeMCPCaller struct {
 	args json.RawMessage
 }
 
+// CallTool 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeMCPCaller) CallTool(ctx context.Context, name string, args json.RawMessage) (mcp.CallToolResult, error) {
 	f.name = name
 	f.args = append(f.args[:0], args...)
 	return mcp.CallToolResult{Content: []mcp.Content{{Type: "text", Text: "hello"}}}, nil
 }
 
+// TestMCPToolDefinitionIsNamespaced 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestMCPToolDefinitionIsNamespaced(t *testing.T) {
 	tool := NewMCPTool("demo", mcp.Tool{Name: "echo", Description: "Echo", InputSchema: map[string]any{"type": "object"}}, &fakeMCPCaller{})
 
@@ -29,6 +31,7 @@ func TestMCPToolDefinitionIsNamespaced(t *testing.T) {
 	}
 }
 
+// TestMCPToolExecutesThroughClient 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestMCPToolExecutesThroughClient(t *testing.T) {
 	caller := &fakeMCPCaller{}
 	tool := NewMCPTool("demo", mcp.Tool{Name: "echo", Description: "Echo", InputSchema: map[string]any{"type": "object"}}, caller)
@@ -45,6 +48,7 @@ func TestMCPToolExecutesThroughClient(t *testing.T) {
 	}
 }
 
+// TestMCPToolPermissionIsExecuteRisk 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestMCPToolPermissionIsExecuteRisk(t *testing.T) {
 	tool := NewMCPTool("demo", mcp.Tool{Name: "echo"}, &fakeMCPCaller{})
 

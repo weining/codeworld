@@ -21,6 +21,7 @@ import (
 	"codeworld/internal/workspace"
 )
 
+// TestRegistryRejectsUnknownTool 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRegistryRejectsUnknownTool(t *testing.T) {
 	registry := NewRegistry(nil, nil)
 
@@ -32,6 +33,7 @@ func TestRegistryRejectsUnknownTool(t *testing.T) {
 	}
 }
 
+// TestDefaultRegistryIncludesIndexWorkspaceTool 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestDefaultRegistryIncludesIndexWorkspaceTool(t *testing.T) {
 	registry := NewDefaultRegistry(newTestWorkspace(t))
 
@@ -40,6 +42,7 @@ func TestDefaultRegistryIncludesIndexWorkspaceTool(t *testing.T) {
 	}
 }
 
+// TestDefaultRegistryIncludesWebSearchTool 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestDefaultRegistryIncludesWebSearchTool(t *testing.T) {
 	registry := NewDefaultRegistry(newTestWorkspace(t))
 
@@ -48,6 +51,7 @@ func TestDefaultRegistryIncludesWebSearchTool(t *testing.T) {
 	}
 }
 
+// TestReadFileLimitedContentMetadataAndPermission 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestReadFileLimitedContentMetadataAndPermission(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "notes.txt", "0123456789")
@@ -82,6 +86,7 @@ func TestReadFileLimitedContentMetadataAndPermission(t *testing.T) {
 	}
 }
 
+// TestReadFileRejectsPathEscapeAndNegativeOffset 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestReadFileRejectsPathEscapeAndNegativeOffset(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewReadFileTool(ws)
@@ -94,6 +99,7 @@ func TestReadFileRejectsPathEscapeAndNegativeOffset(t *testing.T) {
 	}
 }
 
+// TestReadFileRejectsInvalidJSON 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestReadFileRejectsInvalidJSON(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewReadFileTool(ws)
@@ -106,6 +112,7 @@ func TestReadFileRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
+// TestWriteFilePermissionRequest 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWriteFilePermissionRequest(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewWriteFileTool(ws)
@@ -125,6 +132,7 @@ func TestWriteFilePermissionRequest(t *testing.T) {
 	}
 }
 
+// TestWriteFilePermissionRequestUsesReason 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWriteFilePermissionRequestUsesReason(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewWriteFileTool(ws)
@@ -138,6 +146,7 @@ func TestWriteFilePermissionRequestUsesReason(t *testing.T) {
 	}
 }
 
+// TestWriteFileCreatesParentDirectoriesAndWritesContent 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWriteFileCreatesParentDirectoriesAndWritesContent(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewWriteFileTool(ws)
@@ -162,6 +171,7 @@ func TestWriteFileCreatesParentDirectoriesAndWritesContent(t *testing.T) {
 	}
 }
 
+// TestWriteFileRejectsPathEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWriteFileRejectsPathEscape(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewWriteFileTool(ws)
@@ -174,6 +184,7 @@ func TestWriteFileRejectsPathEscape(t *testing.T) {
 	}
 }
 
+// TestWriteFileRejectsInvalidJSON 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWriteFileRejectsInvalidJSON(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewWriteFileTool(ws)
@@ -186,6 +197,7 @@ func TestWriteFileRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
+// TestWriteFileRejectsMissingOrNullContent 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWriteFileRejectsMissingOrNullContent(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewWriteFileTool(ws)
@@ -208,6 +220,7 @@ func TestWriteFileRejectsMissingOrNullContent(t *testing.T) {
 	}
 }
 
+// TestReadFileClampsRequestedLimitToDefaultReadLimit 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestReadFileClampsRequestedLimitToDefaultReadLimit(t *testing.T) {
 	ws := newTestWorkspace(t)
 	content := strings.Repeat("a", int(defaultReadLimit)+10)
@@ -229,6 +242,7 @@ func TestReadFileClampsRequestedLimitToDefaultReadLimit(t *testing.T) {
 	}
 }
 
+// TestListDirReturnsSortedEntriesWithDirectorySuffix 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestListDirReturnsSortedEntriesWithDirectorySuffix(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "src/main.go", "package main\n")
@@ -246,6 +260,7 @@ func TestListDirReturnsSortedEntriesWithDirectorySuffix(t *testing.T) {
 	}
 }
 
+// TestListDirCapsHugeDirectoryOutput 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestListDirCapsHugeDirectoryOutput(t *testing.T) {
 	ws := newTestWorkspace(t)
 	for i := 0; i < 3000; i++ {
@@ -265,6 +280,7 @@ func TestListDirCapsHugeDirectoryOutput(t *testing.T) {
 	}
 }
 
+// TestSearchFindsLiteralTextAndSkipsHeavyDirs 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSearchFindsLiteralTextAndSkipsHeavyDirs(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "README.md", "needle here\n")
@@ -290,6 +306,7 @@ func TestSearchFindsLiteralTextAndSkipsHeavyDirs(t *testing.T) {
 	}
 }
 
+// TestSearchStopsAtTotalScanBudgetForNoMatches 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSearchStopsAtTotalScanBudgetForNoMatches(t *testing.T) {
 	ws := newTestWorkspace(t)
 	for i := 0; i < 210; i++ {
@@ -320,6 +337,7 @@ func TestSearchStopsAtTotalScanBudgetForNoMatches(t *testing.T) {
 	}
 }
 
+// TestSearchStopsAtDirectoryTraversalBudget 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSearchStopsAtDirectoryTraversalBudget(t *testing.T) {
 	ws := newTestWorkspace(t)
 	for i := 0; i < 210; i++ {
@@ -345,6 +363,7 @@ func TestSearchStopsAtDirectoryTraversalBudget(t *testing.T) {
 	}
 }
 
+// TestSearchStopsAtEntryTraversalBudget 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSearchStopsAtEntryTraversalBudget(t *testing.T) {
 	ws := newTestWorkspace(t)
 	for i := 0; i < 300; i++ {
@@ -371,6 +390,7 @@ func TestSearchStopsAtEntryTraversalBudget(t *testing.T) {
 	}
 }
 
+// TestSearchLimitsMatchesAndMarksTruncated 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSearchLimitsMatchesAndMarksTruncated(t *testing.T) {
 	ws := newTestWorkspace(t)
 	var content strings.Builder
@@ -394,6 +414,7 @@ func TestSearchLimitsMatchesAndMarksTruncated(t *testing.T) {
 	}
 }
 
+// TestSearchCapsLargeFileMatches 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSearchCapsLargeFileMatches(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "huge.txt", "needle "+strings.Repeat("x", int(defaultReadLimit)*2)+"\n")
@@ -412,6 +433,7 @@ func TestSearchCapsLargeFileMatches(t *testing.T) {
 	}
 }
 
+// TestApplyPatchRejectsPathEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchRejectsPathEscape(t *testing.T) {
 	ws := newTestWorkspace(t)
 	patch := `diff --git a/../secret.txt b/../secret.txt
@@ -430,6 +452,7 @@ func TestApplyPatchRejectsPathEscape(t *testing.T) {
 	}
 }
 
+// TestApplyPatchRejectsQuotedHeaderPathEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchRejectsQuotedHeaderPathEscape(t *testing.T) {
 	ws := newTestWorkspace(t)
 	cases := []struct {
@@ -464,6 +487,7 @@ func TestApplyPatchRejectsQuotedHeaderPathEscape(t *testing.T) {
 	}
 }
 
+// TestApplyPatchRejectsExtraUnquotedHeaderPathEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchRejectsExtraUnquotedHeaderPathEscape(t *testing.T) {
 	ws := newTestWorkspace(t)
 	patch := `diff --git a/foo b/foo
@@ -482,6 +506,7 @@ func TestApplyPatchRejectsExtraUnquotedHeaderPathEscape(t *testing.T) {
 	}
 }
 
+// TestApplyPatchAllowsHunkBodyThatLooksLikeHeader 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchAllowsHunkBodyThatLooksLikeHeader(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "notes.txt", "old\n")
@@ -510,6 +535,7 @@ func TestApplyPatchAllowsHunkBodyThatLooksLikeHeader(t *testing.T) {
 	}
 }
 
+// TestApplyPatchRejectsPlainMultifileHeaderPathEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchRejectsPlainMultifileHeaderPathEscape(t *testing.T) {
 	ws := newTestWorkspace(t)
 	patch := `--- a/one.txt
@@ -531,6 +557,7 @@ func TestApplyPatchRejectsPlainMultifileHeaderPathEscape(t *testing.T) {
 	}
 }
 
+// TestApplyPatchRejectsDefaultStripPathEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchRejectsDefaultStripPathEscape(t *testing.T) {
 	ws := newTestWorkspace(t)
 	patch := `--- safe/../target.txt
@@ -548,6 +575,7 @@ func TestApplyPatchRejectsDefaultStripPathEscape(t *testing.T) {
 	}
 }
 
+// TestApplyPatchRejectsExtendedHeaderPathEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchRejectsExtendedHeaderPathEscape(t *testing.T) {
 	ws := newTestWorkspace(t)
 	cases := []struct {
@@ -585,6 +613,7 @@ copy to ../outside.txt
 	}
 }
 
+// TestApplyPatchPermissionRequestUsesReason 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchPermissionRequestUsesReason(t *testing.T) {
 	ws := newTestWorkspace(t)
 	patch := `diff --git a/notes.txt b/notes.txt
@@ -608,6 +637,7 @@ func TestApplyPatchPermissionRequestUsesReason(t *testing.T) {
 	}
 }
 
+// TestApplyPatchAllowsDevNullPath 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchAllowsDevNullPath(t *testing.T) {
 	ws := newTestWorkspace(t)
 	patch := `diff --git a/new.txt b/new.txt
@@ -632,6 +662,7 @@ index 0000000..ce01362
 	}
 }
 
+// TestApplyPatchChecksThenAppliesPatch 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchChecksThenAppliesPatch(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "notes.txt", "old\n")
@@ -667,6 +698,7 @@ index 3367afd..3e75765 100644
 	}
 }
 
+// TestApplyPatchPreservesCheckFailureOutput 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchPreservesCheckFailureOutput(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "notes.txt", "actual\n")
@@ -698,6 +730,7 @@ index 3367afd..3e75765 100644
 	}
 }
 
+// TestApplyPatchRejectsInvalidJSON 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchRejectsInvalidJSON(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewApplyPatchTool(ws)
@@ -710,6 +743,7 @@ func TestApplyPatchRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
+// TestApplyPatchPreservesLargeCheckFailureStderr 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestApplyPatchPreservesLargeCheckFailureStderr(t *testing.T) {
 	ws := newTestWorkspace(t)
 	var patch strings.Builder
@@ -748,6 +782,7 @@ func TestApplyPatchPreservesLargeCheckFailureStderr(t *testing.T) {
 	}
 }
 
+// TestShellPermissionRequestClassifiesGoTestAsExecute 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellPermissionRequestClassifiesGoTestAsExecute(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -764,6 +799,7 @@ func TestShellPermissionRequestClassifiesGoTestAsExecute(t *testing.T) {
 	}
 }
 
+// TestShellPermissionRequestUsesReason 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellPermissionRequestUsesReason(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -777,6 +813,7 @@ func TestShellPermissionRequestUsesReason(t *testing.T) {
 	}
 }
 
+// TestShellPermissionRequestClassifiesCommonRisks 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellPermissionRequestClassifiesCommonRisks(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -856,6 +893,7 @@ func TestShellPermissionRequestClassifiesCommonRisks(t *testing.T) {
 	}
 }
 
+// TestShellRejectsInvalidJSON 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellRejectsInvalidJSON(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -868,6 +906,7 @@ func TestShellRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
+// TestShellRejectsCwdEscape 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellRejectsCwdEscape(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -877,6 +916,7 @@ func TestShellRejectsCwdEscape(t *testing.T) {
 	}
 }
 
+// TestShellDoesNotStartWithCanceledContext 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellDoesNotStartWithCanceledContext(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -891,6 +931,7 @@ func TestShellDoesNotStartWithCanceledContext(t *testing.T) {
 	}
 }
 
+// TestShellReturnsContextCanceledAfterStartedCommandIsCanceled 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellReturnsContextCanceledAfterStartedCommandIsCanceled(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -933,6 +974,7 @@ func TestShellReturnsContextCanceledAfterStartedCommandIsCanceled(t *testing.T) 
 	}
 }
 
+// TestShellUsesDefaultTimeoutWhenTimeoutOmitted 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellUsesDefaultTimeoutWhenTimeoutOmitted(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -949,6 +991,7 @@ func TestShellUsesDefaultTimeoutWhenTimeoutOmitted(t *testing.T) {
 	}
 }
 
+// TestShellReportsTimedOut 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellReportsTimedOut(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -962,6 +1005,7 @@ func TestShellReportsTimedOut(t *testing.T) {
 	}
 }
 
+// TestShellTimeoutKillsChildProcesses 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellTimeoutKillsChildProcesses(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -995,6 +1039,7 @@ func TestShellTimeoutKillsChildProcesses(t *testing.T) {
 	t.Fatalf("child process %d is still running after shell timeout", pid)
 }
 
+// TestShellCleansBackgroundChildAfterSuccessfulCommand 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellCleansBackgroundChildAfterSuccessfulCommand(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -1024,6 +1069,7 @@ func TestShellCleansBackgroundChildAfterSuccessfulCommand(t *testing.T) {
 	t.Fatalf("background child process %d is still running after shell returned", pid)
 }
 
+// TestShellCleansBackgroundChildHoldingOutputPipesAfterSuccess 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellCleansBackgroundChildHoldingOutputPipesAfterSuccess(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -1060,6 +1106,7 @@ func TestShellCleansBackgroundChildHoldingOutputPipesAfterSuccess(t *testing.T) 
 	t.Fatalf("background child process %d is still running after shell returned", pid)
 }
 
+// TestShellCapsRequestedTimeout 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellCapsRequestedTimeout(t *testing.T) {
 	ws := newTestWorkspace(t)
 	tool := NewShellTool(ws)
@@ -1074,6 +1121,7 @@ func TestShellCapsRequestedTimeout(t *testing.T) {
 	}
 }
 
+// TestShellCapturesNonZeroExitOutputAndCapsOutput 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellCapturesNonZeroExitOutputAndCapsOutput(t *testing.T) {
 	ws := newTestWorkspace(t)
 	command := `i=0; while [ "$i" -lt 25000 ]; do printf x; i=$((i+1)); done; printf failure >&2; exit 7`
@@ -1106,6 +1154,7 @@ func TestShellCapturesNonZeroExitOutputAndCapsOutput(t *testing.T) {
 	}
 }
 
+// TestWebSearchPermissionRequestRequiresNetworkConfirmation 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWebSearchPermissionRequestRequiresNetworkConfirmation(t *testing.T) {
 	tool := NewWebSearchTool()
 
@@ -1121,6 +1170,7 @@ func TestWebSearchPermissionRequestRequiresNetworkConfirmation(t *testing.T) {
 	}
 }
 
+// TestWebSearchExecutesAgainstSearchEndpoint 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWebSearchExecutesAgainstSearchEndpoint(t *testing.T) {
 	var requestedQuery string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1158,6 +1208,7 @@ func TestWebSearchExecutesAgainstSearchEndpoint(t *testing.T) {
 	}
 }
 
+// TestWebSearchRejectsEmptyQuery 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestWebSearchRejectsEmptyQuery(t *testing.T) {
 	tool := NewWebSearchTool()
 
@@ -1169,6 +1220,7 @@ func TestWebSearchRejectsEmptyQuery(t *testing.T) {
 	}
 }
 
+// waitForProcessExit 是测试辅助函数，用于复用测试准备或断言逻辑。
 func waitForProcessExit(pid int, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -1181,6 +1233,7 @@ func waitForProcessExit(pid int, timeout time.Duration) bool {
 	return syscall.Kill(pid, 0) == syscall.ESRCH
 }
 
+// TestRegistryDefinitionsAndExecution 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRegistryDefinitionsAndExecution(t *testing.T) {
 	ws := newTestWorkspace(t)
 	writeFile(t, ws.Root, "README.md", "readme")
@@ -1200,6 +1253,7 @@ func TestRegistryDefinitionsAndExecution(t *testing.T) {
 	}
 }
 
+// TestNewRegistryRegistersItemsAndExtra 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRegistryRegistersItemsAndExtra(t *testing.T) {
 	ws := newTestWorkspace(t)
 	registry := NewRegistry([]Tool{NewListDirTool(ws)}, []Tool{NewReadFileTool(ws)})
@@ -1211,6 +1265,7 @@ func TestNewRegistryRegistersItemsAndExtra(t *testing.T) {
 	}
 }
 
+// TestEmptyObjectSchemasOmitRequired 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestEmptyObjectSchemasOmitRequired(t *testing.T) {
 	ws := newTestWorkspace(t)
 
@@ -1222,6 +1277,7 @@ func TestEmptyObjectSchemasOmitRequired(t *testing.T) {
 	}
 }
 
+// TestGitToolsReturnOutputWithNonZeroExit 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGitToolsReturnOutputWithNonZeroExit(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skipf("git unavailable: %v", err)
@@ -1248,6 +1304,7 @@ func TestGitToolsReturnOutputWithNonZeroExit(t *testing.T) {
 	}
 }
 
+// TestGitDiffCapsOutputAndReportsMetadata 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGitDiffCapsOutputAndReportsMetadata(t *testing.T) {
 	git, err := exec.LookPath("git")
 	if err != nil {
@@ -1278,6 +1335,7 @@ func TestGitDiffCapsOutputAndReportsMetadata(t *testing.T) {
 	}
 }
 
+// newTestWorkspace 是测试辅助函数，用于复用测试准备或断言逻辑。
 func newTestWorkspace(t *testing.T) workspace.Workspace {
 	t.Helper()
 	ws, err := workspace.New(t.TempDir())
@@ -1287,6 +1345,7 @@ func newTestWorkspace(t *testing.T) workspace.Workspace {
 	return ws
 }
 
+// writeFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeFile(t *testing.T, root, path, content string) {
 	t.Helper()
 	fullPath := filepath.Join(root, path)
@@ -1298,6 +1357,7 @@ func writeFile(t *testing.T, root, path, content string) {
 	}
 }
 
+// runGit 是测试辅助函数，用于复用测试准备或断言逻辑。
 func runGit(t *testing.T, git string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(git, args...)

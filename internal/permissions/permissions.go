@@ -49,6 +49,7 @@ type Policy interface {
 
 type ConservativePolicy struct{}
 
+// Check 根据权限请求返回允许、拒绝或询问用户的决策。
 func (ConservativePolicy) Check(ctx context.Context, req Request) (Decision, error) {
 	if err := ctx.Err(); err != nil {
 		return Decision{}, err
@@ -64,6 +65,7 @@ func (ConservativePolicy) Check(ctx context.Context, req Request) (Decision, err
 
 type AutoPolicy struct{}
 
+// Check 根据权限请求返回允许、拒绝或询问用户的决策。
 func (AutoPolicy) Check(ctx context.Context, req Request) (Decision, error) {
 	if err := ctx.Err(); err != nil {
 		return Decision{}, err

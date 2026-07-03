@@ -13,6 +13,7 @@ type Registry struct {
 	tools map[string]Tool
 }
 
+// NewRegistry 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewRegistry(items []Tool, extra []Tool) *Registry {
 	registry := &Registry{tools: make(map[string]Tool)}
 	for _, tool := range items {
@@ -24,10 +25,12 @@ func NewRegistry(items []Tool, extra []Tool) *Registry {
 	return registry
 }
 
+// Register 提供对外可复用的能力，并隐藏内部实现细节。
 func (r *Registry) Register(tool Tool) {
 	r.tools[tool.Definition().Name] = tool
 }
 
+// Definitions 提供对外可复用的能力，并隐藏内部实现细节。
 func (r *Registry) Definitions() []model.ToolDefinition {
 	names := make([]string, 0, len(r.tools))
 	for name := range r.tools {
@@ -42,11 +45,13 @@ func (r *Registry) Definitions() []model.ToolDefinition {
 	return defs
 }
 
+// Get 提供对外可复用的能力，并隐藏内部实现细节。
 func (r *Registry) Get(name string) (Tool, bool) {
 	tool, ok := r.tools[name]
 	return tool, ok
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessage) (Result, error) {
 	tool, ok := r.Get(name)
 	if !ok {

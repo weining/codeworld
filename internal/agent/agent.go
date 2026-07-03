@@ -87,6 +87,7 @@ type TurnResult struct {
 	Usage     model.Usage
 }
 
+// RunTurn 执行非流式 agent 回合，循环处理模型回复、工具调用和最终回答。
 func (r Runner) RunTurn(ctx context.Context, history []model.Message, input string) (TurnResult, error) {
 	if err := ctx.Err(); err != nil {
 		return TurnResult{}, err
@@ -143,6 +144,7 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 	return TurnResult{}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
 }
 
+// RunTurnStream 优先使用流式模型接口，并在不支持流式时回退到 RunTurn。
 func (r Runner) RunTurnStream(ctx context.Context, history []model.Message, input string, emit func(TurnEvent) error) (TurnResult, error) {
 	if streamClient, ok := r.Model.(model.StreamClient); ok {
 		return r.runTurnWithStream(ctx, streamClient, history, input, emit)
@@ -168,6 +170,7 @@ func (r Runner) RunTurnStream(ctx context.Context, history []model.Message, inpu
 	return result, nil
 }
 
+// runTurnWithStream 执行流式 agent 回合，将模型增量和工具结果合并为完整历史。
 func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient, history []model.Message, input string, emit func(TurnEvent) error) (TurnResult, error) {
 	if err := ctx.Err(); err != nil {
 		return TurnResult{}, err
@@ -232,6 +235,7 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 	return TurnResult{}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
 }
 
+// streamGenerate 汇总流式文本、工具调用和用量事件，输出等价的完整模型响应。
 func (r Runner) streamGenerate(ctx context.Context, client model.StreamClient, req model.GenerateRequest, emit func(TurnEvent) error) (model.GenerateResponse, model.Usage, error) {
 	var text string
 	var usage model.Usage
@@ -278,6 +282,7 @@ func (r Runner) streamGenerate(ctx context.Context, client model.StreamClient, r
 	return model.GenerateResponse{Message: final, ToolCalls: toolCalls, FinalText: final.Content, Usage: usage}, usage, nil
 }
 
+// executeTool 在权限确认后执行工具，并把结果编码为模型可消费的 tool 消息。
 func (r Runner) executeTool(ctx context.Context, call model.ToolCall) string {
 	tool, ok := r.Tools.Get(call.Name)
 	if !ok {
@@ -341,18 +346,21 @@ func (r Runner) executeTool(ctx context.Context, call model.ToolCall) string {
 	return encodeToolResult(result, "")
 }
 
+// reportTool 将工具状态转发给可选 reporter，供 REPL/TUI 展示执行过程。
 func (r Runner) reportTool(ctx context.Context, event ToolEvent) {
 	if r.Reporter != nil {
 		r.Reporter.ReportTool(ctx, event)
 	}
 }
 
+// withStatus 复制工具事件并附加状态和错误文本，避免调用方手动改字段。
 func (e ToolEvent) withStatus(status ToolEventStatus, message string) ToolEvent {
 	e.Status = status
 	e.Error = message
 	return e
 }
 
+// permissionPolicy 返回显式配置的权限策略，未配置时使用保守策略。
 func (r Runner) permissionPolicy() permissions.Policy {
 	if r.Policy != nil {
 		return r.Policy
@@ -360,6 +368,7 @@ func (r Runner) permissionPolicy() permissions.Policy {
 	return permissions.ConservativePolicy{}
 }
 
+// responseFinalText 兼容 provider 的 FinalText 字段和 Message.Content 字段。
 func responseFinalText(resp model.GenerateResponse) string {
 	if resp.FinalText != "" {
 		return resp.FinalText
@@ -367,6 +376,7 @@ func responseFinalText(resp model.GenerateResponse) string {
 	return resp.Message.Content
 }
 
+// responseToolCalls 兼容 provider 顶层 ToolCalls 和 assistant message 内嵌 ToolCalls。
 func responseToolCalls(resp model.GenerateResponse) []model.ToolCall {
 	if len(resp.ToolCalls) > 0 {
 		return resp.ToolCalls
@@ -374,6 +384,7 @@ func responseToolCalls(resp model.GenerateResponse) []model.ToolCall {
 	return resp.Message.ToolCalls
 }
 
+// encodeToolResult 将工具结果序列化为 JSON，并保留错误前缀给模型参考。
 func encodeToolResult(result tools.Result, prefix string) string {
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -388,6 +399,7 @@ func encodeToolResult(result tools.Result, prefix string) string {
 	return string(data)
 }
 
+// firstNonEmpty 从候选值中选择满足条件的结果。
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value != "" {
@@ -397,6 +409,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// isDeferredActionPlaceholder 识别“我去检查”但未调用工具的占位回复，用于触发二次推进。
 func isDeferredActionPlaceholder(text string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(text))
 	if normalized == "" {

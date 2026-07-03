@@ -12,6 +12,7 @@ import (
 	"codeworld/internal/tools"
 )
 
+// TestRunTurnBuildsRequestWithHistoryToolsAndReturnsFinalText 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnBuildsRequestWithHistoryToolsAndReturnsFinalText(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{{FinalText: "answer"}}}
 	registry := tools.NewRegistry([]tools.Tool{newFakeTool("echo", permissions.ActionRead, permissions.RiskRead)}, nil)
@@ -59,6 +60,7 @@ func TestRunTurnBuildsRequestWithHistoryToolsAndReturnsFinalText(t *testing.T) {
 	}
 }
 
+// TestRunTurnExecutesToolAndSendsResultBackToModel 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnExecutesToolAndSendsResultBackToModel(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "echo", Arguments: json.RawMessage(`{"text":"hello"}`)}}},
@@ -97,6 +99,7 @@ func TestRunTurnExecutesToolAndSendsResultBackToModel(t *testing.T) {
 	}
 }
 
+// TestRunTurnAccumulatesUsageAcrossModelCalls 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnAccumulatesUsageAcrossModelCalls(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{
@@ -127,6 +130,7 @@ func TestRunTurnAccumulatesUsageAcrossModelCalls(t *testing.T) {
 	}
 }
 
+// TestRunTurnStreamFallsBackToGenerateAndEmitsEvents 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnStreamFallsBackToGenerateAndEmitsEvents(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{{
 		FinalText: "stream fallback",
@@ -162,6 +166,7 @@ func TestRunTurnStreamFallsBackToGenerateAndEmitsEvents(t *testing.T) {
 	}
 }
 
+// TestRunTurnStreamUsesStreamingClient 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnStreamUsesStreamingClient(t *testing.T) {
 	client := &fakeStreamingClient{events: []model.StreamEvent{
 		{Kind: model.StreamEventTextDelta, Delta: "你"},
@@ -205,6 +210,7 @@ func TestRunTurnStreamUsesStreamingClient(t *testing.T) {
 	}
 }
 
+// TestRunTurnReportsToolProgress 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnReportsToolProgress(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "echo", Arguments: json.RawMessage(`{"text":"hello"}`)}}},
@@ -235,6 +241,7 @@ func TestRunTurnReportsToolProgress(t *testing.T) {
 	}
 }
 
+// TestRunTurnExecutesToolWhenMessageHasContentAndToolCalls 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnExecutesToolWhenMessageHasContentAndToolCalls(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{
@@ -266,6 +273,7 @@ func TestRunTurnExecutesToolWhenMessageHasContentAndToolCalls(t *testing.T) {
 	}
 }
 
+// TestRunTurnRepromptsAfterDeferredActionPlaceholder 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnRepromptsAfterDeferredActionPlaceholder(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{FinalText: "让我检查一下工具注册表。"},
@@ -298,6 +306,7 @@ func TestRunTurnRepromptsAfterDeferredActionPlaceholder(t *testing.T) {
 	}
 }
 
+// TestRunTurnReturnsPermissionDenialToModel 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnReturnsPermissionDenialToModel(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "write", Arguments: json.RawMessage(`{"path":"notes.txt"}`)}}},
@@ -333,6 +342,7 @@ func TestRunTurnReturnsPermissionDenialToModel(t *testing.T) {
 	}
 }
 
+// TestRunTurnRejectsUnknownPermissionDecision 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnRejectsUnknownPermissionDecision(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "write", Arguments: json.RawMessage(`{"path":"notes.txt"}`)}}},
@@ -363,6 +373,7 @@ func TestRunTurnRejectsUnknownPermissionDecision(t *testing.T) {
 	}
 }
 
+// TestRunTurnReturnsToolExecutionErrorToModel 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnReturnsToolExecutionErrorToModel(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "fail", Arguments: json.RawMessage(`{}`)}}},
@@ -391,6 +402,7 @@ func TestRunTurnReturnsToolExecutionErrorToModel(t *testing.T) {
 	}
 }
 
+// TestRunTurnStopsAtMaxSteps 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestRunTurnStopsAtMaxSteps(t *testing.T) {
 	client := &fakeClient{responses: []model.GenerateResponse{
 		{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "echo", Arguments: json.RawMessage(`{"text":"again"}`)}}},
@@ -418,6 +430,7 @@ type fakeClient struct {
 	requests  []model.GenerateRequest
 }
 
+// Generate 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeClient) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return model.GenerateResponse{}, err
@@ -434,10 +447,12 @@ type fakeStreamingClient struct {
 	requests []model.GenerateRequest
 }
 
+// Generate 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeStreamingClient) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
 	return model.GenerateResponse{FinalText: "generate fallback"}, nil
 }
 
+// Stream 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeStreamingClient) Stream(ctx context.Context, req model.GenerateRequest, emit func(model.StreamEvent) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -459,10 +474,12 @@ type fakeTool struct {
 	executeCalls int
 }
 
+// newFakeTool 是测试辅助函数，用于复用测试准备或断言逻辑。
 func newFakeTool(name string, action permissions.Action, risk permissions.Risk) *fakeTool {
 	return &fakeTool{name: name, action: action, risk: risk}
 }
 
+// Definition 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        f.name,
@@ -471,10 +488,12 @@ func (f *fakeTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	return permissions.Request{Action: f.action, Risk: f.risk, Target: f.name, Reason: "test"}, nil
 }
 
+// Execute 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeTool) Execute(ctx context.Context, args json.RawMessage) (tools.Result, error) {
 	f.executeCalls++
 	var parsed struct {
@@ -489,6 +508,7 @@ type fakeConfirmer struct {
 	calls   int
 }
 
+// Confirm 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeConfirmer) Confirm(ctx context.Context, req permissions.Request, decision permissions.Decision) (bool, error) {
 	f.calls++
 	return f.allowed, nil
@@ -499,6 +519,7 @@ type fakePolicy struct {
 	err      error
 }
 
+// Check 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f fakePolicy) Check(ctx context.Context, req permissions.Request) (permissions.Decision, error) {
 	if err := ctx.Err(); err != nil {
 		return permissions.Decision{}, err
@@ -510,10 +531,12 @@ type fakeToolReporter struct {
 	events []ToolEvent
 }
 
+// ReportTool 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeToolReporter) ReportTool(ctx context.Context, event ToolEvent) {
 	f.events = append(f.events, event)
 }
 
+// messagesEqual 是测试辅助函数，用于复用测试准备或断言逻辑。
 func messagesEqual(a, b []model.Message) bool {
 	if len(a) != len(b) {
 		return false

@@ -80,6 +80,7 @@ type Usage struct {
 	TotalTokens  int `json:"total_tokens,omitempty"`
 }
 
+// Add 提供对外可复用的能力，并隐藏内部实现细节。
 func (u Usage) Add(next Usage) Usage {
 	return Usage{
 		InputTokens:  u.InputTokens + next.InputTokens,
@@ -89,6 +90,7 @@ func (u Usage) Add(next Usage) Usage {
 	}
 }
 
+// IsZero 判断输入是否满足特定条件，并用于后续分支决策。
 func (u Usage) IsZero() bool {
 	return u == Usage{}
 }

@@ -30,6 +30,7 @@ type MCPServer struct {
 	Args    []string
 }
 
+// Default 提供对外可复用的能力，并隐藏内部实现细节。
 func Default() Config {
 	return Config{
 		Provider:           "deepseek",
@@ -41,6 +42,7 @@ func Default() Config {
 	}
 }
 
+// Load 加载外部或项目内配置，并把原始数据转换为内部结构。
 func Load(root string) (Config, error) {
 	cfg := Default()
 	path := filepath.Join(root, ".codeworld", "config.toml")
@@ -126,6 +128,7 @@ func Load(root string) (Config, error) {
 	return cfg, nil
 }
 
+// setMCPServerValue 封装局部逻辑，保持调用方流程清晰。
 func setMCPServerValue(server *MCPServer, key, value string) error {
 	switch key {
 	case "name":
@@ -144,6 +147,7 @@ func setMCPServerValue(server *MCPServer, key, value string) error {
 	return nil
 }
 
+// parseStringArray 解析输入数据，并执行必要的格式校验。
 func parseStringArray(value string) ([]string, error) {
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(value, "[") || !strings.HasSuffix(value, "]") {
@@ -165,6 +169,7 @@ func parseStringArray(value string) ([]string, error) {
 	return out, nil
 }
 
+// loadEnv 加载外部或项目内配置，并把原始数据转换为内部结构。
 func loadEnv(cfg *Config) {
 	cfg.APIKey = os.Getenv("DEEPSEEK_API_KEY")
 	cfg.OpenAIAPIKey = os.Getenv("OPENAI_API_KEY")

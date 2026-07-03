@@ -25,10 +25,12 @@ type writeFileArgs struct {
 	Reason  string  `json:"reason"`
 }
 
+// NewWriteFileTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewWriteFileTool(ws workspace.Workspace) Tool {
 	return writeFileTool{workspace: ws}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t writeFileTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "write_file",
@@ -41,6 +43,7 @@ func (t writeFileTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t writeFileTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parseWriteFileArgs(args)
 	if err != nil {
@@ -67,6 +70,7 @@ func (t writeFileTool) PermissionRequest(args json.RawMessage) (permissions.Requ
 	}, nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t writeFileTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -114,10 +118,12 @@ type applyPatchArgs struct {
 	Reason string `json:"reason"`
 }
 
+// NewApplyPatchTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewApplyPatchTool(ws workspace.Workspace) Tool {
 	return applyPatchTool{workspace: ws}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t applyPatchTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "apply_patch",
@@ -129,6 +135,7 @@ func (t applyPatchTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t applyPatchTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parseApplyPatchArgs(args)
 	if err != nil {
@@ -153,6 +160,7 @@ func (t applyPatchTool) PermissionRequest(args json.RawMessage) (permissions.Req
 	}, nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t applyPatchTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -175,6 +183,7 @@ func (t applyPatchTool) Execute(ctx context.Context, args json.RawMessage) (Resu
 	return runGitApply(ctx, t.workspace, parsed.Patch, false)
 }
 
+// runGitApply 执行主要流程，并把运行结果或错误返回给调用方。
 func runGitApply(ctx context.Context, ws workspace.Workspace, patch string, check bool) (Result, error) {
 	args := []string{"-C", ws.Root, "apply"}
 	command := "git apply"
@@ -206,6 +215,7 @@ func runGitApply(ctx context.Context, ws workspace.Workspace, patch string, chec
 	return result, err
 }
 
+// parseWriteFileArgs 解析输入数据，并执行必要的格式校验。
 func parseWriteFileArgs(args json.RawMessage) (writeFileArgs, error) {
 	var parsed writeFileArgs
 	if err := decodeArgs(args, &parsed); err != nil {
@@ -214,6 +224,7 @@ func parseWriteFileArgs(args json.RawMessage) (writeFileArgs, error) {
 	return parsed, nil
 }
 
+// parseApplyPatchArgs 解析输入数据，并执行必要的格式校验。
 func parseApplyPatchArgs(args json.RawMessage) (applyPatchArgs, error) {
 	var parsed applyPatchArgs
 	if err := decodeArgs(args, &parsed); err != nil {
@@ -222,6 +233,7 @@ func parseApplyPatchArgs(args json.RawMessage) (applyPatchArgs, error) {
 	return parsed, nil
 }
 
+// validatePatchPaths 校验输入结构，尽早拒绝不安全或不一致的数据。
 func validatePatchPaths(ws workspace.Workspace, patch string) error {
 	hunk := hunkState{}
 	for _, line := range strings.Split(patch, "\n") {
@@ -287,6 +299,7 @@ type hunkState struct {
 	new    int
 }
 
+// parseHunkState 解析输入数据，并执行必要的格式校验。
 func parseHunkState(line string) (hunkState, error) {
 	fields := strings.Fields(line)
 	var oldCount *int
@@ -314,6 +327,7 @@ func parseHunkState(line string) (hunkState, error) {
 	return hunkState{active: *oldCount > 0 || *newCount > 0, old: *oldCount, new: *newCount}, nil
 }
 
+// parseHunkRangeCount 解析输入数据，并执行必要的格式校验。
 func parseHunkRangeCount(field string) (int, error) {
 	field = strings.TrimPrefix(field, "-")
 	field = strings.TrimPrefix(field, "+")
@@ -334,6 +348,7 @@ func parseHunkRangeCount(field string) (int, error) {
 	return count, nil
 }
 
+// consume 封装局部逻辑，保持调用方流程清晰。
 func (h *hunkState) consume(line string) {
 	if line == "" {
 		return
@@ -362,6 +377,7 @@ func (h *hunkState) consume(line string) {
 	}
 }
 
+// patchHeaderPathTokens 封装局部逻辑，保持调用方流程清晰。
 func patchHeaderPathTokens(input string) ([]string, error) {
 	rest := strings.TrimSpace(input)
 	var paths []string
@@ -379,6 +395,7 @@ func patchHeaderPathTokens(input string) ([]string, error) {
 	return paths, nil
 }
 
+// nextPatchHeaderPathToken 封装局部逻辑，保持调用方流程清晰。
 func nextPatchHeaderPathToken(input string) (string, string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
@@ -407,6 +424,7 @@ func nextPatchHeaderPathToken(input string) (string, string, error) {
 	return "", "", fmt.Errorf("unterminated quoted patch path")
 }
 
+// isPatchHeaderSpace 判断输入是否满足特定条件，并用于后续分支决策。
 func isPatchHeaderSpace(ch byte) bool {
 	switch ch {
 	case ' ', '\t', '\n', '\r':
@@ -416,6 +434,7 @@ func isPatchHeaderSpace(ch byte) bool {
 	}
 }
 
+// validatePatchPath 校验输入结构，尽早拒绝不安全或不一致的数据。
 func validatePatchPath(ws workspace.Workspace, path string, stripFirstComponent bool) error {
 	cleaned, err := normalizePatchPath(path, stripFirstComponent)
 	if err != nil {
@@ -433,6 +452,7 @@ func validatePatchPath(ws workspace.Workspace, path string, stripFirstComponent 
 	return nil
 }
 
+// normalizePatchPath 规范化输入，减少等价写法对后续判断的影响。
 func normalizePatchPath(path string, stripFirstComponent bool) (string, error) {
 	if unquoted, err := strconv.Unquote(path); err == nil {
 		path = unquoted
@@ -446,6 +466,7 @@ func normalizePatchPath(path string, stripFirstComponent bool) (string, error) {
 	return stripGitApplyPathComponent(path), nil
 }
 
+// stripGitApplyPathComponent 封装局部逻辑，保持调用方流程清晰。
 func stripGitApplyPathComponent(path string) string {
 	if idx := strings.Index(path, "/"); idx >= 0 {
 		return path[idx+1:]
@@ -453,6 +474,7 @@ func stripGitApplyPathComponent(path string) string {
 	return path
 }
 
+// preview 封装局部逻辑，保持调用方流程清晰。
 func preview(value string, limit int64) string {
 	if int64(len(value)) <= limit {
 		return value

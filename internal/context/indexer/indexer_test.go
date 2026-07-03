@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestBuildIndexSkipsGitCodeworldLogsAndLargeFiles 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestBuildIndexSkipsGitCodeworldLogsAndLargeFiles(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "main.go"), "package main\n")
@@ -38,6 +39,7 @@ func TestBuildIndexSkipsGitCodeworldLogsAndLargeFiles(t *testing.T) {
 	}
 }
 
+// TestSaveLoadAndSummaryAreDeterministic 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSaveLoadAndSummaryAreDeterministic(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "b_test.go"), "package b\n")
@@ -64,6 +66,7 @@ func TestSaveLoadAndSummaryAreDeterministic(t *testing.T) {
 	}
 }
 
+// TestLanguageFromExtension 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLanguageFromExtension(t *testing.T) {
 	tests := map[string]string{
 		"main.go":     "go",
@@ -79,6 +82,7 @@ func TestLanguageFromExtension(t *testing.T) {
 	}
 }
 
+// findEntry 是测试辅助函数，用于复用测试准备或断言逻辑。
 func findEntry(idx Index, path string) (Entry, bool) {
 	for _, entry := range idx.Entries {
 		if entry.Path == path {
@@ -88,6 +92,7 @@ func findEntry(idx Index, path string) (Entry, bool) {
 	return Entry{}, false
 }
 
+// writeFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

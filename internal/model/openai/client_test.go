@@ -12,6 +12,7 @@ import (
 	"codeworld/internal/model"
 )
 
+// TestGenerateSendsChatCompletionRequestAndParsesFinalTextUsageAndLog 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateSendsChatCompletionRequestAndParsesFinalTextUsageAndLog(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +92,7 @@ func TestGenerateSendsChatCompletionRequestAndParsesFinalTextUsageAndLog(t *test
 	}
 }
 
+// TestGenerateOmitsAuthorizationWhenAPIKeyIsEmpty 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateOmitsAuthorizationWhenAPIKeyIsEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "" {
@@ -113,6 +115,7 @@ func TestGenerateOmitsAuthorizationWhenAPIKeyIsEmpty(t *testing.T) {
 	}
 }
 
+// TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone(t *testing.T) {
 	var requestBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +161,7 @@ func TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone(t *testing.T) {
 	}
 }
 
+// TestStreamParsesToolCallDeltas 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStreamParsesToolCallDeltas(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -190,6 +194,7 @@ func TestStreamParsesToolCallDeltas(t *testing.T) {
 	}
 }
 
+// TestGenerateParsesToolCallAndLeavesFinalTextEmpty 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateParsesToolCallAndLeavesFinalTextEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -215,6 +220,7 @@ func TestGenerateParsesToolCallAndLeavesFinalTextEmpty(t *testing.T) {
 	}
 }
 
+// TestGenerateReturnsHTTPError 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad key", http.StatusUnauthorized)

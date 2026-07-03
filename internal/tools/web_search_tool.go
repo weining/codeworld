@@ -40,6 +40,7 @@ type webSearchResult struct {
 	Snippet string
 }
 
+// NewWebSearchTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewWebSearchTool() Tool {
 	return webSearchTool{
 		endpoint: defaultWebSearchURL,
@@ -47,6 +48,7 @@ func NewWebSearchTool() Tool {
 	}
 }
 
+// Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t webSearchTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "web_search",
@@ -58,6 +60,7 @@ func (t webSearchTool) Definition() model.ToolDefinition {
 	}
 }
 
+// PermissionRequest 根据工具参数构造权限请求，供策略层在执行前判断。
 func (t webSearchTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
 	parsed, err := parseWebSearchArgs(args)
 	if err != nil {
@@ -71,6 +74,7 @@ func (t webSearchTool) PermissionRequest(args json.RawMessage) (permissions.Requ
 	}, nil
 }
 
+// Execute 执行工具主体逻辑，并返回可序列化的工具结果。
 func (t webSearchTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
@@ -143,6 +147,7 @@ func (t webSearchTool) Execute(ctx context.Context, args json.RawMessage) (Resul
 	}, nil
 }
 
+// parseWebSearchArgs 解析输入数据，并执行必要的格式校验。
 func parseWebSearchArgs(args json.RawMessage) (webSearchArgs, error) {
 	var parsed webSearchArgs
 	if err := decodeArgs(args, &parsed); err != nil {
@@ -158,6 +163,7 @@ func parseWebSearchArgs(args json.RawMessage) (webSearchArgs, error) {
 	return parsed, nil
 }
 
+// webSearchURL 将用户查询编码到搜索端点，保留端点已有查询参数。
 func webSearchURL(endpoint string, query string) (string, error) {
 	parsed, err := url.Parse(endpoint)
 	if err != nil {
@@ -177,6 +183,7 @@ var (
 	webTagPattern           = regexp.MustCompile(`(?is)<[^>]+>`)
 )
 
+// parseWebSearchResults 解析输入数据，并执行必要的格式校验。
 func parseWebSearchResults(body string, limit int) []webSearchResult {
 	if limit <= 0 {
 		limit = defaultWebSearchLimit
@@ -205,6 +212,7 @@ func parseWebSearchResults(body string, limit int) []webSearchResult {
 	return results
 }
 
+// formatWebSearchResults 将内部数据格式化为面向用户或模型的文本。
 func formatWebSearchResults(results []webSearchResult) string {
 	if len(results) == 0 {
 		return "no web search results"
@@ -227,12 +235,14 @@ func formatWebSearchResults(results []webSearchResult) string {
 	return b.String()
 }
 
+// cleanWebSearchText 封装局部逻辑，保持调用方流程清晰。
 func cleanWebSearchText(value string) string {
 	value = webTagPattern.ReplaceAllString(value, "")
 	value = html.UnescapeString(value)
 	return strings.Join(strings.Fields(value), " ")
 }
 
+// decodeDuckDuckGoURL 封装局部逻辑，保持调用方流程清晰。
 func decodeDuckDuckGoURL(raw string) string {
 	if strings.HasPrefix(raw, "//") {
 		raw = "https:" + raw

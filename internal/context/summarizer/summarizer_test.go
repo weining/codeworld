@@ -9,6 +9,7 @@ import (
 	"codeworld/internal/model"
 )
 
+// TestShouldSummarizeWhenMessageCountExceedsThreshold 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShouldSummarizeWhenMessageCountExceedsThreshold(t *testing.T) {
 	messages := []model.Message{
 		{Role: model.RoleUser, Content: "1"},
@@ -23,6 +24,7 @@ func TestShouldSummarizeWhenMessageCountExceedsThreshold(t *testing.T) {
 	}
 }
 
+// TestSummarizeKeepsRecentMessagesAndStoresSummary 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummarizeKeepsRecentMessagesAndStoresSummary(t *testing.T) {
 	client := &fakeClient{response: model.GenerateResponse{FinalText: "summary text"}}
 	messages := []model.Message{
@@ -50,6 +52,7 @@ func TestSummarizeKeepsRecentMessagesAndStoresSummary(t *testing.T) {
 	}
 }
 
+// TestSummarizeFailurePreservesMessages 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummarizeFailurePreservesMessages(t *testing.T) {
 	client := &fakeClient{err: errors.New("boom")}
 	messages := []model.Message{
@@ -75,6 +78,7 @@ type fakeClient struct {
 	requests []model.GenerateRequest
 }
 
+// Generate 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeClient) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return model.GenerateResponse{}, err

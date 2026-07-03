@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// TestLoadManifestsDisabledReturnsNoTools 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadManifestsDisabledReturnsNoTools(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "example", `{"name":"example","tools":[{"name":"example.echo","description":"Echo","command":"echo","args":["{{text}}"],"input_schema":{"type":"object"},"risk":"read"}]}`)
@@ -19,6 +20,7 @@ func TestLoadManifestsDisabledReturnsNoTools(t *testing.T) {
 	}
 }
 
+// TestLoadManifestsRequiresNamespacedToolNames 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadManifestsRequiresNamespacedToolNames(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "example", `{"name":"example","tools":[{"name":"echo","description":"Echo","command":"echo","args":["{{text}}"],"input_schema":{"type":"object"},"risk":"read"}]}`)
@@ -29,6 +31,7 @@ func TestLoadManifestsRequiresNamespacedToolNames(t *testing.T) {
 	}
 }
 
+// TestLoadManifestsRejectsTraversalPluginName 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadManifestsRejectsTraversalPluginName(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "example", `{"name":"../escape","tools":[]}`)
@@ -39,6 +42,7 @@ func TestLoadManifestsRejectsTraversalPluginName(t *testing.T) {
 	}
 }
 
+// TestLoadManifestsReturnsToolsWhenEnabled 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadManifestsReturnsToolsWhenEnabled(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, "example", `{"name":"example","tools":[{"name":"example.echo","description":"Echo","command":"echo","args":["{{text}}"],"input_schema":{"type":"object"},"risk":"read"}]}`)
@@ -52,6 +56,7 @@ func TestLoadManifestsReturnsToolsWhenEnabled(t *testing.T) {
 	}
 }
 
+// writeManifest 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeManifest(t *testing.T, root, name, content string) {
 	t.Helper()
 	path := filepath.Join(root, ".codeworld", "plugins", name, "plugin.json")

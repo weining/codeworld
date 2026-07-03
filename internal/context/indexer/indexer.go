@@ -29,6 +29,7 @@ type Entry struct {
 	Reason   string    `json:"reason,omitempty"`
 }
 
+// Build 构建运行所需的数据结构，并在过程中收集必要的上下文。
 func Build(root string, maxFileBytes int64) (Index, error) {
 	if maxFileBytes <= 0 {
 		maxFileBytes = 256 * 1024
@@ -87,6 +88,7 @@ func Build(root string, maxFileBytes int64) (Index, error) {
 	return Index{Root: absRoot, Entries: entries, CreatedAt: time.Now().UTC()}, nil
 }
 
+// Save 持久化当前状态，并处理路径、权限或归档细节。
 func Save(path string, idx Index) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -99,6 +101,7 @@ func Save(path string, idx Index) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
+// Load 加载外部或项目内配置，并把原始数据转换为内部结构。
 func Load(path string) (Index, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -111,6 +114,7 @@ func Load(path string) (Index, error) {
 	return idx, nil
 }
 
+// Summary 提供对外可复用的能力，并隐藏内部实现细节。
 func Summary(idx Index, limit int) string {
 	if limit <= 0 {
 		limit = 100
@@ -130,10 +134,12 @@ func Summary(idx Index, limit int) string {
 	return strings.Join(lines, "\n")
 }
 
+// DefaultPath 提供对外可复用的能力，并隐藏内部实现细节。
 func DefaultPath(root string) string {
 	return filepath.Join(root, ".codeworld", "index.json")
 }
 
+// LanguageForPath 提供对外可复用的能力，并隐藏内部实现细节。
 func LanguageForPath(path string) string {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".go":
@@ -157,6 +163,7 @@ func LanguageForPath(path string) string {
 	}
 }
 
+// isBinary 判断输入是否满足特定条件，并用于后续分支决策。
 func isBinary(path string) bool {
 	data, err := os.ReadFile(path)
 	if err != nil {

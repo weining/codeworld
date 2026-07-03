@@ -13,6 +13,7 @@ type Workspace struct {
 	Root string
 }
 
+// New 创建并返回对应组件，集中设置默认依赖和初始状态。
 func New(root string) (Workspace, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -25,6 +26,7 @@ func New(root string) (Workspace, error) {
 	return Workspace{Root: filepath.Clean(canonicalRoot)}, nil
 }
 
+// Resolve 提供对外可复用的能力，并隐藏内部实现细节。
 func (w Workspace) Resolve(path string) (string, error) {
 	var resolved string
 	if filepath.IsAbs(path) {
@@ -43,6 +45,7 @@ func (w Workspace) Resolve(path string) (string, error) {
 	return canonical, nil
 }
 
+// Rel 提供对外可复用的能力，并隐藏内部实现细节。
 func (w Workspace) Rel(path string) (string, error) {
 	resolved, err := w.Resolve(path)
 	if err != nil {
@@ -55,6 +58,7 @@ func (w Workspace) Rel(path string) (string, error) {
 	return filepath.ToSlash(rel), nil
 }
 
+// IsGitRepo 判断输入是否满足特定条件，并用于后续分支决策。
 func (w Workspace) IsGitRepo() bool {
 	cmd := exec.Command("git", "-C", w.Root, "rev-parse", "--is-inside-work-tree")
 	out, err := cmd.Output()
@@ -76,6 +80,7 @@ func (w Workspace) IsGitRepo() bool {
 	return err == nil && strings.HasPrefix(strings.TrimSpace(string(data)), "gitdir:")
 }
 
+// Summary 提供对外可复用的能力，并隐藏内部实现细节。
 func (w Workspace) Summary(limit int) (string, error) {
 	if limit <= 0 {
 		limit = 100
@@ -115,6 +120,7 @@ func (w Workspace) Summary(limit int) (string, error) {
 	return strings.Join(files, "\n"), nil
 }
 
+// contains 判断输入是否满足特定条件，并用于后续分支决策。
 func (w Workspace) contains(path string) bool {
 	rel, err := filepath.Rel(w.Root, path)
 	if err != nil {
@@ -123,6 +129,7 @@ func (w Workspace) contains(path string) bool {
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
 }
 
+// canonicalizeForSafety 封装局部逻辑，保持调用方流程清晰。
 func (w Workspace) canonicalizeForSafety(path string) (string, error) {
 	clean := filepath.Clean(path)
 	rel, err := filepath.Rel(w.Root, clean)
@@ -178,6 +185,7 @@ func (w Workspace) canonicalizeForSafety(path string) (string, error) {
 	return filepath.Clean(current), nil
 }
 
+// canonicalizeExistingPrefix 封装局部逻辑，保持调用方流程清晰。
 func canonicalizeExistingPrefix(path string) (string, error) {
 	evaluated, err := filepath.EvalSymlinks(path)
 	if err == nil {
@@ -226,22 +234,27 @@ type summaryItem struct {
 
 type summaryHeap []summaryItem
 
+// Len 提供对外可复用的能力，并隐藏内部实现细节。
 func (h summaryHeap) Len() int {
 	return len(h)
 }
 
+// Less 提供对外可复用的能力，并隐藏内部实现细节。
 func (h summaryHeap) Less(i, j int) bool {
 	return h[i].rel < h[j].rel
 }
 
+// Swap 提供对外可复用的能力，并隐藏内部实现细节。
 func (h summaryHeap) Swap(i, j int) {
 	h[i], h[j] = h[j], h[i]
 }
 
+// Push 提供对外可复用的能力，并隐藏内部实现细节。
 func (h *summaryHeap) Push(x any) {
 	*h = append(*h, x.(summaryItem))
 }
 
+// Pop 提供对外可复用的能力，并隐藏内部实现细节。
 func (h *summaryHeap) Pop() any {
 	old := *h
 	n := len(old)
@@ -250,6 +263,7 @@ func (h *summaryHeap) Pop() any {
 	return item
 }
 
+// summaryEntries 封装局部逻辑，保持调用方流程清晰。
 func summaryEntries(path string, parentRel string) ([]summaryItem, error) {
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -275,6 +289,7 @@ func summaryEntries(path string, parentRel string) ([]summaryItem, error) {
 	return items, nil
 }
 
+// isHeavyDir 判断输入是否满足特定条件，并用于后续分支决策。
 func isHeavyDir(name string) bool {
 	switch name {
 	case ".git", ".codeworld", "node_modules", "vendor", "dist", "build", "target", ".cache":

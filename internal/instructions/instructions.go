@@ -26,6 +26,7 @@ type Loaded struct {
 	Truncated bool
 }
 
+// Load 加载外部或项目内配置，并把原始数据转换为内部结构。
 func Load(root string, opts Options) (Loaded, error) {
 	if opts.MaxBytes <= 0 {
 		opts.MaxBytes = DefaultMaxBytes
@@ -62,6 +63,7 @@ func Load(root string, opts Options) (Loaded, error) {
 	return loaded, nil
 }
 
+// readFirstInstruction 读取外部输入，并保持调用方可处理的错误语义。
 func readFirstInstruction(dir string) (File, bool, error) {
 	// override 文件优先级高于普通 AGENTS，便于项目在子目录覆盖默认约定。
 	for _, name := range []string{"AGENTS.override.md", "AGENTS.md"} {
@@ -82,6 +84,7 @@ func readFirstInstruction(dir string) (File, bool, error) {
 	return File{}, false, nil
 }
 
+// combine 封装局部逻辑，保持调用方流程清晰。
 func combine(files []File, maxBytes int) (string, bool) {
 	var b strings.Builder
 	truncated := false
@@ -108,6 +111,7 @@ func combine(files []File, maxBytes int) (string, bool) {
 	return text, truncated
 }
 
+// gitRoot 封装局部逻辑，保持调用方流程清晰。
 func gitRoot(root string) string {
 	cmd := exec.Command("git", "-C", root, "rev-parse", "--show-toplevel")
 	var stdout bytes.Buffer
@@ -118,6 +122,7 @@ func gitRoot(root string) string {
 	return filepath.Clean(strings.TrimSpace(stdout.String()))
 }
 
+// pathChain 封装局部逻辑，保持调用方流程清晰。
 func pathChain(start, end string) ([]string, error) {
 	rel, err := filepath.Rel(start, end)
 	if err != nil {
