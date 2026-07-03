@@ -23,6 +23,7 @@ import (
 	"codeworld/internal/repl"
 	"codeworld/internal/session"
 	"codeworld/internal/skill"
+	"codeworld/internal/subagent"
 	"codeworld/internal/tools"
 	"codeworld/internal/workspace"
 )
@@ -45,6 +46,7 @@ type Runtime struct {
 	Usage      model.Usage
 	Skills     []skill.Skill
 	MCPClients []*mcp.Client
+	Subagents  *subagent.Manager
 	Runner     agent.Runner
 	Hooks      *hooks.Runner
 	Diff       func(context.Context) (string, error)
@@ -209,10 +211,40 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	diffTool := tools.NewGitDiffTool(ws)
 
 	confirmer := repl.Confirmer{In: opts.In, Out: opts.Out}
+	approvalMode := permissions.Mode(firstNonEmpty(cfg.ApprovalMode, string(permissions.ModeAuto)))
+	childRegistry := tools.NewDefaultRegistry(ws)
+	for _, tool := range loadedCapabilities.Tools {
+		childRegistry.Register(tool)
+	}
+	if len(loadedCapabilities.Skills) > 0 {
+		childRegistry.Register(tools.NewSkillOpenTool(loadedCapabilities.Skills))
+	}
+	var childRunner agent.Runner
+	subagentManager, err := subagent.NewManager(ws.Root, func(ctx context.Context, prompt string) (subagent.RunResult, error) {
+		result, err := childRunner.RunTurn(ctx, nil, prompt)
+		if err != nil {
+			return subagent.RunResult{}, err
+		}
+		return subagent.RunResult{Content: result.FinalText, Transcript: subagentTranscript(result.Messages)}, nil
+	})
+	if err != nil {
+		return Runtime{}, err
+	}
+	registry.Register(subagent.NewStartTool(subagentManager))
+	registry.Register(subagent.NewStatusTool(subagentManager))
+	childRunner = agent.Runner{
+		Model:        client,
+		Tools:        childRegistry,
+		Policy:       permissions.ModePolicy{Mode: permissions.ModeReadOnly},
+		Hooks:        hookRunner,
+		MaxSteps:     cfg.MaxSteps,
+		ModelName:    modelName,
+		SystemPrompt: systemPrompt + "\n\nSubagent mode:\nYou are a local read-only subagent. Investigate independently, avoid editing files, and return concise findings for the parent agent.",
+	}
 	runner := agent.Runner{
 		Model:        client,
 		Tools:        registry,
-		Policy:       permissions.ModePolicy{Mode: permissions.Mode(firstNonEmpty(cfg.ApprovalMode, string(permissions.ModeAuto)))},
+		Policy:       permissions.ModePolicy{Mode: approvalMode},
 		Confirmer:    confirmer,
 		Hooks:        hookRunner,
 		MaxSteps:     cfg.MaxSteps,
@@ -233,6 +265,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		},
 		Skills:     loadedCapabilities.Skills,
 		MCPClients: loadedCapabilities.MCPClients,
+		Subagents:  subagentManager,
 		Runner:     runner,
 		Hooks:      hookRunner,
 		In:         opts.In,
@@ -330,6 +363,18 @@ func historyMessages(messages []model.Message) []model.Message {
 		history = append(history, msg)
 	}
 	return history
+}
+
+// subagentTranscript 保留子代理线程的角色和文本摘要，避免持久化大块图片或工具参数。
+func subagentTranscript(messages []model.Message) []subagent.TranscriptMessage {
+	out := make([]subagent.TranscriptMessage, 0, len(messages))
+	for _, msg := range historyMessages(messages) {
+		if msg.Content == "" {
+			continue
+		}
+		out = append(out, subagent.TranscriptMessage{Role: string(msg.Role), Content: msg.Content})
+	}
+	return out
 }
 
 // modelMessagesToSession 清理并转换模型消息，避免非法工具历史进入持久化文件。

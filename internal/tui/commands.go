@@ -9,6 +9,7 @@ import (
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
+	"codeworld/internal/subagent"
 )
 
 var slashCommands = []string{
@@ -20,6 +21,7 @@ var slashCommands = []string{
 	"/mcp",
 	"/skills",
 	"/context",
+	"/agents",
 	"/theme",
 	"/resume",
 	"/compact",
@@ -120,6 +122,8 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		m.appendNotice(strings.Join(lines, "\n"))
 	case line == "/context":
 		m.appendNotice(fmt.Sprintf("messages=%d skills=%d mcp_servers=%d context_tools=3", len(m.rt.Messages), len(m.rt.Skills), len(m.rt.Config.MCPServers)))
+	case strings.HasPrefix(line, "/agents"):
+		m.handleAgentsCommand(line)
 	case line == "/goal":
 		if m.rt.Session.Goal == "" {
 			m.appendNotice("goal not set")
@@ -193,6 +197,34 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 	}
 	m.refreshViewport()
 	return m, false
+}
+
+// handleAgentsCommand 展示本地子代理任务列表或指定任务详情。
+func (m *Model) handleAgentsCommand(line string) {
+	if m.rt.Subagents == nil {
+		m.appendNotice("subagents unavailable")
+		return
+	}
+	id := strings.TrimSpace(strings.TrimPrefix(line, "/agents"))
+	if id != "" {
+		task, ok := m.rt.Subagents.Get(id)
+		if !ok {
+			m.appendError("unknown subagent: " + id)
+			return
+		}
+		m.appendNotice(subagent.FormatTask(task))
+		return
+	}
+	tasks := m.rt.Subagents.List(10)
+	if len(tasks) == 0 {
+		m.appendNotice("no subagent tasks")
+		return
+	}
+	lines := make([]string, 0, len(tasks))
+	for _, task := range tasks {
+		lines = append(lines, subagent.FormatTaskLine(task))
+	}
+	m.appendNotice(strings.Join(lines, "\n"))
 }
 
 // handleResumeCommand 展示可恢复 session；指定 ID 时提示使用 CLI 重启恢复。

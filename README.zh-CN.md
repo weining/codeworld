@@ -8,16 +8,16 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 - 默认使用 DeepSeek，并支持 OpenAI-compatible 与 Anthropic provider；
 - OpenAI-compatible provider 的流式输出；
 - 面向 workspace 的读写、patch、shell、git、context 和原生 web search 工具；
-- project skills、plugin tools、Codex plugin bundle 基础兼容和 stdio MCP tools；
-- session 持久化、token 统计、模型调用日志；
+- project skills、plugin tools、Codex plugin bundle 基础兼容、stdio/HTTP MCP tools、hooks 和本地子代理；
+- session 持久化、图片输入、token 统计、模型调用日志；
 - `AGENTS.md` / `AGENTS.override.md` 项目指令加载；
 - skills progressive disclosure：默认只注入 skill 索引，需要完整内容时通过 `skill_open` 工具读取。
 
 ## 当前状态
 
-Codeworld 已经可以作为本地 coding agent 使用，但还不是完整 Codex 替代品。当前重点是接近 Codex CLI 风格的本地 TUI、模型调用、workspace 工具、原生 web search、权限确认、skills/plugins/MCP 和确定性的上下文系统。
+Codeworld 已经可以作为本地 coding agent 使用，但还不是完整 Codex 替代品。当前重点是接近 Codex CLI 风格的本地 TUI、模型调用、workspace 工具、原生 web search、权限确认、skills/plugins/MCP、hooks、本地子代理和确定性的上下文系统。
 
-尚未实现的 Codex 类能力包括：cloud tasks、subagents、HTTP/OAuth MCP、hooks、IDE 集成、浏览器控制、Computer Use、GitHub PR review、图片输入/生成等。
+尚未实现或仍明显简化的 Codex 类能力包括：cloud tasks、IDE 集成、浏览器控制、Computer Use、GitHub PR review、图片生成，以及更完整的 MCP OAuth 体验等。
 
 ## 安装
 
@@ -127,6 +127,8 @@ TUI 使用接近 Codex CLI 的终端布局：顶部单行状态栏、按角色�
 /mcp           查看已配置 MCP servers
 /skills        查看已加载 skills
 /context       查看上下文系统状态
+/agents        查看本地子代理任务
+/agents <id>   查看单个子代理任务详情
 /theme <mode>  设置 system、dark 或 light 状态
 /resume        查看最近可恢复 sessions
 /goal <text>   设置或查看当前任务目标
@@ -317,6 +319,12 @@ context_open      打开 graph 中的文件，并附带 symbol 信息
 
 Context graph 是本地、确定性的，不依赖 embedding。它会提取文件元数据、Go symbols、git changed 状态、skills、summary 和其他配置上下文。
 
+## 本地子代理
+
+模型可以通过 `subagent_start` 启动独立的只读调查任务，并通过 `subagent_status` 查看任务状态或结果。TUI 和 REPL 中也可以使用 `/agents` 与 `/agents <id>` 查看同一批任务。
+
+子代理任务以 JSON 文件保存在 `.codeworld/subagents/`。每个任务会记录 prompt、状态、最终结果、时间戳，以及只包含 role/content 文本的精简 transcript。
+
 ## Web Search
 
 原生 `web_search` 工具通过 DuckDuckGo Lite 搜索网页，不需要额外的搜索 API key。参数包括必填的 `query` 和可选的 `limit`，返回带标题、URL 和摘要的编号结果。
@@ -393,11 +401,10 @@ workspace 状态保存在 `.codeworld/`：
 
 相比 Codex，目前仍缺：
 
-- subagents；
-- hooks；
-- streamable HTTP MCP 和 MCP OAuth；
 - browser/computer-use；
-- 图片输入/生成；
+- subagents 还是本地只读调查任务，不是 cloud tasks；
+- MCP OAuth token refresh 和 dynamic registration 仍不完整；
+- 图片生成；
 - cloud tasks 和 PR review 集成；
 - TUI 中的代码块/diff 高亮和 slash popup。
 

@@ -43,6 +43,15 @@ func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {
 	if rt.Runner.Model == nil || rt.Runner.Tools == nil {
 		t.Fatalf("runtime runner not wired: %#v", rt.Runner)
 	}
+	if rt.Subagents == nil {
+		t.Fatalf("subagent manager missing")
+	}
+	if _, ok := rt.Runner.Tools.Get("subagent_start"); !ok {
+		t.Fatalf("subagent_start tool was not registered")
+	}
+	if _, ok := rt.Runner.Tools.Get("subagent_status"); !ok {
+		t.Fatalf("subagent_status tool was not registered")
+	}
 	if rt.Diff == nil {
 		t.Fatalf("runtime diff function missing")
 	}

@@ -23,7 +23,7 @@ func TestRunShowsHelpWithoutAPIKey(t *testing.T) {
 	for _, want := range []string{
 		"codeworld",
 		"Type /help for commands.",
-		"/help /model /status /diff /clear /exit",
+		"/help /model /status /diff /agents /clear /exit",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("stdout missing %q in:\n%s", want, output)
@@ -40,7 +40,7 @@ func TestReplCommandShowsHelpWithoutAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runWithIO returned error: %v", err)
 	}
-	if !strings.Contains(out.String(), "/help /model /status /diff /clear /exit") {
+	if !strings.Contains(out.String(), "/help /model /status /diff /agents /clear /exit") {
 		t.Fatalf("stdout = %q, want repl help", out.String())
 	}
 }

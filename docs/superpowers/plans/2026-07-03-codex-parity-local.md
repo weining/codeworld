@@ -122,22 +122,21 @@
 ### Task 6: Local Subagents
 
 **Files:**
-- Create: `internal/subagent/subagent.go`
-- Create: `internal/subagent/subagent_test.go`
-- Modify: `internal/agent/agent.go`
-- Modify: `internal/tools/registry.go`
+- Create: `internal/subagent/manager.go`
+- Create: `internal/subagent/tools.go`
+- Create: `internal/subagent/manager_test.go`
+- Modify: `internal/app/runtime.go`
+- Modify: `internal/repl/repl.go`
 - Modify: `internal/tui/commands.go`
-- Modify: `internal/tui/model.go`
 - Modify: `README.md`
 - Modify: `README.zh-CN.md`
 
-- [ ] Add subagent manager tests for starting a task, recording transcript, and listing status.
-- [ ] Register a `subagent_start` tool available only when subagents are enabled.
-- [ ] Run subagents with cloned runtime context and isolated session IDs.
-- [ ] Add `/agent` command to list and inspect subagent threads.
-- [ ] Aggregate usage back into parent session.
-- [ ] Verify with `go test -count=1 ./internal/subagent ./internal/agent ./internal/tui ./internal/tools`.
-- [ ] Commit as `feat: add local subagents`.
+- [x] Add subagent manager tests for starting a task, recording transcript, and listing status.
+- [x] Register `subagent_start` and `subagent_status` tools in the runtime.
+- [x] Run subagents with cloned read-only runner context and persisted task IDs.
+- [x] Add `/agents` command to list and inspect subagent threads.
+- [x] Verify with `go test -count=1 ./internal/subagent ./internal/app ./internal/tui ./internal/repl ./cmd/codeworld`.
+- [x] Commit as `feat: add local subagents`.
 
 ### Task 7: Final Integration and Documentation
 

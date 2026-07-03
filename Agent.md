@@ -13,6 +13,8 @@ Codeworld is a Go coding agent with these main layers:
 - `internal/tools`: workspace tools, git tools, plugin tools, MCP tool bridge, and context tools.
 - `internal/tui`: Bubble Tea interactive UI.
 - `internal/capability`: project skills, plugins, and MCP loading.
+- `internal/hooks`: workspace hook loading and command hook execution.
+- `internal/subagent`: local read-only subagent task manager and subagent tools.
 - `internal/context`: file index, conversation summary, and context graph.
 
 ## Local Rules
@@ -65,6 +67,7 @@ mise exec -- go test -count=1 ./cmd/codeworld ./internal/agent ./internal/app ./
 - Plugin tools must use their plugin namespace, for example `demo.echo`.
 - Skills are loaded from `.codeworld/skills/<name>/SKILL.md`.
 - Context graph search is deterministic lexical search, not embeddings.
+- Local subagents should use a cloned read-only runner and persist task state under `.codeworld/subagents/`; do not let child agents directly mutate the parent session history.
 
 ## Documentation Updates
 

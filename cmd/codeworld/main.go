@@ -146,6 +146,7 @@ func newAppWithIO(in io.Reader, out io.Writer, stderr io.Writer, root string) (r
 		Session:            rt.Session,
 		Messages:           rt.Messages,
 		Usage:              rt.Usage,
+		Subagents:          rt.Subagents,
 		SummaryMaxMessages: rt.Config.SummaryMaxMessages,
 		ShowTerminalTitle:  shouldShowTerminalTitle(out),
 		Diff:               rt.Diff,

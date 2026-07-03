@@ -9,8 +9,8 @@ The current version focuses on:
 - DeepSeek by default, with OpenAI-compatible and Anthropic providers;
 - streaming assistant output for OpenAI-compatible providers;
 - workspace-safe tools for reading, writing, patching, shell commands, git, context search, and native web search;
-- project skills, plugin tools, and stdio MCP tools;
-- session persistence, token accounting, and model call logs.
+- project skills, plugin tools, stdio/HTTP MCP tools, hooks, and local subagents;
+- session persistence, image input, token accounting, and model call logs.
 
 Chinese documentation is available in [README.zh-CN.md](README.zh-CN.md).
 
@@ -19,9 +19,9 @@ Chinese documentation is available in [README.zh-CN.md](README.zh-CN.md).
 Codeworld is usable as a local coding agent, but it is still intentionally
 smaller than Codex. The current implementation covers a Codex-like local TUI,
 provider calls, workspace tools, native web search, permissions, skills,
-plugins, MCP stdio, and deterministic context. Larger Codex-style surfaces such
-as cloud tasks, subagents, HTTP/OAuth MCP, hooks, IDE integration, browser
-control, and hosted review workflows are future work.
+plugins, stdio/HTTP MCP, hooks, local subagents, image input, and deterministic
+context. Larger Codex-style surfaces such as cloud tasks, IDE integration,
+browser control, computer use, and hosted review workflows are future work.
 
 ## Install
 
@@ -134,6 +134,8 @@ Inside the TUI:
 /mcp           list configured MCP servers
 /skills        list loaded project skills
 /context       show context system status
+/agents        list local subagent tasks
+/agents <id>   show one subagent task
 /theme <mode>  set system, dark, or light mode state
 /resume        list recent archived sessions
 /goal <text>   set or show the current task goal
@@ -320,6 +322,16 @@ context_open      open a graph file with symbol metadata
 The graph is deterministic and local. It extracts file metadata, Go symbols,
 git changed state, project skills, summaries, and other configured context.
 
+## Local Subagents
+
+The model can start independent read-only investigation tasks with
+`subagent_start` and inspect them with `subagent_status`. The TUI and REPL expose
+the same state through `/agents` and `/agents <id>`.
+
+Subagent tasks are stored as JSON files in `.codeworld/subagents/`. Each task
+records the prompt, status, final result, timestamps, and a compact transcript
+with role/content text only.
+
 ## Web Search
 
 The native `web_search` tool searches DuckDuckGo Lite without requiring a
@@ -408,11 +420,10 @@ Model call logs keep compact `body_json` records and redact API keys.
 
 Known gaps compared with Codex include:
 
-- no subagent orchestration;
-- no hook execution;
-- no streamable HTTP MCP or MCP OAuth;
 - no browser/computer-use surface;
-- no image input or generation;
+- subagents are local read-only investigation tasks, not cloud tasks;
+- MCP OAuth token refresh and dynamic registration are still partial;
+- no image generation;
 - no cloud task or PR review integration;
 - no syntax-highlighted TUI diff/code blocks yet.
 

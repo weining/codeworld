@@ -141,7 +141,7 @@ func TestRunHandlesSlashCommands(t *testing.T) {
 	output := out.String()
 	for _, want := range []string{
 		"codeworld",
-		"/help /model /status /diff /clear /exit",
+		"/help /model /status /diff /agents /clear /exit",
 		"model=deepseek-v4-flash",
 		"workspace=workspace provider=deepseek model=deepseek-v4-flash messages=1",
 		"approvals=1",

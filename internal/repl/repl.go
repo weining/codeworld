@@ -13,6 +13,7 @@ import (
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
+	"codeworld/internal/subagent"
 )
 
 type REPL struct {
@@ -23,6 +24,7 @@ type REPL struct {
 	Session            session.Session
 	Messages           []model.Message
 	Usage              model.Usage
+	Subagents          *subagent.Manager
 	SummaryMaxMessages int
 	ShowStatusLine     bool
 	ShowTerminalTitle  bool
@@ -103,7 +105,7 @@ func (r *REPL) bindConfirmerInput(reader *bufio.Reader) {
 func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 	switch {
 	case line == "/help":
-		fmt.Fprintln(r.Out, "/help /model /status /diff /clear /exit")
+		fmt.Fprintln(r.Out, "/help /model /status /diff /agents /clear /exit")
 	case line == "/model":
 		fmt.Fprintf(r.Out, "%s\n", r.Session.Model)
 	case strings.HasPrefix(line, "/model "):
@@ -119,6 +121,8 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 		r.saveSession()
 	case line == "/status":
 		fmt.Fprintf(r.Out, "workspace=%s provider=%s model=%s messages=%d tokens %s approvals=%d\n", r.Session.Workspace, r.Session.Provider, r.Session.Model, len(r.Messages), formatUsage(r.Usage), len(r.Session.Approvals))
+	case strings.HasPrefix(line, "/agents"):
+		r.printSubagents(line)
 	case line == "/diff":
 		if r.Diff == nil {
 			fmt.Fprintln(r.Out, "diff unavailable")
@@ -175,6 +179,32 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 		fmt.Fprintf(r.Out, "unknown command: %s\n", line)
 	}
 	return false
+}
+
+// printSubagents 展示本地子代理任务列表或指定任务详情。
+func (r *REPL) printSubagents(line string) {
+	if r.Subagents == nil {
+		fmt.Fprintln(r.Out, "subagents unavailable")
+		return
+	}
+	id := strings.TrimSpace(strings.TrimPrefix(line, "/agents"))
+	if id != "" {
+		task, ok := r.Subagents.Get(id)
+		if !ok {
+			fmt.Fprintf(r.Out, "unknown subagent: %s\n", id)
+			return
+		}
+		fmt.Fprintln(r.Out, subagent.FormatTask(task))
+		return
+	}
+	tasks := r.Subagents.List(10)
+	if len(tasks) == 0 {
+		fmt.Fprintln(r.Out, "no subagent tasks")
+		return
+	}
+	for _, task := range tasks {
+		fmt.Fprintln(r.Out, subagent.FormatTaskLine(task))
+	}
 }
 
 // compact 手动压缩 REPL 历史，复用自动摘要使用的 summarizer。
