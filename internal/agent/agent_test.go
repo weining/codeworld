@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"codeworld/internal/hooks"
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/tools"
@@ -127,6 +130,46 @@ func TestRunTurnAccumulatesUsageAcrossModelCalls(t *testing.T) {
 	want := model.Usage{InputTokens: 30, OutputTokens: 7, CacheTokens: 10, TotalTokens: 37}
 	if result.Usage != want {
 		t.Fatalf("usage = %#v, want %#v", result.Usage, want)
+	}
+}
+
+// TestRunTurnRunsUserPromptSubmitHook 验证用户输入 hook 会在模型调用前执行。
+func TestRunTurnRunsUserPromptSubmitHook(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".codeworld"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".codeworld", "hooks.json"), []byte(`{
+		"hooks": {
+			"UserPromptSubmit": [
+				{"hooks": [{"type": "command", "command": "printf prompt > prompt.out"}]}
+			]
+		}
+	}`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	hookRunner, err := hooks.Load(root)
+	if err != nil {
+		t.Fatalf("Load hooks: %v", err)
+	}
+	runner := Runner{
+		Model:     &fakeClient{responses: []model.GenerateResponse{{FinalText: "done"}}},
+		Tools:     tools.NewRegistry(nil, nil),
+		Policy:    permissions.ConservativePolicy{},
+		Hooks:     hookRunner,
+		ModelName: "test-model",
+		MaxSteps:  1,
+	}
+
+	if _, err := runner.RunTurn(context.Background(), nil, "hello"); err != nil {
+		t.Fatalf("RunTurn returned error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "prompt.out"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.TrimSpace(string(data)) != "prompt" {
+		t.Fatalf("hook output = %q, want prompt", data)
 	}
 }
 

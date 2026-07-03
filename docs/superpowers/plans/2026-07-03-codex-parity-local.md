@@ -111,13 +111,13 @@
 - Modify: `README.md`
 - Modify: `README.zh-CN.md`
 
-- [ ] Add hook config parsing tests for command hooks.
-- [ ] Implement hook events: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, and `Stop`.
-- [ ] Add approval modes: `read-only`, `auto`, and `full-access`.
-- [ ] Add read/write root and network policy checks to permission policy.
-- [ ] Add `/permissions` controls for switching modes.
-- [ ] Verify with `go test -count=1 ./internal/hooks ./internal/agent ./internal/permissions ./internal/config ./internal/tui`.
-- [ ] Commit as `feat: add hooks and sandbox policy`.
+- [x] Add hook config parsing tests for command hooks.
+- [x] Implement hook events: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PreCompact`, `PostCompact`, and `Stop`.
+- [x] Add approval modes: `read-only`, `auto`, and `full-access`.
+- [x] Add read/write root and network policy checks to permission policy.
+- [x] Add `/permissions` controls for switching modes.
+- [x] Verify with `go test -count=1 ./internal/hooks ./internal/agent ./internal/permissions ./internal/config ./internal/tui`.
+- [x] Commit as `feat: add hooks and sandbox policy`.
 
 ### Task 6: Local Subagents
 

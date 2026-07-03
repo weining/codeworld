@@ -14,6 +14,7 @@ import (
 	contextgraph "codeworld/internal/context/graph"
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/context/summarizer"
+	"codeworld/internal/hooks"
 	"codeworld/internal/instructions"
 	"codeworld/internal/mcp"
 	"codeworld/internal/model"
@@ -45,6 +46,7 @@ type Runtime struct {
 	Skills     []skill.Skill
 	MCPClients []*mcp.Client
 	Runner     agent.Runner
+	Hooks      *hooks.Runner
 	Diff       func(context.Context) (string, error)
 	In         io.Reader
 	Out        io.Writer
@@ -62,6 +64,9 @@ func (r *Runtime) SaveTurn(result agent.TurnResult) error {
 
 // Close 释放持有的资源，避免后台进程或句柄泄漏。
 func (r *Runtime) Close() error {
+	if r.Hooks != nil {
+		_ = r.Hooks.Run(context.Background(), "Stop", hooks.Context{})
+	}
 	capability.CloseClients(r.MCPClients)
 	return nil
 }
@@ -129,6 +134,13 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}
 	if projectInstructions.Text != "" {
 		systemPrompt += "\n\nProject instructions:\n" + projectInstructions.Text
+	}
+	hookRunner, err := hooks.Load(ws.Root)
+	if err != nil {
+		return Runtime{}, err
+	}
+	if err := hookRunner.Run(ctx, "SessionStart", hooks.Context{}); err != nil {
+		return Runtime{}, err
 	}
 	store := session.NewStore(ws.Root)
 	if opts.ResumeLast {
@@ -200,8 +212,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	runner := agent.Runner{
 		Model:        client,
 		Tools:        registry,
-		Policy:       permissions.AutoPolicy{},
+		Policy:       permissions.ModePolicy{Mode: permissions.Mode(firstNonEmpty(cfg.ApprovalMode, string(permissions.ModeAuto)))},
 		Confirmer:    confirmer,
+		Hooks:        hookRunner,
 		MaxSteps:     cfg.MaxSteps,
 		ModelName:    modelName,
 		SystemPrompt: systemPrompt,
@@ -221,6 +234,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		Skills:     loadedCapabilities.Skills,
 		MCPClients: loadedCapabilities.MCPClients,
 		Runner:     runner,
+		Hooks:      hookRunner,
 		In:         opts.In,
 		Out:        opts.Out,
 		Err:        opts.Err,
@@ -239,6 +253,11 @@ func (r *Runtime) Compact(ctx context.Context) (string, error) {
 	if r.Runner.Model == nil {
 		return "", fmt.Errorf("compact requires a model client")
 	}
+	if r.Hooks != nil {
+		if err := r.Hooks.Run(ctx, "PreCompact", hooks.Context{}); err != nil {
+			return "", err
+		}
+	}
 	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
 		MaxMessages: r.Config.SummaryMaxMessages,
 		KeepRecent:  20,
@@ -252,6 +271,11 @@ func (r *Runtime) Compact(ctx context.Context) (string, error) {
 	r.Session.Messages = modelMessagesToSession(recent)
 	if err := r.Store.SaveCurrent(r.Session); err != nil {
 		return "", err
+	}
+	if r.Hooks != nil {
+		if err := r.Hooks.Run(ctx, "PostCompact", hooks.Context{}); err != nil {
+			return "", err
+		}
 	}
 	return fmt.Sprintf("compacted messages=%d kept=%d", before, len(recent)), nil
 }

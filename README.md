@@ -129,6 +129,8 @@ Inside the TUI:
 /model <name>  change the session model name
 /diff          show git diff
 /permissions   list session approvals
+/permissions <auto|read-only|full-access>
+               switch the current approval mode
 /mcp           list configured MCP servers
 /skills        list loaded project skills
 /context       show context system status
@@ -349,6 +351,40 @@ actions but still asks for high-risk actions such as destructive or networked
 shell commands and web search. The TUI shows permission prompts inline and
 supports allowing once, denying, or approving similar shell commands for the
 current session.
+
+Approval modes:
+
+- `auto`: allow ordinary workspace actions and ask for high-risk actions.
+- `read-only`: allow reads and ask before writes, patches, or commands.
+- `full-access`: allow in-workspace and network actions without prompting.
+
+Set the default in `.codeworld/config.toml`:
+
+```toml
+approval_mode = "auto"
+```
+
+## Hooks
+
+Codeworld can run command hooks from `.codeworld/hooks.json` around session
+startup, user prompts, tool use, compaction, and shutdown. Supported events are
+`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`,
+`PostToolUse`, `PreCompact`, `PostCompact`, and `Stop`.
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          { "type": "command", "command": "printf pre-tool >> .codeworld/hooks.log" }
+        ]
+      }
+    ]
+  }
+}
+```
 
 This is not full sandbox parity with Codex yet. Fine-grained filesystem
 profiles, network policy, and hook trust remain future work.

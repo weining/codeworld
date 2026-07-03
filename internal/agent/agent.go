@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"codeworld/internal/hooks"
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/tools"
@@ -76,6 +77,7 @@ type Runner struct {
 	Policy       permissions.Policy
 	Confirmer    Confirmer
 	Reporter     ToolReporter
+	Hooks        *hooks.Runner
 	MaxSteps     int
 	ModelName    string
 	SystemPrompt string
@@ -102,6 +104,9 @@ func (r Runner) RunTurnMessage(ctx context.Context, history []model.Message, use
 	}
 	if r.Tools == nil {
 		return TurnResult{}, fmt.Errorf("agent tools registry is required")
+	}
+	if err := r.runUserPromptSubmitHook(ctx, userMessage); err != nil {
+		return TurnResult{}, err
 	}
 
 	maxSteps := r.MaxSteps
@@ -191,6 +196,12 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 	if r.Tools == nil {
 		return TurnResult{}, fmt.Errorf("agent tools registry is required")
 	}
+	if err := r.runUserPromptSubmitHook(ctx, userMessage); err != nil {
+		if emit != nil {
+			_ = emit(TurnEvent{Kind: TurnEventError, Err: err, Text: err.Error()})
+		}
+		return TurnResult{}, err
+	}
 	maxSteps := r.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = 20
@@ -249,6 +260,18 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 		return TurnResult{FinalText: finalText, Messages: messages, Usage: usage}, nil
 	}
 	return TurnResult{}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
+}
+
+// runUserPromptSubmitHook 在模型调用前触发用户输入 hook，便于外部审计或补充上下文。
+func (r Runner) runUserPromptSubmitHook(ctx context.Context, userMessage model.Message) error {
+	if r.Hooks == nil {
+		return nil
+	}
+	target := userMessage.Content
+	if target == "" && len(userMessage.Parts) > 0 {
+		target = fmt.Sprintf("%d content parts", len(userMessage.Parts))
+	}
+	return r.Hooks.Run(ctx, "UserPromptSubmit", hooks.Context{Target: target})
 }
 
 // streamGenerate 汇总流式文本、工具调用和用量事件，输出等价的完整模型响应。
@@ -314,6 +337,19 @@ func (r Runner) executeTool(ctx context.Context, call model.ToolCall) string {
 	}
 	event := ToolEvent{Name: call.Name, CallID: call.ID, Request: req}
 	r.reportTool(ctx, event.withStatus(ToolEventStart, ""))
+	if r.Hooks != nil {
+		hookCtx := hooks.Context{Tool: call.Name, Target: req.Target, Risk: string(req.Risk)}
+		if err := r.Hooks.Run(ctx, "PreToolUse", hookCtx); err != nil {
+			message := "hook error: " + err.Error()
+			r.reportTool(ctx, event.withStatus(ToolEventError, message))
+			return message
+		}
+		if err := r.Hooks.Run(ctx, "PermissionRequest", hookCtx); err != nil {
+			message := "hook error: " + err.Error()
+			r.reportTool(ctx, event.withStatus(ToolEventError, message))
+			return message
+		}
+	}
 
 	// 权限判定在真正执行工具前完成；Ask 类型必须经 Confirmer 返回后才继续。
 	decision, err := r.permissionPolicy().Check(ctx, req)
@@ -357,6 +393,13 @@ func (r Runner) executeTool(ctx context.Context, call model.ToolCall) string {
 		message := "tool error: " + err.Error()
 		r.reportTool(ctx, event.withStatus(ToolEventError, message))
 		return encodeToolResult(result, message)
+	}
+	if r.Hooks != nil {
+		if err := r.Hooks.Run(ctx, "PostToolUse", hooks.Context{Tool: call.Name, Target: req.Target, Risk: string(req.Risk)}); err != nil {
+			message := "hook error: " + err.Error()
+			r.reportTool(ctx, event.withStatus(ToolEventError, message))
+			return encodeToolResult(result, message)
+		}
 	}
 	r.reportTool(ctx, event.withStatus(ToolEventSuccess, ""))
 	return encodeToolResult(result, "")

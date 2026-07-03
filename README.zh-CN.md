@@ -122,6 +122,8 @@ TUI 使用接近 Codex CLI 的终端布局：顶部单行状态栏、按角色�
 /model <name>  修改当前 session 的模型名
 /diff          查看 git diff
 /permissions   查看当前 session 已批准权限
+/permissions <auto|read-only|full-access>
+               切换当前权限模式
 /mcp           查看已配置 MCP servers
 /skills        查看已加载 skills
 /context       查看上下文系统状态
@@ -342,6 +344,37 @@ TUI 会内联展示权限请求，并支持：
 - 对类似 shell 命令在当前 session 内批准。
 
 这还不是完整 Codex sandbox。细粒度 filesystem profiles、network policy 和 hook trust 是后续工作。
+
+权限模式：
+
+- `auto`：普通 workspace 操作自动允许，高风险操作询问；
+- `read-only`：读操作自动允许，写入、patch、命令执行前询问；
+- `full-access`：workspace 和网络操作默认允许。
+
+可以在 `.codeworld/config.toml` 中设置默认模式：
+
+```toml
+approval_mode = "auto"
+```
+
+## Hooks
+
+Codeworld 可以从 `.codeworld/hooks.json` 读取命令型 hooks，并在 session 启动、用户提交、工具调用、压缩和退出时执行。当前支持的事件包括 `SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PermissionRequest`、`PostToolUse`、`PreCompact`、`PostCompact` 和 `Stop`。
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "shell",
+        "hooks": [
+          { "type": "command", "command": "printf pre-tool >> .codeworld/hooks.log" }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ## 日志和状态
 

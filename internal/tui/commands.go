@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"codeworld/internal/model"
+	"codeworld/internal/permissions"
 	"codeworld/internal/session"
 )
 
@@ -65,11 +66,16 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		}
 		m.items = append(m.items, TranscriptItem{Kind: ItemCommand, Text: diff})
 	case line == "/permissions":
+		mode := m.rt.Config.ApprovalMode
+		if mode == "" {
+			mode = "auto"
+		}
 		if len(m.rt.Session.Approvals) == 0 {
-			m.appendNotice("no session approvals")
+			m.appendNotice("mode=" + mode + "\nno session approvals")
 			return m, false
 		}
 		lines := make([]string, 0, len(m.rt.Session.Approvals))
+		lines = append(lines, "mode="+mode)
 		for _, approval := range m.rt.Session.Approvals {
 			if approval.Command == "" {
 				lines = append(lines, approval.Kind)
@@ -78,6 +84,16 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 			lines = append(lines, approval.Kind+" "+approval.Command)
 		}
 		m.appendNotice(strings.Join(lines, "\n"))
+	case strings.HasPrefix(line, "/permissions "):
+		mode := strings.TrimSpace(strings.TrimPrefix(line, "/permissions "))
+		switch mode {
+		case string(permissions.ModeAuto), string(permissions.ModeReadOnly), string(permissions.ModeFullAccess):
+			m.rt.Config.ApprovalMode = mode
+			m.rt.Runner.Policy = permissions.ModePolicy{Mode: permissions.Mode(mode)}
+			m.appendNotice("mode=" + mode)
+		default:
+			m.appendError("unknown permission mode: " + mode)
+		}
 	case line == "/mcp":
 		if len(m.rt.Config.MCPServers) == 0 {
 			m.appendNotice("no mcp servers configured")

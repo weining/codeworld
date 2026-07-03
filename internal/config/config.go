@@ -23,6 +23,7 @@ type Config struct {
 	IndexMaxFileBytes    int
 	MCPOAuthCallbackPort int
 	MCPOAuthCallbackURL  string
+	ApprovalMode         string
 	MCPServers           []MCPServer
 }
 
@@ -131,6 +132,8 @@ func Load(root string) (Config, error) {
 			cfg.MCPOAuthCallbackPort = n
 		case "mcp_oauth_callback_url":
 			cfg.MCPOAuthCallbackURL = value
+		case "approval_mode":
+			cfg.ApprovalMode = value
 		default:
 			return Config{}, fmt.Errorf("unknown config key %q", key)
 		}

@@ -48,6 +48,42 @@ func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {
 	}
 }
 
+// TestRuntimeRunsLifecycleHooks 验证 runtime 启动和关闭时会触发生命周期 hook。
+func TestRuntimeRunsLifecycleHooks(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ".codeworld", "hooks.json"), `{
+		"hooks": {
+			"SessionStart": [
+				{"hooks": [{"type": "command", "command": "printf start >> lifecycle.out"}]}
+			],
+			"Stop": [
+				{"hooks": [{"type": "command", "command": "printf stop >> lifecycle.out"}]}
+			]
+		}
+	}`)
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root,
+		In:   &bytes.Buffer{},
+		Out:  &bytes.Buffer{},
+		Err:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime returned error: %v", err)
+	}
+	if err := rt.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "lifecycle.out"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "startstop" {
+		t.Fatalf("hook output = %q, want startstop", data)
+	}
+}
+
 // TestNewRuntimeRestoresSessionMessagesAndUsage 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeRestoresSessionMessagesAndUsage(t *testing.T) {
 	root := t.TempDir()

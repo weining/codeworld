@@ -82,3 +82,24 @@ func TestAutoPolicyAllowsWorkspaceActionsAndAsksForHighRiskShell(t *testing.T) {
 		}
 	}
 }
+
+// TestModePolicySupportsReadOnlyAndFullAccess 验证权限模式能切换读写边界。
+func TestModePolicySupportsReadOnlyAndFullAccess(t *testing.T) {
+	readOnly := ModePolicy{Mode: ModeReadOnly}
+	decision, err := readOnly.Check(context.Background(), Request{Action: ActionWrite, Risk: RiskWrite, Target: "main.go"})
+	if err != nil {
+		t.Fatalf("readOnly.Check returned error: %v", err)
+	}
+	if decision.Kind != DecisionAsk {
+		t.Fatalf("read-only write decision = %#v, want ask", decision)
+	}
+
+	full := ModePolicy{Mode: ModeFullAccess}
+	decision, err = full.Check(context.Background(), Request{Action: ActionShell, Risk: RiskNetwork, Target: "curl https://example.com"})
+	if err != nil {
+		t.Fatalf("full.Check returned error: %v", err)
+	}
+	if decision.Kind != DecisionAllow {
+		t.Fatalf("full access network decision = %#v, want allow", decision)
+	}
+}
