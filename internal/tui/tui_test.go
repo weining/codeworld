@@ -81,6 +81,69 @@ func TestModelViewContainsTranscriptStatusAndComposer(t *testing.T) {
 	}
 }
 
+// TestModelViewUsesCodexLikeChrome 验证 TUI 采用接近 Codex CLI 的顶部状态、消息区和底部输入提示。
+func TestModelViewUsesCodexLikeChrome(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+		Usage:     model.Usage{InputTokens: 10, OutputTokens: 3, CacheTokens: 4, TotalTokens: 13},
+	}
+	m := NewModel(&rt)
+	m.width = 100
+	m.height = 28
+	m.viewport.Width = 100
+	m.viewport.Height = 20
+	m.input.SetWidth(100)
+	m.items = append(m.items,
+		TranscriptItem{Kind: ItemUser, Text: "改成 Codex 风格"},
+		TranscriptItem{Kind: ItemAssistant, Text: "我会先调整布局。"},
+		TranscriptItem{Kind: ItemTool, Text: "shell start target=go test ./... risk=execute"},
+		TranscriptItem{Kind: ItemPermission, Text: FormatPermissionRequest(permissions.Request{
+			Action: permissions.ActionShell,
+			Target: "go test ./...",
+			Risk:   permissions.RiskExecute,
+			Reason: "shell",
+		})},
+	)
+	m.refreshViewport()
+
+	view := m.View()
+	for _, want := range []string{
+		"codeworld",
+		"workspace=",
+		"deepseek-v4-pro",
+		"user",
+		"assistant",
+		"tool",
+		"Permission required: shell",
+		"Allow? [y/N/a=session]",
+		"Enter send",
+		"Shift+Enter newline",
+		"/help",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view missing %q in:\n%s", want, view)
+		}
+	}
+}
+
+// TestFormatPermissionRequestMatchesCodexPrompt 验证权限提示采用接近 Codex CLI 的确认文案。
+func TestFormatPermissionRequestMatchesCodexPrompt(t *testing.T) {
+	text := FormatPermissionRequest(permissions.Request{
+		Action: permissions.ActionShell,
+		Target: "go test ./...",
+		Risk:   permissions.RiskExecute,
+		Reason: "shell",
+	})
+
+	for _, want := range []string{"Permission required: shell", "Target: go test ./...", "Risk: execute", "Reason: shell", "Allow? [y/N/a=session]"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("permission text missing %q in:\n%s", want, text)
+		}
+	}
+}
+
 type fakeModelClient struct {
 	resp model.GenerateResponse
 }

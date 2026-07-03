@@ -4,7 +4,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 
 当前版本已经具备：
 
-- 默认进入 Bubble Tea TUI；
+- 默认进入接近 Codex CLI 风格的 Bubble Tea TUI；
 - 默认使用 DeepSeek，并支持 OpenAI-compatible 与 Anthropic provider；
 - OpenAI-compatible provider 的流式输出；
 - 面向 workspace 的读写、patch、shell、git、context 和原生 web search 工具；
@@ -15,7 +15,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 
 ## 当前状态
 
-Codeworld 已经可以作为本地 coding agent 使用，但还不是完整 Codex 替代品。当前重点是本地 TUI、模型调用、workspace 工具、原生 web search、权限确认、skills/plugins/MCP 和确定性的上下文系统。
+Codeworld 已经可以作为本地 coding agent 使用，但还不是完整 Codex 替代品。当前重点是接近 Codex CLI 风格的本地 TUI、模型调用、workspace 工具、原生 web search、权限确认、skills/plugins/MCP 和确定性的上下文系统。
 
 尚未实现的 Codex 类能力包括：cloud tasks、subagents、HTTP/OAuth MCP、hooks、IDE 集成、浏览器控制、Computer Use、GitHub PR review、图片输入/生成等。
 
@@ -104,6 +104,8 @@ go run ./cmd/codeworld run "list the Go packages"
 ```
 
 ## TUI 命令
+
+TUI 使用接近 Codex CLI 的终端布局：顶部单行状态栏、按角色对齐的 transcript、内联工具和权限事件、带边框的底部输入区以及快捷键提示。
 
 进入 TUI 后可以输入：
 

@@ -1,5 +1,7 @@
 # Local runtime state
 .codeworld/
+.codegraph/
+.superpowers/
 
 # IDE/editor state
 .idea/

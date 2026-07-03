@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -38,6 +39,8 @@ func NewModel(rt *app.Runtime) Model {
 	input := textarea.New()
 	input.Placeholder = "Ask codeworld..."
 	input.Prompt = "> "
+	input.ShowLineNumbers = false
+	input.EndOfBufferCharacter = ' '
 	input.SetHeight(3)
 	input.Focus()
 	vp := viewport.New(80, 20)
@@ -85,7 +88,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.viewport.Width = msg.Width
 		m.viewport.Height = max(3, msg.Height-7)
-		m.input.SetWidth(msg.Width)
+		m.input.SetWidth(max(10, msg.Width-4))
 		m.refreshViewport()
 		return m, nil
 	case tea.KeyMsg:
@@ -162,23 +165,88 @@ func (m Model) View() string {
 	if m.quitting {
 		return ""
 	}
-	status := RuntimeStatus(m.rt)
-	status.Running = m.running
-	header := lipgloss.NewStyle().Bold(true).Render("codeworld") + "  " + StatusLine(status)
+	header := m.renderHeader()
 	body := m.viewport.View()
-	composer := m.input.View()
+	composer := m.renderComposer()
 	return fmt.Sprintf("%s\n%s\n%s", header, body, composer)
 }
 
-// refreshViewport 封装局部逻辑，保持调用方流程清晰。
+// refreshViewport 重新渲染 transcript，并把滚动位置保持在最新消息底部。
 func (m *Model) refreshViewport() {
-	lines := make([]string, 0, len(m.items)*2)
+	blocks := make([]string, 0, len(m.items))
 	for _, item := range m.items {
-		lines = append(lines, string(item.Kind))
-		lines = append(lines, "  "+item.Text)
+		blocks = append(blocks, m.renderTranscriptItem(item))
 	}
-	m.viewport.SetContent(strings.Join(lines, "\n"))
+	m.viewport.SetContent(strings.Join(blocks, "\n\n"))
 	m.viewport.GotoBottom()
+}
+
+// renderHeader 渲染接近 Codex CLI 的状态栏，窄屏时拆出 token 行。
+func (m Model) renderHeader() string {
+	status := RuntimeStatus(m.rt)
+	status.Running = m.running
+	status.Workspace = filepath.Base(status.Workspace)
+	title := lipgloss.NewStyle().Bold(true).Render("codeworld")
+	full := title + "  " + HeaderStatusLine(status)
+	if m.width <= 0 || lipgloss.Width(full) <= m.width {
+		return m.fitLine(full)
+	}
+	summary := fmt.Sprintf("%s  model=%s provider=%s workspace=%s git=%s", title, status.Model, status.Provider, status.Workspace, status.Git)
+	metrics := fmt.Sprintf("tokens input=%d output=%d cache=%d total=%d",
+		status.Usage.InputTokens,
+		status.Usage.OutputTokens,
+		status.Usage.CacheTokens,
+		status.Usage.TotalTokens,
+	)
+	withCounts := fmt.Sprintf("%s messages=%d approvals=%d", metrics, status.Messages, status.Approvals)
+	if m.width <= 0 || lipgloss.Width(withCounts) <= m.width {
+		metrics = withCounts
+	}
+	if status.Running {
+		metrics += " running"
+	}
+	return m.fitLine(summary) + "\n" + m.fitLine(metrics)
+}
+
+// renderComposer 渲染底部输入区和常用快捷键提示。
+func (m Model) renderComposer() string {
+	width := max(10, m.width)
+	inputWidth := max(8, width-4)
+	inputView := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(lipgloss.Color("8")).
+		Padding(0, 1).
+		Width(inputWidth).
+		Render(m.input.View())
+	help := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Width(width).
+		Render("Enter send  Shift+Enter newline  Ctrl+C exit  /help")
+	return inputView + "\n" + help
+}
+
+// renderTranscriptItem 渲染单条消息，使用固定角色列让内容像 Codex CLI 一样对齐。
+func (m Model) renderTranscriptItem(item TranscriptItem) string {
+	role := string(item.Kind)
+	text := strings.TrimRight(item.Text, "\n")
+	if text == "" {
+		text = " "
+	}
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	out = append(out, fmt.Sprintf("%10s  %s", role, lines[0]))
+	for _, line := range lines[1:] {
+		out = append(out, fmt.Sprintf("%10s  %s", "", line))
+	}
+	return strings.Join(out, "\n")
+}
+
+// fitLine 按终端宽度裁剪单行内容，避免状态栏横向溢出。
+func (m Model) fitLine(line string) string {
+	if m.width <= 0 {
+		return line
+	}
+	return lipgloss.NewStyle().MaxWidth(m.width).Render(line)
 }
 
 // applyTurnEvent 封装局部逻辑，保持调用方流程清晰。

@@ -52,14 +52,14 @@ func (c *TUIConfirmer) Confirm(ctx context.Context, req permissions.Request, dec
 
 // FormatPermissionRequest 将内部数据格式化为面向用户或模型的文本。
 func FormatPermissionRequest(req permissions.Request) string {
-	text := fmt.Sprintf("permission required risk=%s\ntarget: %s\nreason: %s", req.Risk, req.Target, req.Reason)
+	text := fmt.Sprintf("Permission required: %s\nTarget: %s\nRisk: %s\nReason: %s", req.Action, req.Target, req.Risk, req.Reason)
 	if req.Preview != "" {
-		text += "\npreview:\n" + req.Preview
+		text += "\nPreview:\n" + req.Preview
 	}
 	if req.Action == permissions.ActionShell {
-		text += "\n[y] allow once   [n] deny   [a] allow similar shell command this session"
+		text += "\nAllow? [y/N/a=session]"
 	} else {
-		text += "\n[y] allow once   [n] deny"
+		text += "\nAllow? [y/N]"
 	}
 	return text
 }

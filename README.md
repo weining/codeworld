@@ -5,7 +5,7 @@ inspectable foundation for a Codex- or Claude Code-style terminal assistant.
 
 The current version focuses on:
 
-- a Bubble Tea TUI as the default interactive entry point;
+- a Codex-like Bubble Tea TUI as the default interactive entry point;
 - DeepSeek by default, with OpenAI-compatible and Anthropic providers;
 - streaming assistant output for OpenAI-compatible providers;
 - workspace-safe tools for reading, writing, patching, shell commands, git, context search, and native web search;
@@ -17,7 +17,7 @@ Chinese documentation is available in [README.zh-CN.md](README.zh-CN.md).
 ## Status
 
 Codeworld is usable as a local coding agent, but it is still intentionally
-smaller than Codex. The current implementation covers local TUI workflows,
+smaller than Codex. The current implementation covers a Codex-like local TUI,
 provider calls, workspace tools, native web search, permissions, skills,
 plugins, MCP stdio, and deterministic context. Larger Codex-style surfaces such
 as cloud tasks, subagents, HTTP/OAuth MCP, hooks, IDE integration, browser
@@ -109,6 +109,10 @@ go run ./cmd/codeworld run "list the Go packages"
 ```
 
 ## TUI Commands
+
+The TUI uses a Codex-like terminal layout: a single-line status header, a
+role-aligned transcript, inline tool and permission events, and a bordered
+bottom composer with shortcut hints.
 
 Inside the TUI:
 
