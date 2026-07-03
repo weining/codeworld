@@ -115,14 +115,14 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 
 	msg := providerResp.Choices[0].Message
 	toolCalls := fromProviderToolCalls(msg.ToolCalls)
-	finalText := msg.Content
+	finalText := providerContentText(msg.Content)
 	if len(toolCalls) > 0 {
 		finalText = ""
 	}
 	return model.GenerateResponse{
 		Message: model.Message{
 			Role:      model.RoleAssistant,
-			Content:   msg.Content,
+			Content:   providerContentText(msg.Content),
 			ToolCalls: toolCalls,
 		},
 		ToolCalls: toolCalls,
@@ -235,7 +235,7 @@ type providerPromptTokenDetail struct {
 
 type providerMessage struct {
 	Role       string             `json:"role"`
-	Content    string             `json:"content,omitempty"`
+	Content    any                `json:"content,omitempty"`
 	ToolCallID string             `json:"tool_call_id,omitempty"`
 	ToolCalls  []providerToolCall `json:"tool_calls,omitempty"`
 }
@@ -269,12 +269,41 @@ func toProviderMessages(messages []model.Message) []providerMessage {
 	for _, msg := range messages {
 		out = append(out, providerMessage{
 			Role:       string(msg.Role),
-			Content:    msg.Content,
+			Content:    providerContent(msg),
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  toProviderToolCalls(msg.ToolCalls),
 		})
 	}
 	return out
+}
+
+// providerContent 按 OpenAI-compatible 格式输出纯文本或多模态 content。
+func providerContent(msg model.Message) any {
+	if len(msg.Parts) == 0 {
+		return msg.Content
+	}
+	blocks := make([]map[string]any, 0, len(msg.Parts))
+	for _, part := range msg.Parts {
+		switch part.Type {
+		case model.ContentPartText:
+			if part.Text != "" {
+				blocks = append(blocks, map[string]any{"type": "text", "text": part.Text})
+			}
+		case model.ContentPartImage:
+			if part.ImageURL != "" {
+				blocks = append(blocks, map[string]any{"type": "image_url", "image_url": map[string]any{"url": part.ImageURL}})
+			}
+		}
+	}
+	return blocks
+}
+
+// providerContentText 从 provider 响应 content 中提取文本。
+func providerContentText(content any) string {
+	if text, ok := content.(string); ok {
+		return text
+	}
+	return ""
 }
 
 // toProviderTools 在不同层的数据结构之间做显式转换。
@@ -400,10 +429,10 @@ func parseStream(ctx context.Context, body io.Reader, emit func(model.StreamEven
 			if len(choice.Delta.ToolCalls) > 0 {
 				appendStreamToolCallDeltas(&toolCallOrder, toolCallDeltas, choice.Delta.ToolCalls)
 			}
-			if choice.Delta.Content != "" {
-				finalText += choice.Delta.Content
+			if deltaText := providerContentText(choice.Delta.Content); deltaText != "" {
+				finalText += deltaText
 				if emit != nil {
-					if err := emit(model.StreamEvent{Kind: model.StreamEventTextDelta, Delta: choice.Delta.Content}); err != nil {
+					if err := emit(model.StreamEvent{Kind: model.StreamEventTextDelta, Delta: deltaText}); err != nil {
 						return finalText, nil, usage, err
 					}
 				}

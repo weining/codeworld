@@ -7,18 +7,28 @@ import (
 	"codeworld/internal/agent"
 	"codeworld/internal/app"
 	"codeworld/internal/approvals"
+	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
 )
 
 // Once 提供对外可复用的能力，并隐藏内部实现细节。
 func Once(ctx context.Context, rt *app.Runtime, input string) error {
+	return OnceWithImages(ctx, rt, input, nil)
+}
+
+// OnceWithImages 执行一次非交互任务，并把图片 content parts 附加到用户消息。
+func OnceWithImages(ctx context.Context, rt *app.Runtime, input string, imageParts []model.ContentPart) error {
 	if input == "" {
 		return fmt.Errorf("run input is empty")
 	}
 	rt.Runner.Reporter = reporter{out: rt.Out}
 	rt.Runner.Confirmer = nonInteractiveConfirmer{approvals: rt.Session.Approvals}
-	result, err := rt.Runner.RunTurn(ctx, rt.Messages, input)
+	userMessage := model.Message{Role: model.RoleUser, Content: input}
+	if len(imageParts) > 0 {
+		userMessage.Parts = append([]model.ContentPart{model.TextPart(input)}, imageParts...)
+	}
+	result, err := rt.Runner.RunTurnMessage(ctx, rt.Messages, userMessage)
 	if err != nil {
 		return err
 	}

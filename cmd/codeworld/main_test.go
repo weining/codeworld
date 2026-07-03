@@ -104,6 +104,24 @@ func TestRunCommandRequiresPrompt(t *testing.T) {
 	}
 }
 
+func TestParseRunArgsLoadsImageParts(t *testing.T) {
+	imagePath := filepath.Join(t.TempDir(), "sample.png")
+	if err := os.WriteFile(imagePath, []byte{0x89, 0x50, 0x4e, 0x47}, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	prompt, images, err := parseRunArgs([]string{"--image", imagePath, "describe", "this"})
+	if err != nil {
+		t.Fatalf("parseRunArgs returned error: %v", err)
+	}
+	if prompt != "describe this" {
+		t.Fatalf("prompt = %q, want describe this", prompt)
+	}
+	if len(images) != 1 || images[0].MediaType != "image/png" {
+		t.Fatalf("images = %#v, want one png image", images)
+	}
+}
+
 func TestResumeLastRestoresNewestArchivedSession(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	root := t.TempDir()

@@ -70,14 +70,14 @@
 - Modify: `README.md`
 - Modify: `README.zh-CN.md`
 
-- [ ] Add `model.ContentPart` with `text` and `image` variants while preserving simple text helpers.
-- [ ] Add serialization tests for OpenAI-compatible image URL/base64 content.
-- [ ] Add serialization tests for Anthropic image content.
-- [ ] Add clear unsupported-image errors for providers/models that cannot accept image parts.
-- [ ] Add CLI `--image <path>` for `run` and TUI attachment syntax for file paths.
-- [ ] Persist image metadata in sessions without storing large binary blobs in `current-session.json`.
-- [ ] Verify with `go test -count=1 ./cmd/codeworld ./internal/model/... ./internal/session ./internal/tui ./internal/run`.
-- [ ] Commit as `feat: add image input support`.
+- [x] Add `model.ContentPart` with `text` and `image` variants while preserving simple text helpers.
+- [x] Add serialization tests for OpenAI-compatible image URL/base64 content.
+- [x] Add serialization tests for Anthropic image content.
+- [x] Add clear unsupported-image errors for providers/models that cannot accept image parts.
+- [x] Add CLI `--image <path>` for `run` and TUI attachment syntax for file paths.
+- [x] Persist image metadata in sessions without storing large binary blobs in `current-session.json`.
+- [x] Verify with `go test -count=1 ./cmd/codeworld ./internal/model/... ./internal/session ./internal/tui ./internal/run`.
+- [x] Commit as `feat: add image input support`.
 
 ### Task 4: MCP HTTP and OAuth
 

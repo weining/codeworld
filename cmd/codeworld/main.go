@@ -10,6 +10,7 @@ import (
 
 	"codeworld/internal/app"
 	"codeworld/internal/context/indexer"
+	"codeworld/internal/model"
 	"codeworld/internal/repl"
 	runmode "codeworld/internal/run"
 	"codeworld/internal/tui"
@@ -39,11 +40,18 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			if len(args) < 2 {
 				return fmt.Errorf("usage: codeworld run <task>")
 			}
+			prompt, images, err := parseRunArgs(args[1:])
+			if err != nil {
+				return err
+			}
 			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
 			if err != nil {
 				return err
 			}
-			return runmode.Once(context.Background(), &rt, strings.Join(args[1:], " "))
+			if len(images) > 0 {
+				return runmode.OnceWithImages(context.Background(), &rt, prompt, images)
+			}
+			return runmode.Once(context.Background(), &rt, prompt)
 		case "index":
 			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
 			if err != nil {
@@ -98,6 +106,31 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 		return err
 	}
 	return app.Run(context.Background())
+}
+
+func parseRunArgs(args []string) (string, []model.ContentPart, error) {
+	var promptParts []string
+	var images []model.ContentPart
+	for i := 0; i < len(args); i++ {
+		if args[i] != "--image" {
+			promptParts = append(promptParts, args[i])
+			continue
+		}
+		if i+1 >= len(args) {
+			return "", nil, fmt.Errorf("usage: codeworld run [--image <path>] <task>")
+		}
+		part, err := model.ImagePartFromFile(args[i+1])
+		if err != nil {
+			return "", nil, err
+		}
+		images = append(images, part)
+		i++
+	}
+	prompt := strings.TrimSpace(strings.Join(promptParts, " "))
+	if prompt == "" {
+		return "", nil, fmt.Errorf("run input is empty")
+	}
+	return prompt, images, nil
 }
 
 func newAppWithIO(in io.Reader, out io.Writer, stderr io.Writer, root string) (repl.REPL, error) {

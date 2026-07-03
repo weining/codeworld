@@ -165,11 +165,18 @@ type providerTool struct {
 type contentBlock struct {
 	Type      string          `json:"type"`
 	Text      string          `json:"text,omitempty"`
+	Source    *contentSource  `json:"source,omitempty"`
 	ID        string          `json:"id,omitempty"`
 	Name      string          `json:"name,omitempty"`
 	Input     json.RawMessage `json:"input,omitempty"`
 	ToolUseID string          `json:"tool_use_id,omitempty"`
 	Content   string          `json:"content,omitempty"`
+}
+
+type contentSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type responseBody struct {
@@ -209,11 +216,39 @@ func toProviderMessages(messages []model.Message) (string, []providerMessage) {
 		default:
 			out = append(out, providerMessage{
 				Role:    "user",
-				Content: textContent(msg.Content),
+				Content: userContent(msg),
 			})
 		}
 	}
 	return strings.Join(system, "\n\n"), out
+}
+
+// userContent 把用户消息转换为 Anthropic 文本和图片 block。
+func userContent(msg model.Message) []contentBlock {
+	if len(msg.Parts) == 0 {
+		return textContent(msg.Content)
+	}
+	blocks := make([]contentBlock, 0, len(msg.Parts))
+	for _, part := range msg.Parts {
+		switch part.Type {
+		case model.ContentPartText:
+			if part.Text != "" {
+				blocks = append(blocks, contentBlock{Type: "text", Text: part.Text})
+			}
+		case model.ContentPartImage:
+			if part.Data != "" && part.MediaType != "" {
+				blocks = append(blocks, contentBlock{
+					Type: "image",
+					Source: &contentSource{
+						Type:      "base64",
+						MediaType: part.MediaType,
+						Data:      part.Data,
+					},
+				})
+			}
+		}
+	}
+	return blocks
 }
 
 // textContent 封装局部逻辑，保持调用方流程清晰。

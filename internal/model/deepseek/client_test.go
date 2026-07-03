@@ -73,6 +73,25 @@ func TestGenerateSendsAuthorizationRequestBodyAndParsesFinalText(t *testing.T) {
 	}
 }
 
+// TestGenerateRejectsImageContentParts 验证 DeepSeek provider 对图片输入返回明确错误。
+func TestGenerateRejectsImageContentParts(t *testing.T) {
+	client := NewClient("test-key", "deepseek-v4-pro")
+
+	_, err := client.Generate(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{
+			Role:    model.RoleUser,
+			Content: "describe",
+			Parts: []model.ContentPart{
+				{Type: model.ContentPartText, Text: "describe"},
+				{Type: model.ContentPartImage, ImageURL: "data:image/png;base64,AAAA", MediaType: "image/png"},
+			},
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not support image input") {
+		t.Fatalf("err = %v, want unsupported image input error", err)
+	}
+}
+
 // TestGenerateUsesRequestModelAndMapsToolMessages 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateUsesRequestModelAndMapsToolMessages(t *testing.T) {
 	var requestBody map[string]any

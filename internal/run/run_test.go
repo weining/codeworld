@@ -66,6 +66,47 @@ func TestOnceRejectsEmptyInput(t *testing.T) {
 	}
 }
 
+// TestOnceWithImagesSendsContentParts 验证非交互 run 可以把图片块传入模型请求。
+func TestOnceWithImagesSendsContentParts(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	out := &bytes.Buffer{}
+	client := &fakeModel{responses: []model.GenerateResponse{{FinalText: "described"}}}
+	rt := app.Runtime{
+		Out:     out,
+		Store:   store,
+		Session: session.New("workspace", "openai", "gpt-4.1"),
+		Runner: agent.Runner{
+			Model:    client,
+			Tools:    tools.NewRegistry(nil, nil),
+			MaxSteps: 3,
+		},
+	}
+
+	err := OnceWithImages(context.Background(), &rt, "describe", []model.ContentPart{
+		{Type: model.ContentPartImage, ImageURL: "data:image/png;base64,AAAA", MediaType: "image/png"},
+	})
+	if err != nil {
+		t.Fatalf("OnceWithImages returned error: %v", err)
+	}
+	if len(client.requests) != 1 {
+		t.Fatalf("model calls = %d, want 1", len(client.requests))
+	}
+	got := client.requests[0].Messages[len(client.requests[0].Messages)-1]
+	if got.Content != "describe" || len(got.Parts) != 2 || got.Parts[1].Type != model.ContentPartImage {
+		t.Fatalf("user message = %#v, want text and image parts", got)
+	}
+	saved, err := store.LoadCurrent()
+	if err != nil {
+		t.Fatalf("LoadCurrent: %v", err)
+	}
+	if len(saved.Messages) == 0 || len(saved.Messages[0].Parts) != 2 {
+		t.Fatalf("saved messages = %#v, want content parts", saved.Messages)
+	}
+	if saved.Messages[0].Parts[1].Data != "" || saved.Messages[0].Parts[1].ImageURL != "" {
+		t.Fatalf("saved image part = %#v, want metadata without base64 payload", saved.Messages[0].Parts[1])
+	}
+}
+
 // TestOnceUsesSessionShellApprovalWithoutPrompt 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestOnceUsesSessionShellApprovalWithoutPrompt(t *testing.T) {
 	store := session.NewStore(t.TempDir())

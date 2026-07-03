@@ -92,6 +92,7 @@ codeworld resume --last
 codeworld resume <session-id>
 codeworld repl
 codeworld run "inspect the project and explain the entry points"
+codeworld run --image screenshot.png "explain this screenshot"
 codeworld index
 ```
 
@@ -103,6 +104,7 @@ Command behavior:
 - `codeworld resume <session-id>` resumes a specific archived session.
 - `codeworld repl` starts the line-oriented REPL.
 - `codeworld run <task>` runs one non-interactive turn and exits.
+- `codeworld run --image <path> <task>` attaches an image to a non-interactive turn.
 - `codeworld index` refreshes `.codeworld/index.json`.
 
 If you are running from source:
@@ -137,6 +139,7 @@ Inside the TUI:
 /plan          enable plan mode for the session
 /plan off      return to the default mode
 /compact       summarize older conversation history
+/image <path>  attach an image to the next prompt
 /repl          show how to restart in line REPL mode
 /clear         clear session messages, approvals, and token counters
 /exit          quit
@@ -309,6 +312,19 @@ numbered results with title, URL, and snippet.
 Because it performs network access, `web_search` is registered as a read action
 with network risk. The TUI and REPL permission flow can ask before the request
 is made.
+
+## Image Input
+
+OpenAI-compatible and Anthropic providers can receive image content parts. In
+the TUI, run `/image <path>` before your next prompt. In non-interactive mode,
+use:
+
+```bash
+codeworld run --image screenshot.png "explain this screenshot"
+```
+
+DeepSeek text models currently return a clear unsupported-image error when an
+image is attached.
 
 ## Permissions
 

@@ -275,6 +275,7 @@ func sessionMessagesToModel(messages []session.Message) []model.Message {
 		out = append(out, model.Message{
 			Role:       model.Role(msg.Role),
 			Content:    msg.Content,
+			Parts:      sessionContentPartsToModel(msg.Parts),
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  sessionToolCallsToModel(msg.ToolCalls),
 		})
@@ -315,8 +316,39 @@ func modelMessagesToSession(messages []model.Message) []session.Message {
 		out = append(out, session.Message{
 			Role:       string(msg.Role),
 			Content:    msg.Content,
+			Parts:      modelContentPartsToSession(msg.Parts),
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  modelToolCallsToSession(msg.ToolCalls),
+		})
+	}
+	return out
+}
+
+// sessionContentPartsToModel 把 session 中的多模态内容恢复为模型消息块。
+func sessionContentPartsToModel(parts []session.ContentPart) []model.ContentPart {
+	out := make([]model.ContentPart, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, model.ContentPart{
+			Type:      model.ContentPartType(part.Type),
+			Text:      part.Text,
+			ImageURL:  part.ImageURL,
+			MediaType: part.MediaType,
+			Data:      part.Data,
+			Path:      part.Path,
+		})
+	}
+	return out
+}
+
+// modelContentPartsToSession 把模型多模态内容转换为 session JSON 结构。
+func modelContentPartsToSession(parts []model.ContentPart) []session.ContentPart {
+	out := make([]session.ContentPart, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, session.ContentPart{
+			Type:      string(part.Type),
+			Text:      part.Text,
+			MediaType: part.MediaType,
+			Path:      part.Path,
 		})
 	}
 	return out

@@ -24,6 +24,7 @@ var slashCommands = []string{
 	"/compact",
 	"/goal",
 	"/plan",
+	"/image",
 	"/repl",
 	"/clear",
 	"/exit",
@@ -134,6 +135,15 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 			return m, false
 		}
 		m.appendNotice(message)
+	case strings.HasPrefix(line, "/image "):
+		path := strings.TrimSpace(strings.TrimPrefix(line, "/image "))
+		part, err := model.ImagePartFromFile(path)
+		if err != nil {
+			m.appendError("image error: " + err.Error())
+			return m, false
+		}
+		m.pendingImages = append(m.pendingImages, part)
+		m.appendNotice(fmt.Sprintf("attached image: %s", path))
 	case strings.HasPrefix(line, "/resume"):
 		m.handleResumeCommand(line)
 	case line == "/repl":

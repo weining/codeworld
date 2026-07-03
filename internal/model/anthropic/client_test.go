@@ -81,6 +81,48 @@ func TestGenerateSendsMessagesRequestAndParsesFinalTextUsageAndLog(t *testing.T)
 	}
 }
 
+// TestGenerateSerializesImageContentParts 验证 Anthropic 请求使用 image content block。
+func TestGenerateSerializesImageContentParts(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("Decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"role":"assistant",
+			"content":[{"type":"text","text":"seen"}],
+			"usage":{"input_tokens":1,"output_tokens":1}
+		}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("anthropic-key", "claude-sonnet-4-5")
+	client.baseURL = server.URL
+	_, err := client.Generate(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{
+			Role:    model.RoleUser,
+			Content: "describe",
+			Parts: []model.ContentPart{
+				{Type: model.ContentPartText, Text: "describe"},
+				{Type: model.ContentPartImage, Data: "AAAA", MediaType: "image/png"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	messages := requestBody["messages"].([]any)
+	content := messages[0].(map[string]any)["content"].([]any)
+	if content[0].(map[string]any)["type"] != "text" || content[1].(map[string]any)["type"] != "image" {
+		t.Fatalf("content = %#v, want text and image blocks", content)
+	}
+	source := content[1].(map[string]any)["source"].(map[string]any)
+	if source["media_type"] != "image/png" || source["data"] != "AAAA" {
+		t.Fatalf("source = %#v, want png base64 source", source)
+	}
+}
+
 // TestGenerateParsesToolUseAndLeavesFinalTextEmpty 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestGenerateParsesToolUseAndLeavesFinalTextEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

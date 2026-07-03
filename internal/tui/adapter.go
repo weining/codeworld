@@ -6,6 +6,7 @@ import (
 
 	"codeworld/internal/agent"
 	"codeworld/internal/app"
+	"codeworld/internal/model"
 )
 
 type RunnerAdapter struct {
@@ -20,7 +21,12 @@ func NewRunnerAdapter(rt *app.Runtime, events chan<- agent.TurnEvent) RunnerAdap
 
 // RunTurn 执行主要流程，并把运行结果或错误返回给调用方。
 func (a RunnerAdapter) RunTurn(ctx context.Context, input string) turnDoneMsg {
-	result, err := a.rt.Runner.RunTurnStream(ctx, a.rt.Messages, input, func(event agent.TurnEvent) error {
+	return a.RunTurnMessage(ctx, model.Message{Role: model.RoleUser, Content: input})
+}
+
+// RunTurnMessage 执行一个可包含图片 content parts 的 TUI 回合。
+func (a RunnerAdapter) RunTurnMessage(ctx context.Context, userMessage model.Message) turnDoneMsg {
+	result, err := a.rt.Runner.RunTurnStreamMessage(ctx, a.rt.Messages, userMessage, func(event agent.TurnEvent) error {
 		if a.events == nil {
 			return nil
 		}

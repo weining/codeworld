@@ -115,6 +115,43 @@ func TestGenerateOmitsAuthorizationWhenAPIKeyIsEmpty(t *testing.T) {
 	}
 }
 
+// TestGenerateSerializesImageContentParts 验证 OpenAI-compatible 请求使用多模态 content blocks。
+func TestGenerateSerializesImageContentParts(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Fatalf("Decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"seen"}}]}`))
+	}))
+	defer server.Close()
+
+	client := NewClient("", "gpt-4.1", server.URL)
+	_, err := client.Generate(context.Background(), model.GenerateRequest{
+		Messages: []model.Message{{
+			Role:    model.RoleUser,
+			Content: "describe",
+			Parts: []model.ContentPart{
+				{Type: model.ContentPartText, Text: "describe"},
+				{Type: model.ContentPartImage, ImageURL: "data:image/png;base64,AAAA", MediaType: "image/png"},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	messages := requestBody["messages"].([]any)
+	content := messages[0].(map[string]any)["content"].([]any)
+	if content[0].(map[string]any)["type"] != "text" || content[1].(map[string]any)["type"] != "image_url" {
+		t.Fatalf("content = %#v, want text and image_url blocks", content)
+	}
+	image := content[1].(map[string]any)["image_url"].(map[string]any)
+	if image["url"] != "data:image/png;base64,AAAA" {
+		t.Fatalf("image_url = %#v, want data URL", image)
+	}
+}
+
 // TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStreamSendsStreamingRequestAndEmitsDeltasUsageAndDone(t *testing.T) {
 	var requestBody map[string]any

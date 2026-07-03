@@ -87,6 +87,7 @@ codeworld resume --last
 codeworld resume <session-id>
 codeworld repl
 codeworld run "inspect the project and explain the entry points"
+codeworld run --image screenshot.png "explain this screenshot"
 codeworld index
 ```
 
@@ -98,6 +99,7 @@ codeworld index
 - `codeworld resume <session-id>`：恢复指定归档 session；
 - `codeworld repl`：启动旧的行式 REPL；
 - `codeworld run <task>`：执行一次非交互任务后退出；
+- `codeworld run --image <path> <task>`：给非交互任务附加图片；
 - `codeworld index`：刷新 `.codeworld/index.json`。
 
 从源码运行：
@@ -130,6 +132,7 @@ TUI 使用接近 Codex CLI 的终端布局：顶部单行状态栏、按角色�
 /plan          开启当前 session 的 plan mode
 /plan off      回到默认模式
 /compact       手动摘要较早的对话历史
+/image <path>  给下一条 prompt 附加图片
 /repl          显示如何切换到 REPL
 /clear         清空 session 消息、权限和 token 计数
 /exit          退出
@@ -302,6 +305,16 @@ Context graph 是本地、确定性的，不依赖 embedding。它会提取文�
 原生 `web_search` 工具通过 DuckDuckGo Lite 搜索网页，不需要额外的搜索 API key。参数包括必填的 `query` 和可选的 `limit`，返回带标题、URL 和摘要的编号结果。
 
 因为它会访问网络，`web_search` 的权限声明是 read action + network risk。TUI 和 REPL 的权限流程会在请求发出前要求确认。
+
+## 图片输入
+
+OpenAI-compatible 和 Anthropic provider 可以接收图片 content parts。TUI 中先输入 `/image <path>`，下一条普通 prompt 会携带该图片。非交互模式可以使用：
+
+```bash
+codeworld run --image screenshot.png "explain this screenshot"
+```
+
+DeepSeek 文本模型当前不支持图片输入；附加图片时会返回明确的 unsupported-image 错误。
 
 ## 权限
 

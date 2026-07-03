@@ -210,11 +210,26 @@ func (r *REPL) syncSession() {
 		r.Session.Messages = append(r.Session.Messages, session.Message{
 			Role:       string(msg.Role),
 			Content:    msg.Content,
+			Parts:      toSessionContentParts(msg.Parts),
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  toSessionToolCalls(msg.ToolCalls),
 		})
 	}
 	r.Session.Usage = toSessionUsage(r.Usage)
+}
+
+// toSessionContentParts 在不同层的数据结构之间做显式转换。
+func toSessionContentParts(parts []model.ContentPart) []session.ContentPart {
+	out := make([]session.ContentPart, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, session.ContentPart{
+			Type:      string(part.Type),
+			Text:      part.Text,
+			MediaType: part.MediaType,
+			Path:      part.Path,
+		})
+	}
+	return out
 }
 
 // toSessionToolCalls 在不同层的数据结构之间做显式转换。

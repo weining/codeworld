@@ -13,10 +13,20 @@ import (
 )
 
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	Role       string        `json:"role"`
+	Content    string        `json:"content"`
+	Parts      []ContentPart `json:"parts,omitempty"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
+	ToolCalls  []ToolCall    `json:"tool_calls,omitempty"`
+}
+
+type ContentPart struct {
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	ImageURL  string `json:"image_url,omitempty"`
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
+	Path      string `json:"path,omitempty"`
 }
 
 type ToolCall struct {

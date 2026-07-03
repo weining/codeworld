@@ -34,6 +34,9 @@ func NewClient(apiKey, modelName string) *Client {
 
 // Generate 发起一次非流式模型调用，并解析文本、工具调用和用量信息。
 func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
+	if model.HasImageParts(req.Messages) {
+		return model.GenerateResponse{}, fmt.Errorf("deepseek provider does not support image input")
+	}
 	body := requestBody{
 		Model:    firstNonEmpty(req.Model, c.model),
 		Messages: toProviderMessages(req.Messages),
@@ -130,6 +133,9 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 
 // Stream 发起一次流式模型调用，并把增量事件转换为统一事件。
 func (c *Client) Stream(ctx context.Context, req model.GenerateRequest, emit func(model.StreamEvent) error) error {
+	if model.HasImageParts(req.Messages) {
+		return fmt.Errorf("deepseek provider does not support image input")
+	}
 	body := requestBody{
 		Model:    firstNonEmpty(req.Model, c.model),
 		Messages: toProviderMessages(req.Messages),

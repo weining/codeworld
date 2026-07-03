@@ -89,6 +89,11 @@ type TurnResult struct {
 
 // RunTurn 执行非流式 agent 回合，循环处理模型回复、工具调用和最终回答。
 func (r Runner) RunTurn(ctx context.Context, history []model.Message, input string) (TurnResult, error) {
+	return r.RunTurnMessage(ctx, history, model.Message{Role: model.RoleUser, Content: input})
+}
+
+// RunTurnMessage 执行非流式 agent 回合，并允许调用方传入多模态用户消息。
+func (r Runner) RunTurnMessage(ctx context.Context, history []model.Message, userMessage model.Message) (TurnResult, error) {
 	if err := ctx.Err(); err != nil {
 		return TurnResult{}, err
 	}
@@ -105,7 +110,10 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 	}
 	messages := []model.Message{{Role: model.RoleSystem, Content: firstNonEmpty(r.SystemPrompt, DefaultSystemPrompt)}}
 	messages = append(messages, history...)
-	messages = append(messages, model.Message{Role: model.RoleUser, Content: input})
+	if userMessage.Role == "" {
+		userMessage.Role = model.RoleUser
+	}
+	messages = append(messages, userMessage)
 	var usage model.Usage
 
 	// 非流式路径保留完整的“模型 -> 工具 -> 模型”循环，便于不支持 stream 的 provider 复用同一套 agent 逻辑。
@@ -146,11 +154,16 @@ func (r Runner) RunTurn(ctx context.Context, history []model.Message, input stri
 
 // RunTurnStream 优先使用流式模型接口，并在不支持流式时回退到 RunTurn。
 func (r Runner) RunTurnStream(ctx context.Context, history []model.Message, input string, emit func(TurnEvent) error) (TurnResult, error) {
+	return r.RunTurnStreamMessage(ctx, history, model.Message{Role: model.RoleUser, Content: input}, emit)
+}
+
+// RunTurnStreamMessage 执行流式 agent 回合，并允许调用方传入多模态用户消息。
+func (r Runner) RunTurnStreamMessage(ctx context.Context, history []model.Message, userMessage model.Message, emit func(TurnEvent) error) (TurnResult, error) {
 	if streamClient, ok := r.Model.(model.StreamClient); ok {
-		return r.runTurnWithStream(ctx, streamClient, history, input, emit)
+		return r.runTurnWithStream(ctx, streamClient, history, userMessage, emit)
 	}
 	// provider 不支持 stream 时降级到非流式结果，并通过事件接口补齐最终输出和用量。
-	result, err := r.RunTurn(ctx, history, input)
+	result, err := r.RunTurnMessage(ctx, history, userMessage)
 	if err != nil {
 		if emit != nil {
 			_ = emit(TurnEvent{Kind: TurnEventError, Err: err, Text: err.Error()})
@@ -171,7 +184,7 @@ func (r Runner) RunTurnStream(ctx context.Context, history []model.Message, inpu
 }
 
 // runTurnWithStream 执行流式 agent 回合，将模型增量和工具结果合并为完整历史。
-func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient, history []model.Message, input string, emit func(TurnEvent) error) (TurnResult, error) {
+func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient, history []model.Message, userMessage model.Message, emit func(TurnEvent) error) (TurnResult, error) {
 	if err := ctx.Err(); err != nil {
 		return TurnResult{}, err
 	}
@@ -184,7 +197,10 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 	}
 	messages := []model.Message{{Role: model.RoleSystem, Content: firstNonEmpty(r.SystemPrompt, DefaultSystemPrompt)}}
 	messages = append(messages, history...)
-	messages = append(messages, model.Message{Role: model.RoleUser, Content: input})
+	if userMessage.Role == "" {
+		userMessage.Role = model.RoleUser
+	}
+	messages = append(messages, userMessage)
 	var usage model.Usage
 
 	// 每一步都可能产生工具调用；工具结果写回 messages 后继续下一轮模型调用。

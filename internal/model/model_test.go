@@ -1,6 +1,11 @@
 package model
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 // TestStreamEventsAccumulateTextAndUsage 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestStreamEventsAccumulateTextAndUsage(t *testing.T) {
@@ -33,5 +38,21 @@ func TestStreamEventsAccumulateTextAndUsage(t *testing.T) {
 	}
 	if final.Content != "你好" {
 		t.Fatalf("final = %#v, want assistant message", final)
+	}
+}
+
+// TestImagePartFromFileBuildsDataURL 验证图片文件会转换为可发送给 provider 的 base64 数据。
+func TestImagePartFromFileBuildsDataURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sample.png")
+	if err := os.WriteFile(path, []byte{0x89, 0x50, 0x4e, 0x47}, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	part, err := ImagePartFromFile(path)
+	if err != nil {
+		t.Fatalf("ImagePartFromFile returned error: %v", err)
+	}
+	if part.Type != ContentPartImage || part.MediaType != "image/png" || !strings.HasPrefix(part.ImageURL, "data:image/png;base64,") || part.Data == "" {
+		t.Fatalf("part = %#v, want png image data", part)
 	}
 }

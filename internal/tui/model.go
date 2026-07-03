@@ -13,6 +13,7 @@ import (
 
 	"codeworld/internal/agent"
 	"codeworld/internal/app"
+	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/session"
 )
@@ -32,6 +33,7 @@ type Model struct {
 	theme             string
 	promptHistory     []string
 	historyIndex      int
+	pendingImages     []model.ContentPart
 	running           bool
 	quitting          bool
 }
@@ -157,7 +159,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.refreshViewport()
 				m.running = true
 				prompt := text
+				images := append([]model.ContentPart(nil), m.pendingImages...)
+				m.pendingImages = nil
 				return m, func() tea.Msg {
+					if len(images) > 0 {
+						userMessage := model.Message{Role: model.RoleUser, Content: prompt, Parts: append([]model.ContentPart{model.TextPart(prompt)}, images...)}
+						return m.adapter.RunTurnMessage(context.Background(), userMessage)
+					}
 					return m.adapter.RunTurn(context.Background(), prompt)
 				}
 			}

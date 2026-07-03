@@ -3,6 +3,8 @@ package tui
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -474,6 +476,32 @@ func TestHandleGoalPlanAndCompactCommands(t *testing.T) {
 		if !strings.Contains(all, want) {
 			t.Fatalf("transcript missing %q in:\n%s", want, all)
 		}
+	}
+}
+
+// TestHandleImageCommandAttachesPendingImage 验证 /image 会把图片附加到下一条 prompt。
+func TestHandleImageCommandAttachesPendingImage(t *testing.T) {
+	root := t.TempDir()
+	imagePath := filepath.Join(root, "sample.png")
+	if err := os.WriteFile(imagePath, []byte{0x89, 0x50, 0x4e, 0x47}, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Store:     session.NewStore(root),
+		Session:   session.New(root, "openai", "gpt-4.1"),
+	}
+	m := NewModel(&rt)
+
+	next, quit := mustHandleCommand(t, m, "/image "+imagePath)
+	if quit {
+		t.Fatalf("image command requested quit")
+	}
+	if len(next.pendingImages) != 1 || next.pendingImages[0].Type != model.ContentPartImage {
+		t.Fatalf("pending images = %#v, want one image", next.pendingImages)
+	}
+	if !strings.Contains(transcriptText(next.items), "attached image") {
+		t.Fatalf("items = %#v, want attached notice", next.items)
 	}
 }
 
