@@ -114,6 +114,43 @@ func TestLoadMCPServers(t *testing.T) {
 	}
 }
 
+// TestLoadHTTPMCPServerConfig 验证 HTTP MCP 的地址、鉴权和 tool 过滤配置。
+func TestLoadHTTPMCPServerConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), strings.Join([]string{
+		"mcp_oauth_callback_port = 5555",
+		"mcp_oauth_callback_url = \"http://localhost:5555/callback\"",
+		"[[mcp_servers]]",
+		"name = \"docs\"",
+		"url = \"https://mcp.example.test/mcp\"",
+		"bearer_token_env_var = \"DOCS_TOKEN\"",
+		"http_headers = [\"X-Test: yes\"]",
+		"enabled_tools = [\"search\"]",
+		"disabled_tools = [\"write\"]",
+	}, "\n"))
+
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.MCPOAuthCallbackPort != 5555 || cfg.MCPOAuthCallbackURL != "http://localhost:5555/callback" {
+		t.Fatalf("oauth callback = %d/%q", cfg.MCPOAuthCallbackPort, cfg.MCPOAuthCallbackURL)
+	}
+	if len(cfg.MCPServers) != 1 {
+		t.Fatalf("MCPServers = %#v, want one server", cfg.MCPServers)
+	}
+	server := cfg.MCPServers[0]
+	if server.URL != "https://mcp.example.test/mcp" || server.BearerTokenEnvVar != "DOCS_TOKEN" {
+		t.Fatalf("server auth config = %#v", server)
+	}
+	if len(server.HTTPHeaders) != 1 || server.HTTPHeaders[0] != "X-Test: yes" {
+		t.Fatalf("HTTPHeaders = %#v", server.HTTPHeaders)
+	}
+	if len(server.EnabledTools) != 1 || server.EnabledTools[0] != "search" || len(server.DisabledTools) != 1 || server.DisabledTools[0] != "write" {
+		t.Fatalf("tool filters = enabled %#v disabled %#v", server.EnabledTools, server.DisabledTools)
+	}
+}
+
 // TestLoadLocalBaseURLFromEnvironment 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestLoadLocalBaseURLFromEnvironment(t *testing.T) {
 	dir := t.TempDir()

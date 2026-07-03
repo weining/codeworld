@@ -13,10 +13,13 @@ import (
 )
 
 type ServerConfig struct {
-	Name    string
-	Command string
-	Args    []string
-	Env     []string
+	Name              string
+	Command           string
+	Args              []string
+	Env               []string
+	URL               string
+	BearerTokenEnvVar string
+	HTTPHeaders       []string
 }
 
 type Client struct {

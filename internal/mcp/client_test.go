@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"strings"
@@ -86,6 +88,80 @@ func TestStdioClientListsResourcesAndPrompts(t *testing.T) {
 	}
 	if len(prompts) != 1 || prompts[0].Name != "review" {
 		t.Fatalf("prompts = %#v, want review prompt", prompts)
+	}
+}
+
+// TestHTTPClientListsAndCallsTools 验证 HTTP MCP transport 通过 JSON-RPC 调用工具。
+func TestHTTPClientListsAndCallsTools(t *testing.T) {
+	var sawAuth bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer token-value" && r.Header.Get("X-Test") == "yes" {
+			sawAuth = true
+		}
+		var req struct {
+			ID     int             `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("Decode request: %v", err)
+		}
+		var result any
+		switch req.Method {
+		case "initialize":
+			result = map[string]any{"protocolVersion": "2024-11-05", "instructions": "Use docs carefully."}
+		case "tools/list":
+			result = map[string]any{"tools": []any{map[string]any{"name": "search", "description": "Search", "inputSchema": map[string]any{"type": "object"}}}}
+		case "tools/call":
+			result = map[string]any{"content": []any{map[string]any{"type": "text", "text": "result text"}}}
+		default:
+			result = map[string]any{}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
+	}))
+	defer server.Close()
+	t.Setenv("DOCS_TOKEN", "token-value")
+
+	client := NewHTTPClient(ServerConfig{Name: "docs", URL: server.URL, BearerTokenEnvVar: "DOCS_TOKEN", HTTPHeaders: []string{"X-Test: yes"}})
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize returned error: %v", err)
+	}
+	if client.Instructions() != "Use docs carefully." {
+		t.Fatalf("instructions = %q", client.Instructions())
+	}
+	tools, err := client.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools returned error: %v", err)
+	}
+	if len(tools) != 1 || tools[0].Name != "search" {
+		t.Fatalf("tools = %#v, want search", tools)
+	}
+	result, err := client.CallTool(context.Background(), "search", json.RawMessage(`{"q":"go"}`))
+	if err != nil {
+		t.Fatalf("CallTool returned error: %v", err)
+	}
+	if result.Text() != "result text" || !sawAuth {
+		t.Fatalf("result=%#v sawAuth=%v, want result text and auth headers", result, sawAuth)
+	}
+}
+
+// TestOAuthTokenStoreRoundTrips 验证 OAuth token skeleton 使用受限路径持久化。
+func TestOAuthTokenStoreRoundTrips(t *testing.T) {
+	root := t.TempDir()
+	token := OAuthToken{ServerName: "docs", AccessToken: "access", RefreshToken: "refresh"}
+
+	if err := SaveOAuthToken(root, token); err != nil {
+		t.Fatalf("SaveOAuthToken returned error: %v", err)
+	}
+	got, err := LoadOAuthToken(root, "docs")
+	if err != nil {
+		t.Fatalf("LoadOAuthToken returned error: %v", err)
+	}
+	if got.AccessToken != "access" || got.RefreshToken != "refresh" {
+		t.Fatalf("token = %#v, want saved token", got)
+	}
+	if err := SaveOAuthToken(root, OAuthToken{ServerName: "../escape"}); err == nil {
+		t.Fatalf("SaveOAuthToken accepted traversal server name")
 	}
 }
 

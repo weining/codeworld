@@ -91,13 +91,13 @@
 - Modify: `README.md`
 - Modify: `README.zh-CN.md`
 
-- [ ] Extend MCP config tests for `url`, bearer token env var, static/env headers, enabled tools, disabled tools, and per-tool approval mode.
-- [ ] Introduce an MCP client interface shared by stdio and HTTP transports.
-- [ ] Implement streamable HTTP JSON-RPC calls and server instructions capture.
-- [ ] Implement OAuth callback skeleton with token storage stubbed to local config-safe files.
-- [ ] Apply allow/deny tool filters before registration.
-- [ ] Verify with `go test -count=1 ./internal/config ./internal/mcp ./internal/capability ./internal/tools`.
-- [ ] Commit as `feat: add http mcp transport`.
+- [x] Extend MCP config tests for `url`, bearer token env var, static/env headers, enabled tools, disabled tools, and per-tool approval mode.
+- [x] Introduce an MCP client interface shared by stdio and HTTP transports.
+- [x] Implement streamable HTTP JSON-RPC calls and server instructions capture.
+- [x] Implement OAuth callback skeleton with token storage stubbed to local config-safe files.
+- [x] Apply allow/deny tool filters before registration.
+- [x] Verify with `go test -count=1 ./internal/config ./internal/mcp ./internal/capability ./internal/tools`.
+- [x] Commit as `feat: add http mcp transport`.
 
 ### Task 5: Hooks and Sandbox Policy
 

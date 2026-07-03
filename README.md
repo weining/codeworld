@@ -275,13 +275,28 @@ hooks, apps, assets, or plugin lifecycle policy.
 
 ## MCP
 
-Codeworld supports stdio MCP servers. Configure them in `.codeworld/config.toml`:
+Codeworld supports stdio and HTTP MCP servers. Configure them in `.codeworld/config.toml`:
 
 ```toml
 [[mcp_servers]]
 name = "demo"
 command = "node"
 args = ["server.js"]
+```
+
+HTTP MCP example:
+
+```toml
+mcp_oauth_callback_port = 5555
+mcp_oauth_callback_url = "http://localhost:5555/callback"
+
+[[mcp_servers]]
+name = "docs"
+url = "https://mcp.example.test/mcp"
+bearer_token_env_var = "DOCS_TOKEN"
+http_headers = ["X-Test: yes"]
+enabled_tools = ["search"]
+disabled_tools = ["write"]
 ```
 
 MCP tools are registered as:

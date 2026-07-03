@@ -273,13 +273,28 @@ Codex plugin bundle 基础兼容：
 
 ## MCP
 
-Codeworld 支持 stdio MCP server：
+Codeworld 支持 stdio 和 HTTP MCP server：
 
 ```toml
 [[mcp_servers]]
 name = "demo"
 command = "node"
 args = ["server.js"]
+```
+
+HTTP MCP 示例：
+
+```toml
+mcp_oauth_callback_port = 5555
+mcp_oauth_callback_url = "http://localhost:5555/callback"
+
+[[mcp_servers]]
+name = "docs"
+url = "https://mcp.example.test/mcp"
+bearer_token_env_var = "DOCS_TOKEN"
+http_headers = ["X-Test: yes"]
+enabled_tools = ["search"]
+disabled_tools = ["write"]
 ```
 
 MCP tools 会注册为：

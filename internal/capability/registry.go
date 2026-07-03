@@ -2,6 +2,7 @@ package capability
 
 import (
 	"context"
+	"encoding/json"
 
 	"codeworld/internal/codexplugin"
 	"codeworld/internal/config"
@@ -76,12 +77,22 @@ func loadMCPTools(ctx context.Context, servers []config.MCPServer) ([]tools.Tool
 	var out []tools.Tool
 	clients := make([]*mcp.Client, 0, len(servers))
 	for _, server := range servers {
-		client, err := mcp.StartStdio(ctx, mcp.ServerConfig{Name: server.Name, Command: server.Command, Args: server.Args})
-		if err != nil {
-			CloseClients(clients)
-			return nil, nil, err
+		var client interface {
+			Initialize(context.Context) error
+			ListTools(context.Context) ([]mcp.Tool, error)
+			CallTool(context.Context, string, json.RawMessage) (mcp.CallToolResult, error)
 		}
-		clients = append(clients, client)
+		if server.URL != "" {
+			client = mcp.NewHTTPClient(mcp.ServerConfig{Name: server.Name, URL: server.URL, BearerTokenEnvVar: server.BearerTokenEnvVar, HTTPHeaders: server.HTTPHeaders})
+		} else {
+			stdioClient, err := mcp.StartStdio(ctx, mcp.ServerConfig{Name: server.Name, Command: server.Command, Args: server.Args})
+			if err != nil {
+				CloseClients(clients)
+				return nil, nil, err
+			}
+			clients = append(clients, stdioClient)
+			client = stdioClient
+		}
 		if err := client.Initialize(ctx); err != nil {
 			CloseClients(clients)
 			return nil, nil, err
@@ -92,8 +103,29 @@ func loadMCPTools(ctx context.Context, servers []config.MCPServer) ([]tools.Tool
 			return nil, nil, err
 		}
 		for _, spec := range listed {
+			if !mcpToolEnabled(server, spec.Name) {
+				continue
+			}
 			out = append(out, tools.NewMCPTool(server.Name, spec, client))
 		}
 	}
 	return out, clients, nil
+}
+
+// mcpToolEnabled 应用 allow/deny 列表；deny 优先于 allow。
+func mcpToolEnabled(server config.MCPServer, name string) bool {
+	for _, disabled := range server.DisabledTools {
+		if disabled == name {
+			return false
+		}
+	}
+	if len(server.EnabledTools) == 0 {
+		return true
+	}
+	for _, enabled := range server.EnabledTools {
+		if enabled == name {
+			return true
+		}
+	}
+	return false
 }

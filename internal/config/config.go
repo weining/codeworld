@@ -10,24 +10,31 @@ import (
 )
 
 type Config struct {
-	Provider           string
-	Model              string
-	MaxSteps           int
-	Workspace          string
-	APIKey             string
-	OpenAIAPIKey       string
-	AnthropicAPIKey    string
-	LocalBaseURL       string
-	PluginsEnabled     bool
-	SummaryMaxMessages int
-	IndexMaxFileBytes  int
-	MCPServers         []MCPServer
+	Provider             string
+	Model                string
+	MaxSteps             int
+	Workspace            string
+	APIKey               string
+	OpenAIAPIKey         string
+	AnthropicAPIKey      string
+	LocalBaseURL         string
+	PluginsEnabled       bool
+	SummaryMaxMessages   int
+	IndexMaxFileBytes    int
+	MCPOAuthCallbackPort int
+	MCPOAuthCallbackURL  string
+	MCPServers           []MCPServer
 }
 
 type MCPServer struct {
-	Name    string
-	Command string
-	Args    []string
+	Name              string
+	Command           string
+	Args              []string
+	URL               string
+	BearerTokenEnvVar string
+	HTTPHeaders       []string
+	EnabledTools      []string
+	DisabledTools     []string
 }
 
 // Default 提供对外可复用的能力，并隐藏内部实现细节。
@@ -116,6 +123,14 @@ func Load(root string) (Config, error) {
 				return Config{}, fmt.Errorf("invalid index_max_file_bytes %q: %w", value, err)
 			}
 			cfg.IndexMaxFileBytes = n
+		case "mcp_oauth_callback_port":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid mcp_oauth_callback_port %q: %w", value, err)
+			}
+			cfg.MCPOAuthCallbackPort = n
+		case "mcp_oauth_callback_url":
+			cfg.MCPOAuthCallbackURL = value
 		default:
 			return Config{}, fmt.Errorf("unknown config key %q", key)
 		}
@@ -141,6 +156,28 @@ func setMCPServerValue(server *MCPServer, key, value string) error {
 			return fmt.Errorf("invalid mcp args %q: %w", value, err)
 		}
 		server.Args = args
+	case "url":
+		server.URL = value
+	case "bearer_token_env_var":
+		server.BearerTokenEnvVar = value
+	case "http_headers":
+		headers, err := parseStringArray(value)
+		if err != nil {
+			return fmt.Errorf("invalid mcp http_headers %q: %w", value, err)
+		}
+		server.HTTPHeaders = headers
+	case "enabled_tools":
+		tools, err := parseStringArray(value)
+		if err != nil {
+			return fmt.Errorf("invalid mcp enabled_tools %q: %w", value, err)
+		}
+		server.EnabledTools = tools
+	case "disabled_tools":
+		tools, err := parseStringArray(value)
+		if err != nil {
+			return fmt.Errorf("invalid mcp disabled_tools %q: %w", value, err)
+		}
+		server.DisabledTools = tools
 	default:
 		return fmt.Errorf("unknown mcp_servers key %q", key)
 	}
