@@ -64,6 +64,18 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			}
 			_, err = fmt.Fprintf(out, "indexed files=%d skipped=%d\n", len(idx.Entries), skipped)
 			return err
+		case "resume":
+			opts := app.Options{Root: root, In: in, Out: out, Err: stderr}
+			if len(args) < 2 || args[1] == "--last" {
+				opts.ResumeLast = true
+			} else {
+				opts.SessionID = args[1]
+			}
+			rt, err := app.NewRuntime(context.Background(), opts)
+			if err != nil {
+				return err
+			}
+			return tui.RunWithOptions(context.Background(), &rt, tui.Options{TestMode: !shouldShowTerminalTitle(out)})
 		case "tui":
 			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
 			if err != nil {

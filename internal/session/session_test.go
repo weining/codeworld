@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -173,6 +174,61 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	}
 }
 
+// TestStoreListLoadAndSetCurrentSupportResume 验证 session 归档可以按更新时间恢复。
+func TestStoreListLoadAndSetCurrentSupportResume(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+	oldSess := New(root, "deepseek", "deepseek-v4-pro")
+	oldSess.ID = "old-session"
+	oldSess.UpdatedAt = time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	newSess := New(root, "deepseek", "deepseek-v4-pro")
+	newSess.ID = "new-session"
+	newSess.UpdatedAt = time.Date(2026, 7, 2, 12, 0, 0, 0, time.UTC)
+
+	writeArchivedSession(t, store, oldSess)
+	writeArchivedSession(t, store, newSess)
+
+	list, err := store.List()
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	gotIDs := []string{list[0].ID, list[1].ID}
+	if !reflect.DeepEqual(gotIDs, []string{"new-session", "old-session"}) {
+		t.Fatalf("session IDs = %#v, want newest first", gotIDs)
+	}
+
+	loaded, err := store.Load("old-session")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if loaded.ID != "old-session" {
+		t.Fatalf("Load ID = %q, want old-session", loaded.ID)
+	}
+	if err := store.SetCurrent("old-session"); err != nil {
+		t.Fatalf("SetCurrent returned error: %v", err)
+	}
+	current, err := store.LoadCurrent()
+	if err != nil {
+		t.Fatalf("LoadCurrent returned error after SetCurrent: %v", err)
+	}
+	if current.ID != "old-session" {
+		t.Fatalf("current ID = %q, want old-session", current.ID)
+	}
+}
+
+// TestStoreRejectsInvalidResumeID 验证恢复接口拒绝路径穿越 ID。
+func TestStoreRejectsInvalidResumeID(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+
+	if _, err := store.Load("../escape"); err == nil {
+		t.Fatalf("Load accepted traversal session ID")
+	}
+	if err := store.SetCurrent("../escape"); err == nil {
+		t.Fatalf("SetCurrent accepted traversal session ID")
+	}
+}
+
 // requireRegularFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func requireRegularFile(t *testing.T, path string) os.FileInfo {
 	t.Helper()
@@ -202,5 +258,25 @@ func assertJSONEqual(t *testing.T, got json.RawMessage, want string) {
 	wantData, _ := json.Marshal(wantValue)
 	if string(gotData) != string(wantData) {
 		t.Fatalf("JSON = %s, want %s", got, want)
+	}
+}
+
+// writeArchivedSession 是测试辅助函数，用于准备归档 session 文件而不刷新 UpdatedAt。
+func writeArchivedSession(t *testing.T, store Store, sess Session) {
+	t.Helper()
+	path, err := store.archivePath(sess.ID)
+	if err != nil {
+		t.Fatalf("archivePath: %v", err)
+	}
+	data, err := json.MarshalIndent(sess, "", "  ")
+	if err != nil {
+		t.Fatalf("MarshalIndent: %v", err)
+	}
+	data = append(data, '\n')
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 }

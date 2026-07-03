@@ -30,6 +30,8 @@ type Model struct {
 	width             int
 	height            int
 	theme             string
+	promptHistory     []string
+	historyIndex      int
 	running           bool
 	quitting          bool
 }
@@ -50,7 +52,7 @@ func NewModel(rt *app.Runtime) Model {
 	rt.Runner.Reporter = reporter
 	rt.Runner.Confirmer = confirmer
 	// TUI 用 channel 接收 agent 事件，避免模型流式输出阻塞 Bubble Tea 的按键和绘制循环。
-	m := Model{rt: rt, adapter: NewRunnerAdapter(rt, turnEvents), toolEvents: reporter.Events(), turnEvents: turnEvents, confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24, theme: "system"}
+	m := Model{rt: rt, adapter: NewRunnerAdapter(rt, turnEvents), toolEvents: reporter.Events(), turnEvents: turnEvents, confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24, theme: "system", historyIndex: -1}
 	m.refreshViewport()
 	return m
 }
@@ -129,9 +131,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+d":
 			m.viewport.HalfPageDown()
 			return m, nil
+		case "up":
+			m.restorePromptHistory(-1)
+			return m, nil
+		case "down":
+			m.restorePromptHistory(1)
+			return m, nil
 		case "enter":
 			text := strings.TrimSpace(m.input.Value())
 			if text != "" {
+				m.recordPrompt(text)
 				if strings.HasPrefix(text, "/") {
 					m.items = append(m.items, TranscriptItem{Kind: ItemUser, Text: text})
 					next, quit := m.handleSlashCommand(context.Background(), text)
@@ -222,6 +231,9 @@ func (m Model) renderComposer() string {
 		Foreground(lipgloss.Color("8")).
 		Width(width).
 		Render("Enter send  Shift+Enter newline  Ctrl+C exit  /help")
+	if suggestions := m.renderSlashSuggestions(); suggestions != "" {
+		return inputView + "\n" + suggestions + "\n" + help
+	}
 	return inputView + "\n" + help
 }
 
@@ -247,6 +259,57 @@ func (m Model) fitLine(line string) string {
 		return line
 	}
 	return lipgloss.NewStyle().MaxWidth(m.width).Render(line)
+}
+
+// renderSlashSuggestions 在输入 slash 前缀时展示可用命令，提供接近 Codex 的发现体验。
+func (m Model) renderSlashSuggestions() string {
+	value := strings.TrimSpace(m.input.Value())
+	if !strings.HasPrefix(value, "/") {
+		return ""
+	}
+	matches := matchingSlashCommands(value)
+	if len(matches) == 0 {
+		return ""
+	}
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color("8")).
+		Width(max(10, m.width)).
+		Render("commands  " + strings.Join(matches, "  "))
+}
+
+// recordPrompt 保存已提交草稿，供 Up/Down 在 composer 中恢复。
+func (m *Model) recordPrompt(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return
+	}
+	if len(m.promptHistory) == 0 || m.promptHistory[len(m.promptHistory)-1] != text {
+		m.promptHistory = append(m.promptHistory, text)
+	}
+	m.historyIndex = -1
+}
+
+// restorePromptHistory 根据方向恢复历史草稿；direction 为 -1 表示更早，1 表示更新。
+func (m *Model) restorePromptHistory(direction int) {
+	if len(m.promptHistory) == 0 {
+		return
+	}
+	if m.historyIndex == -1 {
+		if direction < 0 {
+			m.historyIndex = len(m.promptHistory) - 1
+		} else {
+			return
+		}
+	} else {
+		m.historyIndex += direction
+		if m.historyIndex < 0 {
+			m.historyIndex = 0
+		}
+		if m.historyIndex >= len(m.promptHistory) {
+			m.historyIndex = len(m.promptHistory) - 1
+		}
+	}
+	m.input.SetValue(m.promptHistory[m.historyIndex])
 }
 
 // applyTurnEvent 封装局部逻辑，保持调用方流程清晰。

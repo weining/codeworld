@@ -83,6 +83,8 @@ codeworld
 
 ```bash
 codeworld tui
+codeworld resume --last
+codeworld resume <session-id>
 codeworld repl
 codeworld run "inspect the project and explain the entry points"
 codeworld index
@@ -92,6 +94,8 @@ codeworld index
 
 - `codeworld`：连接到终端时默认启动 TUI；
 - `codeworld tui`：显式启动 TUI；
+- `codeworld resume --last`：恢复最新的本地归档 session；
+- `codeworld resume <session-id>`：恢复指定归档 session；
 - `codeworld repl`：启动旧的行式 REPL；
 - `codeworld run <task>`：执行一次非交互任务后退出；
 - `codeworld index`：刷新 `.codeworld/index.json`。
@@ -120,10 +124,13 @@ TUI 使用接近 Codex CLI 的终端布局：顶部单行状态栏、按角色�
 /skills        查看已加载 skills
 /context       查看上下文系统状态
 /theme <mode>  设置 system、dark 或 light 状态
+/resume        查看最近可恢复 sessions
 /repl          显示如何切换到 REPL
 /clear         清空 session 消息、权限和 token 计数
 /exit          退出
 ```
+
+输入 `/` 会显示 slash command 建议；composer 中可以用 `Up` / `Down` 恢复已提交草稿。
 
 滚动 transcript：
 

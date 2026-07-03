@@ -88,6 +88,8 @@ Explicit commands:
 
 ```bash
 codeworld tui
+codeworld resume --last
+codeworld resume <session-id>
 codeworld repl
 codeworld run "inspect the project and explain the entry points"
 codeworld index
@@ -97,6 +99,8 @@ Command behavior:
 
 - `codeworld` starts the TUI when attached to a terminal.
 - `codeworld tui` starts the TUI explicitly.
+- `codeworld resume --last` resumes the newest archived local session.
+- `codeworld resume <session-id>` resumes a specific archived session.
 - `codeworld repl` starts the line-oriented REPL.
 - `codeworld run <task>` runs one non-interactive turn and exits.
 - `codeworld index` refreshes `.codeworld/index.json`.
@@ -127,12 +131,15 @@ Inside the TUI:
 /skills        list loaded project skills
 /context       show context system status
 /theme <mode>  set system, dark, or light mode state
+/resume        list recent archived sessions
 /repl          show how to restart in line REPL mode
 /clear         clear session messages, approvals, and token counters
 /exit          quit
 ```
 
-Scroll the transcript with `PageUp`, `PageDown`, `Ctrl+U`, and `Ctrl+D`.
+Type `/` to show slash command suggestions. Scroll the transcript with
+`PageUp`, `PageDown`, `Ctrl+U`, and `Ctrl+D`. Use `Up` and `Down` in the
+composer to restore submitted drafts.
 
 ## Architecture
 

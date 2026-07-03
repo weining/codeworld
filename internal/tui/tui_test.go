@@ -327,6 +327,86 @@ func TestUpdateShowsSlashCommandAndResultImmediately(t *testing.T) {
 	}
 }
 
+// TestModelViewShowsSlashSuggestions 验证输入 slash 前缀时 TUI 显示命令建议。
+func TestModelViewShowsSlashSuggestions(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+	}
+	m := NewModel(&rt)
+	m.width = 100
+	m.input.SetValue("/")
+
+	view := m.View()
+	for _, want := range []string{"/help", "/resume", "/compact", "/goal", "/plan"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("view missing slash suggestion %q in:\n%s", want, view)
+		}
+	}
+}
+
+// TestModelPromptHistoryRestoresSubmittedDrafts 验证 Up/Down 可以恢复已提交草稿。
+func TestModelPromptHistoryRestoresSubmittedDrafts(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Session:   session.New(root, "deepseek", "deepseek-v4-pro"),
+	}
+	m := NewModel(&rt)
+	m.input.SetValue("/status")
+	nextModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = nextModel.(Model)
+	m.input.SetValue("/model")
+	nextModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = nextModel.(Model)
+
+	nextModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = nextModel.(Model)
+	if strings.TrimSpace(m.input.Value()) != "/model" {
+		t.Fatalf("input after Up = %q, want /model", m.input.Value())
+	}
+	nextModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = nextModel.(Model)
+	if strings.TrimSpace(m.input.Value()) != "/status" {
+		t.Fatalf("input after second Up = %q, want /status", m.input.Value())
+	}
+	nextModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = nextModel.(Model)
+	if strings.TrimSpace(m.input.Value()) != "/model" {
+		t.Fatalf("input after Down = %q, want /model", m.input.Value())
+	}
+}
+
+// TestHandleResumeCommandListsRecentSessions 验证 /resume 展示可恢复 session。
+func TestHandleResumeCommandListsRecentSessions(t *testing.T) {
+	root := t.TempDir()
+	store := session.NewStore(root)
+	sess := session.New(root, "deepseek", "deepseek-v4-pro")
+	sess.ID = "resume-target"
+	sess.Messages = []session.Message{{Role: "user", Content: "hello"}}
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+	rt := app.Runtime{
+		Workspace: workspace.Workspace{Root: root},
+		Store:     store,
+		Session:   sess,
+	}
+	m := NewModel(&rt)
+
+	next, quit := mustHandleCommand(t, m, "/resume")
+	if quit {
+		t.Fatalf("resume command requested quit")
+	}
+	all := transcriptText(next.items)
+	for _, want := range []string{"resume-target", "deepseek-v4-pro"} {
+		if !strings.Contains(all, want) {
+			t.Fatalf("transcript missing %q in:\n%s", want, all)
+		}
+	}
+}
+
 // TestHandleAdvancedSlashCommands 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestHandleAdvancedSlashCommands(t *testing.T) {
 	root := t.TempDir()

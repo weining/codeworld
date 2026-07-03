@@ -104,6 +104,106 @@ func TestRunCommandRequiresPrompt(t *testing.T) {
 	}
 }
 
+func TestResumeLastRestoresNewestArchivedSession(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	root := t.TempDir()
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir temp root: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+	store := session.NewStore(root)
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	oldSess := session.New(canonicalRoot, "deepseek", "deepseek-v4-old")
+	oldSess.ID = "old-session"
+	if err := store.SaveCurrent(oldSess); err != nil {
+		t.Fatalf("SaveCurrent old: %v", err)
+	}
+	newSess := session.New(canonicalRoot, "deepseek", "deepseek-v4-new")
+	newSess.ID = "new-session"
+	if err := store.SaveCurrent(newSess); err != nil {
+		t.Fatalf("SaveCurrent new: %v", err)
+	}
+	if err := store.SetCurrent("old-session"); err != nil {
+		t.Fatalf("SetCurrent old: %v", err)
+	}
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	err = runWithIO(strings.NewReader("/status\n/exit\n"), &out, &stderr, []string{"resume", "--last"})
+	if err != nil {
+		t.Fatalf("runWithIO returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), "model=deepseek-v4-new") {
+		t.Fatalf("stdout = %q, want newest session model", out.String())
+	}
+}
+
+func TestResumeSpecificSessionID(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	root := t.TempDir()
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir temp root: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+	store := session.NewStore(root)
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	sess := session.New(canonicalRoot, "deepseek", "deepseek-v4-resumed")
+	sess.ID = "target-session"
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	err = runWithIO(strings.NewReader("/status\n/exit\n"), &out, &stderr, []string{"resume", "target-session"})
+	if err != nil {
+		t.Fatalf("runWithIO returned error: %v", err)
+	}
+	if !strings.Contains(out.String(), "model=deepseek-v4-resumed") {
+		t.Fatalf("stdout = %q, want resumed model", out.String())
+	}
+}
+
+func TestResumeWithoutSessionsReturnsHelpfulError(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	root := t.TempDir()
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir temp root: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(originalWD)
+	})
+
+	var out bytes.Buffer
+	var stderr bytes.Buffer
+	err = runWithIO(strings.NewReader(""), &out, &stderr, []string{"resume", "--last"})
+	if err == nil || !strings.Contains(err.Error(), "no sessions") {
+		t.Fatalf("err = %v, want no sessions error", err)
+	}
+}
+
 func TestIndexCommandWritesWorkspaceIndex(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	root := t.TempDir()

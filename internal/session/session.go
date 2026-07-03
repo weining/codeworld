@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -84,6 +85,11 @@ func (s Store) CurrentPath() string {
 	return filepath.Join(s.root, ".codeworld", "current-session.json")
 }
 
+// SessionsPath 返回归档 session 目录，供恢复会话和测试复用。
+func (s Store) SessionsPath() string {
+	return filepath.Join(s.root, ".codeworld", "sessions")
+}
+
 // SaveCurrent 持久化当前状态，并处理路径、权限或归档细节。
 func (s Store) SaveCurrent(sess Session) error {
 	currentPath := s.CurrentPath()
@@ -103,6 +109,64 @@ func (s Store) SaveCurrent(sess Session) error {
 		return err
 	}
 	return writeSessionFile(archivePath, data)
+}
+
+// List 读取归档 session，并按更新时间从新到旧排序。
+func (s Store) List() ([]Session, error) {
+	entries, err := os.ReadDir(s.SessionsPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	sessions := make([]Session, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		id := strings.TrimSuffix(entry.Name(), ".json")
+		sess, err := s.Load(id)
+		if err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, sess)
+	}
+	sort.SliceStable(sessions, func(i, j int) bool {
+		return sessions[i].UpdatedAt.After(sessions[j].UpdatedAt)
+	})
+	return sessions, nil
+}
+
+// Load 根据 session ID 读取归档会话，并复用 archivePath 的 ID 校验。
+func (s Store) Load(id string) (Session, error) {
+	path, err := s.archivePath(id)
+	if err != nil {
+		return Session{}, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Session{}, err
+	}
+	var sess Session
+	if err := json.Unmarshal(data, &sess); err != nil {
+		return Session{}, err
+	}
+	return sess, nil
+}
+
+// SetCurrent 把指定归档会话设为 current-session，供 resume 命令复用。
+func (s Store) SetCurrent(id string) error {
+	sess, err := s.Load(id)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(sess, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return writeSessionFile(s.CurrentPath(), data)
 }
 
 // archivePath 封装局部逻辑，保持调用方流程清晰。

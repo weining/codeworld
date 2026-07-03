@@ -3,17 +3,37 @@ package tui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"codeworld/internal/model"
 	"codeworld/internal/session"
 )
 
+var slashCommands = []string{
+	"/help",
+	"/model",
+	"/status",
+	"/diff",
+	"/permissions",
+	"/mcp",
+	"/skills",
+	"/context",
+	"/theme",
+	"/resume",
+	"/compact",
+	"/goal",
+	"/plan",
+	"/repl",
+	"/clear",
+	"/exit",
+}
+
 // handleSlashCommand 封装局部逻辑，保持调用方流程清晰。
 func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool) {
 	switch {
 	case line == "/help":
-		m.appendNotice("/help /model /status /diff /permissions /mcp /skills /context /theme /repl /clear /exit")
+		m.appendNotice(strings.Join(slashCommands, " "))
 	case line == "/model":
 		m.appendNotice(m.rt.Session.Model)
 	case strings.HasPrefix(line, "/model "):
@@ -83,6 +103,8 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		m.appendNotice(strings.Join(lines, "\n"))
 	case line == "/context":
 		m.appendNotice(fmt.Sprintf("messages=%d skills=%d mcp_servers=%d context_tools=3", len(m.rt.Messages), len(m.rt.Skills), len(m.rt.Config.MCPServers)))
+	case strings.HasPrefix(line, "/resume"):
+		m.handleResumeCommand(line)
 	case line == "/repl":
 		m.appendNotice("restart with: codeworld repl")
 	case strings.HasPrefix(line, "/theme"):
@@ -116,6 +138,32 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 	return m, false
 }
 
+// handleResumeCommand 展示可恢复 session；指定 ID 时提示使用 CLI 重启恢复。
+func (m *Model) handleResumeCommand(line string) {
+	id := strings.TrimSpace(strings.TrimPrefix(line, "/resume"))
+	if id != "" {
+		m.appendNotice("restart with: codeworld resume " + id)
+		return
+	}
+	sessions, err := m.rt.Store.List()
+	if err != nil {
+		m.appendError("resume error: " + err.Error())
+		return
+	}
+	if len(sessions) == 0 {
+		m.appendNotice("no sessions")
+		return
+	}
+	lines := make([]string, 0, min(len(sessions), 10))
+	for i, sess := range sessions {
+		if i >= 10 {
+			break
+		}
+		lines = append(lines, fmt.Sprintf("%s model=%s updated=%s", sess.ID, sess.Model, sess.UpdatedAt.Local().Format("2006-01-02 15:04:05")))
+	}
+	m.appendNotice(strings.Join(lines, "\n"))
+}
+
 // appendNotice 封装局部逻辑，保持调用方流程清晰。
 func (m *Model) appendNotice(text string) {
 	m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: text})
@@ -124,4 +172,22 @@ func (m *Model) appendNotice(text string) {
 // appendError 封装局部逻辑，保持调用方流程清晰。
 func (m *Model) appendError(text string) {
 	m.items = append(m.items, TranscriptItem{Kind: ItemError, Text: text})
+}
+
+// matchingSlashCommands 返回匹配当前输入前缀的 slash 命令，数量保持适合单屏展示。
+func matchingSlashCommands(prefix string) []string {
+	if prefix == "" {
+		return nil
+	}
+	matches := make([]string, 0, len(slashCommands))
+	for _, command := range slashCommands {
+		if strings.HasPrefix(command, prefix) {
+			matches = append(matches, command)
+		}
+	}
+	if prefix == "/" {
+		matches = append([]string(nil), slashCommands...)
+	}
+	sort.Strings(matches)
+	return matches
 }

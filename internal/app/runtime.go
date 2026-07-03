@@ -27,10 +27,12 @@ import (
 )
 
 type Options struct {
-	Root string
-	In   io.Reader
-	Out  io.Writer
-	Err  io.Writer
+	Root       string
+	SessionID  string
+	ResumeLast bool
+	In         io.Reader
+	Out        io.Writer
+	Err        io.Writer
 }
 
 type Runtime struct {
@@ -129,6 +131,23 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		systemPrompt += "\n\nProject instructions:\n" + projectInstructions.Text
 	}
 	store := session.NewStore(ws.Root)
+	if opts.ResumeLast {
+		sessions, err := store.List()
+		if err != nil {
+			return Runtime{}, err
+		}
+		if len(sessions) == 0 {
+			return Runtime{}, fmt.Errorf("no sessions to resume")
+		}
+		if err := store.SetCurrent(sessions[0].ID); err != nil {
+			return Runtime{}, err
+		}
+	}
+	if opts.SessionID != "" {
+		if err := store.SetCurrent(opts.SessionID); err != nil {
+			return Runtime{}, err
+		}
+	}
 	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
 	if sess.Summary != "" {
 		systemPrompt += "\n\nConversation summary:\n" + sess.Summary
