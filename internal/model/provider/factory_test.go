@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"encoding/base64"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,6 +56,36 @@ func TestNewClientCreatesLocalClientWithoutAPIKey(t *testing.T) {
 	}
 }
 
+// TestNewClientCreatesCodexClientFromStoredOAuth 验证 provider=codex 使用 workspace 中的 OAuth 凭据。
+func TestNewClientCreatesCodexClientFromStoredOAuth(t *testing.T) {
+	root := t.TempDir()
+	authDir := filepath.Join(root, ".codeworld", "auth")
+	if err := os.MkdirAll(authDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(authDir, "codex.json"), []byte(`{
+		"access":"`+makeProviderJWT("acct-1")+`",
+		"refresh":"refresh-token",
+		"expires":4102444800000,
+		"account_id":"acct-1"
+	}`), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	client, err := NewClient(Config{
+		Provider: "codex",
+		Model:    "gpt-5",
+		Root:     root,
+		LogPath:  filepath.Join(t.TempDir(), "calls.jsonl"),
+	})
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
+	if client == nil {
+		t.Fatalf("client nil")
+	}
+}
+
 // TestNewClientCreatesAnthropicClient 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientCreatesAnthropicClient(t *testing.T) {
 	client, err := NewClient(Config{
@@ -86,10 +118,24 @@ func TestNewClientRejectsMissingOpenAIAPIKey(t *testing.T) {
 	}
 }
 
+// TestNewClientRejectsMissingCodexOAuth 验证缺少 Codex OAuth 凭据时给出可执行提示。
+func TestNewClientRejectsMissingCodexOAuth(t *testing.T) {
+	_, err := NewClient(Config{Provider: "codex", Model: "gpt-5", Root: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "codeworld auth codex login") {
+		t.Fatalf("err = %v, want codex login hint", err)
+	}
+}
+
 // TestNewClientRejectsUnknownProvider 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientRejectsUnknownProvider(t *testing.T) {
 	_, err := NewClient(Config{Provider: "unknown"})
 	if err == nil || !strings.Contains(err.Error(), "unknown provider") {
 		t.Fatalf("err = %v, want unknown provider", err)
 	}
+}
+
+// makeProviderJWT 构造只供 provider factory 测试使用的 Codex JWT。
+func makeProviderJWT(accountID string) string {
+	payload := `{"https://api.openai.com/auth":{"chatgpt_account_id":"` + accountID + `"}}`
+	return "header." + base64.RawURLEncoding.EncodeToString([]byte(payload)) + ".sig"
 }

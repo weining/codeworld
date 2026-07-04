@@ -5,7 +5,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 当前版本已经具备：
 
 - 默认进入接近 Codex CLI 风格的 Bubble Tea TUI；
-- 默认使用 DeepSeek，并支持 OpenAI-compatible 与 Anthropic provider；
+- 默认使用 DeepSeek，并支持 OpenAI-compatible、Anthropic 与 Codex OAuth provider；
 - OpenAI-compatible provider 的流式输出；
 - 面向 workspace 的读写、patch、shell、git、context 和原生 web search 工具；
 - project skills、plugin tools、Codex plugin bundle 基础兼容、stdio/HTTP MCP tools、hooks 和本地子代理；
@@ -36,7 +36,7 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 
 ## 配置
 
-Codeworld 从 workspace root 读取 `.codeworld/config.toml`，provider API key 从环境变量读取。
+Codeworld 从 workspace root 读取 `.codeworld/config.toml`。API-key provider 从环境变量读取 key；Codex OAuth 使用本地登录文件。
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
@@ -71,6 +71,21 @@ ANTHROPIC_API_KEY=...
 CODEWORLD_LOCAL_BASE_URL=http://127.0.0.1:11434/v1
 ```
 
+Codex OAuth 使用 OpenClaw 风格的 ChatGPT OAuth 流程：
+
+```bash
+codeworld auth codex login
+```
+
+然后配置：
+
+```toml
+provider = "codex"
+model = "gpt-5"
+```
+
+该登录流程使用 `auth.openai.com`、PKCE、`localhost:1455/auth/callback`，并把凭据以 `0600` 权限保存到 `.codeworld/auth/codex.json`。运行时请求会走 ChatGPT backend 的 Codex Responses endpoint，不是公开 OpenAI API key endpoint。
+
 ## 使用
 
 启动 TUI：
@@ -83,6 +98,7 @@ codeworld
 
 ```bash
 codeworld tui
+codeworld auth codex login
 codeworld resume --last
 codeworld resume <session-id>
 codeworld repl
@@ -95,6 +111,7 @@ codeworld index
 
 - `codeworld`：连接到终端时默认启动 TUI；
 - `codeworld tui`：显式启动 TUI；
+- `codeworld auth codex login`：使用 ChatGPT/Codex OAuth 登录，供 `provider = "codex"` 使用；
 - `codeworld resume --last`：恢复最新的本地归档 session；
 - `codeworld resume <session-id>`：恢复指定归档 session；
 - `codeworld repl`：启动旧的行式 REPL；

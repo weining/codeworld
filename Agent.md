@@ -9,6 +9,7 @@ Codeworld is a Go coding agent with these main layers:
 - `cmd/codeworld`: CLI dispatch for TUI, REPL, one-shot run, and indexing.
 - `internal/app`: runtime assembly for config, workspace, session, model client, tools, capabilities, and context.
 - `internal/agent`: turn loop, model calls, tool calls, permission flow, and streaming turn events.
+- `internal/codexauth`: OpenClaw-style Codex OAuth login, token refresh, and credential storage.
 - `internal/model`: provider-neutral model types and provider clients.
 - `internal/tools`: workspace tools, git tools, plugin tools, MCP tool bridge, and context tools.
 - `internal/tui`: Bubble Tea interactive UI.
@@ -28,6 +29,7 @@ Codeworld is a Go coding agent with these main layers:
   - `.idea/`
   - local `codeworld` binaries
 - Do not log plaintext API keys. Model call logs may include headers only with authorization redacted.
+- Treat `.codeworld/auth/codex.json` as a secret file; never print its access or refresh token and keep file mode at `0600`.
 - Preserve compatibility for:
   - `codeworld`
   - `codeworld tui`
@@ -48,7 +50,7 @@ printf '/exit\n' | mise exec -- go run ./cmd/codeworld tui
 When a change affects model providers, include the relevant provider package tests:
 
 ```bash
-mise exec -- go test -count=1 ./internal/model ./internal/model/deepseek ./internal/model/openai ./internal/model/provider
+mise exec -- go test -count=1 ./internal/model ./internal/model/deepseek ./internal/model/openai ./internal/model/codex ./internal/model/provider ./internal/codexauth
 ```
 
 When a change affects interaction behavior, include:
@@ -68,6 +70,7 @@ mise exec -- go test -count=1 ./cmd/codeworld ./internal/agent ./internal/app ./
 - Skills are loaded from `.codeworld/skills/<name>/SKILL.md`.
 - Context graph search is deterministic lexical search, not embeddings.
 - Local subagents should use a cloned read-only runner and persist task state under `.codeworld/subagents/`; do not let child agents directly mutate the parent session history.
+- Codex OAuth follows the OpenClaw flow: `auth.openai.com`, fixed callback `localhost:1455/auth/callback`, PKCE S256, and ChatGPT backend `/codex/responses` requests with `chatgpt-account-id`.
 
 ## Documentation Updates
 

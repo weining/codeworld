@@ -6,7 +6,7 @@ inspectable foundation for a Codex- or Claude Code-style terminal assistant.
 The current version focuses on:
 
 - a Codex-like Bubble Tea TUI as the default interactive entry point;
-- DeepSeek by default, with OpenAI-compatible and Anthropic providers;
+- DeepSeek by default, with OpenAI-compatible, Anthropic, and Codex OAuth providers;
 - streaming assistant output for OpenAI-compatible providers;
 - workspace-safe tools for reading, writing, patching, shell commands, git, context search, and native web search;
 - project skills, plugin tools, stdio/HTTP MCP tools, hooks, and local subagents;
@@ -40,8 +40,8 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 
 ## Configure
 
-Codeworld reads `.codeworld/config.toml` from the workspace root and provider
-keys from the environment.
+Codeworld reads `.codeworld/config.toml` from the workspace root. API-key
+providers read keys from the environment; Codex OAuth uses a local login file.
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
@@ -76,6 +76,24 @@ ANTHROPIC_API_KEY=...
 CODEWORLD_LOCAL_BASE_URL=http://127.0.0.1:11434/v1
 ```
 
+Codex OAuth, using the same ChatGPT OAuth shape as OpenClaw:
+
+```bash
+codeworld auth codex login
+```
+
+Then configure:
+
+```toml
+provider = "codex"
+model = "gpt-5"
+```
+
+The login flow uses `auth.openai.com`, PKCE, `localhost:1455/auth/callback`,
+and stores credentials at `.codeworld/auth/codex.json` with `0600`
+permissions. Runtime calls go to the ChatGPT backend Codex Responses endpoint,
+not the public OpenAI API key endpoint.
+
 ## Use
 
 Start the TUI:
@@ -88,6 +106,7 @@ Explicit commands:
 
 ```bash
 codeworld tui
+codeworld auth codex login
 codeworld resume --last
 codeworld resume <session-id>
 codeworld repl
@@ -100,6 +119,7 @@ Command behavior:
 
 - `codeworld` starts the TUI when attached to a terminal.
 - `codeworld tui` starts the TUI explicitly.
+- `codeworld auth codex login` signs in with ChatGPT/Codex OAuth for `provider = "codex"`.
 - `codeworld resume --last` resumes the newest archived local session.
 - `codeworld resume <session-id>` resumes a specific archived session.
 - `codeworld repl` starts the line-oriented REPL.

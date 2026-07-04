@@ -183,6 +183,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		OpenAIAPIKey:    cfg.OpenAIAPIKey,
 		AnthropicAPIKey: cfg.AnthropicAPIKey,
 		LocalBaseURL:    cfg.LocalBaseURL,
+		Root:            ws.Root,
 		LogPath:         modelCallLogPath(ws.Root),
 	})
 	if err != nil {

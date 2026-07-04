@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"codeworld/internal/app"
+	"codeworld/internal/codexauth"
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/model"
 	"codeworld/internal/repl"
@@ -30,6 +31,8 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 	}
 	if len(args) > 0 {
 		switch args[0] {
+		case "auth":
+			return runAuthCommand(in, out, root, args[1:])
 		case "repl":
 			app, err := newAppWithIO(in, out, stderr, root)
 			if err != nil {
@@ -106,6 +109,18 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 		return err
 	}
 	return app.Run(context.Background())
+}
+
+func runAuthCommand(in io.Reader, out io.Writer, root string, args []string) error {
+	if len(args) == 2 && args[0] == "codex" && args[1] == "login" {
+		_, err := codexauth.Login(context.Background(), codexauth.LoginOptions{
+			Root: root,
+			In:   in,
+			Out:  out,
+		})
+		return err
+	}
+	return fmt.Errorf("usage: codeworld auth codex login")
 }
 
 func parseRunArgs(args []string) (string, []model.ContentPart, error) {
