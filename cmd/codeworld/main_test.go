@@ -160,7 +160,7 @@ func TestResumeLastRestoresNewestArchivedSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runWithIO returned error: %v", err)
 	}
-	if !strings.Contains(out.String(), "model=deepseek-v4-new") {
+	if !strings.Contains(out.String(), "deepseek-v4-new") {
 		t.Fatalf("stdout = %q, want newest session model", out.String())
 	}
 }
@@ -195,7 +195,7 @@ func TestResumeSpecificSessionID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runWithIO returned error: %v", err)
 	}
-	if !strings.Contains(out.String(), "model=deepseek-v4-resumed") {
+	if !strings.Contains(out.String(), "deepseek-v4-resumed") {
 		t.Fatalf("stdout = %q, want resumed model", out.String())
 	}
 }
@@ -275,13 +275,13 @@ func TestTUICommandStartsFullScreenAppInTestMode(t *testing.T) {
 	}
 	output := out.String()
 	for _, want := range []string{
-		"codeworld",
-		"provider=deepseek",
-		"model=deepseek-v4-pro",
-		"input=0",
-		"output=0",
-		"cache=0",
-		"total=0",
+		"CODEWORLD",
+		"deepseek",
+		"deepseek-v4-pro",
+		"0 tok",
+		"0 msg",
+		"0 approvals",
+		"Welcome to Codeworld",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("stdout missing %q in:\n%s", want, output)

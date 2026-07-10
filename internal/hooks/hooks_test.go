@@ -29,6 +29,10 @@ func TestLoadAndRunCommandHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
+	if err := runner.Run(context.Background(), "PreToolUse", Context{Tool: "shell"}); err == nil {
+		t.Fatal("Run should reject unauthorized workspace hooks")
+	}
+	runner.Enable()
 	if err := runner.Run(context.Background(), "PreToolUse", Context{Tool: "shell"}); err != nil {
 		t.Fatalf("Run returned error: %v", err)
 	}

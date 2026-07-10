@@ -152,6 +152,7 @@ func TestRunTurnRunsUserPromptSubmitHook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load hooks: %v", err)
 	}
+	hookRunner.Enable()
 	runner := Runner{
 		Model:     &fakeClient{responses: []model.GenerateResponse{{FinalText: "done"}}},
 		Tools:     tools.NewRegistry(nil, nil),
@@ -459,12 +460,15 @@ func TestRunTurnStopsAtMaxSteps(t *testing.T) {
 		MaxSteps:  1,
 	}
 
-	_, err := runner.RunTurn(context.Background(), nil, "start")
+	result, err := runner.RunTurn(context.Background(), nil, "start")
 	if err == nil {
 		t.Fatalf("RunTurn succeeded after max steps")
 	}
 	if !strings.Contains(err.Error(), "max steps") {
 		t.Fatalf("RunTurn error = %v, want max steps", err)
+	}
+	if len(result.Messages) != 4 || result.Messages[1].Content != "start" || result.Messages[3].Role != model.RoleTool {
+		t.Fatalf("partial messages = %#v, want user and completed tool call", result.Messages)
 	}
 }
 

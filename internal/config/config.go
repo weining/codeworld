@@ -3,6 +3,8 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,10 +22,12 @@ type Config struct {
 	LocalBaseURL         string
 	PluginsEnabled       bool
 	SummaryMaxMessages   int
+	SummaryMaxTokens     int
 	IndexMaxFileBytes    int
 	MCPOAuthCallbackPort int
 	MCPOAuthCallbackURL  string
 	ApprovalMode         string
+	ModelCallLogging     bool
 	MCPServers           []MCPServer
 }
 
@@ -46,6 +50,7 @@ func Default() Config {
 		MaxSteps:           20,
 		Workspace:          ".",
 		SummaryMaxMessages: 40,
+		SummaryMaxTokens:   64 * 1024,
 		IndexMaxFileBytes:  256 * 1024,
 	}
 }
@@ -61,6 +66,9 @@ func Load(root string) (Config, error) {
 			return Config{}, err
 		}
 		loadEnv(&cfg)
+		if err := validate(cfg); err != nil {
+			return Config{}, err
+		}
 		return cfg, nil
 	}
 	defer file.Close()
@@ -118,6 +126,12 @@ func Load(root string) (Config, error) {
 				return Config{}, fmt.Errorf("invalid summary_max_messages %q: %w", value, err)
 			}
 			cfg.SummaryMaxMessages = n
+		case "summary_max_tokens":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid summary_max_tokens %q: %w", value, err)
+			}
+			cfg.SummaryMaxTokens = n
 		case "index_max_file_bytes":
 			n, err := strconv.Atoi(value)
 			if err != nil {
@@ -134,6 +148,12 @@ func Load(root string) (Config, error) {
 			cfg.MCPOAuthCallbackURL = value
 		case "approval_mode":
 			cfg.ApprovalMode = value
+		case "model_call_logging":
+			enabled, err := strconv.ParseBool(value)
+			if err != nil {
+				return Config{}, fmt.Errorf("invalid model_call_logging %q: %w", value, err)
+			}
+			cfg.ModelCallLogging = enabled
 		default:
 			return Config{}, fmt.Errorf("unknown config key %q", key)
 		}
@@ -143,7 +163,42 @@ func Load(root string) (Config, error) {
 	}
 
 	loadEnv(&cfg)
+	if err := validate(cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+func validate(cfg Config) error {
+	if cfg.MaxSteps <= 0 {
+		return fmt.Errorf("max_steps must be greater than zero")
+	}
+	if cfg.SummaryMaxMessages <= 0 {
+		return fmt.Errorf("summary_max_messages must be greater than zero")
+	}
+	if cfg.SummaryMaxTokens <= 0 {
+		return fmt.Errorf("summary_max_tokens must be greater than zero")
+	}
+	if cfg.IndexMaxFileBytes <= 0 {
+		return fmt.Errorf("index_max_file_bytes must be greater than zero")
+	}
+	if cfg.Provider == "local" {
+		u, err := url.Parse(cfg.LocalBaseURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+			return fmt.Errorf("invalid local_base_url %q", cfg.LocalBaseURL)
+		}
+		host := u.Hostname()
+		ip := net.ParseIP(host)
+		if host != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return fmt.Errorf("local_base_url must use a loopback host")
+		}
+	}
+	switch cfg.ApprovalMode {
+	case "", "auto", "read-only":
+	default:
+		return fmt.Errorf("invalid or unsafe project approval_mode %q", cfg.ApprovalMode)
+	}
+	return nil
 }
 
 // setMCPServerValue 封装局部逻辑，保持调用方流程清晰。

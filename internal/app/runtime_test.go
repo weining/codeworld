@@ -57,6 +57,35 @@ func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeUsesConfiguredWorkspaceWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	workspaceRoot := filepath.Join(root, "project")
+	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeFile(t, filepath.Join(root, ".codeworld", "config.toml"), `workspace = "project"`)
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	defer rt.Close()
+	want, _ := filepath.EvalSymlinks(workspaceRoot)
+	if rt.Workspace.Root != want {
+		t.Fatalf("workspace = %q, want %q", rt.Workspace.Root, want)
+	}
+}
+
+func TestNewRuntimeRejectsConfiguredWorkspaceOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ".codeworld", "config.toml"), `workspace = ".."`)
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+	if _, err := NewRuntime(context.Background(), Options{Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}); err == nil {
+		t.Fatal("NewRuntime accepted workspace outside config root")
+	}
+}
+
 // TestRuntimeRunsLifecycleHooks 验证 runtime 启动和关闭时会触发生命周期 hook。
 func TestRuntimeRunsLifecycleHooks(t *testing.T) {
 	root := t.TempDir()
@@ -74,7 +103,7 @@ func TestRuntimeRunsLifecycleHooks(t *testing.T) {
 
 	rt, err := NewRuntime(context.Background(), Options{
 		Root: root,
-		In:   &bytes.Buffer{},
+		In:   strings.NewReader("a\na\n"),
 		Out:  &bytes.Buffer{},
 		Err:  &bytes.Buffer{},
 	})
@@ -84,12 +113,22 @@ func TestRuntimeRunsLifecycleHooks(t *testing.T) {
 	if err := rt.Close(); err != nil {
 		t.Fatalf("Close returned error: %v", err)
 	}
+	if err := rt.Close(); err != nil {
+		t.Fatalf("second Close returned error: %v", err)
+	}
 	data, err := os.ReadFile(filepath.Join(root, "lifecycle.out"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
 	if string(data) != "startstop" {
 		t.Fatalf("hook output = %q, want startstop", data)
+	}
+	saved, err := session.NewStore(rt.Workspace.Root).LoadCurrent()
+	if err != nil || len(saved.Approvals) != 2 {
+		t.Fatalf("hook approvals = %#v, err=%v, want two persisted commands", saved.Approvals, err)
+	}
+	if _, err := NewRuntime(context.Background(), Options{Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}); err == nil {
+		t.Fatal("NewRuntime trusted approvals loaded from workspace session")
 	}
 }
 
@@ -123,6 +162,71 @@ func TestNewRuntimeRestoresSessionMessagesAndUsage(t *testing.T) {
 	}
 	if rt.Usage.InputTokens != 10 || rt.Usage.OutputTokens != 2 || rt.Usage.CacheTokens != 3 || rt.Usage.TotalTokens != 12 {
 		t.Fatalf("usage = %#v, want restored session usage", rt.Usage)
+	}
+}
+
+func TestNewRuntimeRejectsCorruptCurrentSession(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ".codeworld", "current-session.json"), `{not-json`)
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	_, err := NewRuntime(context.Background(), Options{Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}})
+	if err == nil || !strings.Contains(err.Error(), "load current session") {
+		t.Fatalf("NewRuntime error = %v, want corrupt session error", err)
+	}
+}
+
+func TestNewRuntimeRehydratesPersistedImageFromPath(t *testing.T) {
+	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	imagePath := filepath.Join(root, "image.png")
+	writeFile(t, imagePath, "png")
+	store := session.NewStore(canonicalRoot)
+	sess := session.New(canonicalRoot, "deepseek", "deepseek-v4-pro")
+	sess.Messages = []session.Message{{Role: "user", Parts: []session.ContentPart{{Type: "image", MediaType: "image/png", Path: imagePath}}}}
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	defer rt.Close()
+	part := rt.Messages[0].Parts[0]
+	if part.Data == "" || part.ImageURL == "" {
+		t.Fatalf("image part was not rehydrated: %#v", part)
+	}
+}
+
+func TestNewRuntimeDoesNotRehydrateImageOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	outsidePath := filepath.Join(t.TempDir(), "secret.png")
+	writeFile(t, outsidePath, "secret")
+	store := session.NewStore(canonicalRoot)
+	sess := session.New(canonicalRoot, "deepseek", "deepseek-v4-pro")
+	sess.Messages = []session.Message{{Role: "user", Parts: []session.ContentPart{{Type: "image", MediaType: "image/png", Path: outsidePath}}}}
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	rt, err := NewRuntime(context.Background(), Options{Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	defer rt.Close()
+	part := rt.Messages[0].Parts[0]
+	if part.Type != "text" || !strings.Contains(part.Text, "image unavailable") || part.Data != "" {
+		t.Fatalf("outside image was restored: %#v", part)
 	}
 }
 
@@ -390,7 +494,7 @@ args = ["-test.run=TestNewRuntimeRegistersMCPTools"]
 
 	rt, err := NewRuntime(context.Background(), Options{
 		Root: root,
-		In:   &bytes.Buffer{},
+		In:   strings.NewReader("a\n"),
 		Out:  &bytes.Buffer{},
 		Err:  &bytes.Buffer{},
 	})

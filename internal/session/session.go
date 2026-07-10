@@ -55,19 +55,20 @@ type Usage struct {
 }
 
 type Session struct {
-	ID        string      `json:"id"`
-	Workspace string      `json:"workspace"`
-	Provider  string      `json:"provider"`
-	Model     string      `json:"model"`
-	Messages  []Message   `json:"messages"`
-	Summary   string      `json:"summary,omitempty"`
-	Goal      string      `json:"goal,omitempty"`
-	Mode      string      `json:"mode,omitempty"`
-	Tools     []ToolEvent `json:"tools"`
-	Approvals []Approval  `json:"approvals,omitempty"`
-	Usage     Usage       `json:"usage,omitempty"`
-	CreatedAt time.Time   `json:"created_at"`
-	UpdatedAt time.Time   `json:"updated_at"`
+	ID           string      `json:"id"`
+	Workspace    string      `json:"workspace"`
+	Provider     string      `json:"provider"`
+	Model        string      `json:"model"`
+	Messages     []Message   `json:"messages"`
+	Summary      string      `json:"summary,omitempty"`
+	Goal         string      `json:"goal,omitempty"`
+	Mode         string      `json:"mode,omitempty"`
+	ApprovalMode string      `json:"approval_mode,omitempty"`
+	Tools        []ToolEvent `json:"tools"`
+	Approvals    []Approval  `json:"approvals,omitempty"`
+	Usage        Usage       `json:"usage,omitempty"`
+	CreatedAt    time.Time   `json:"created_at"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 type Store struct {
@@ -117,10 +118,12 @@ func (s Store) SaveCurrent(sess Session) error {
 	}
 	data = append(data, '\n')
 
-	if err := writeSessionFile(currentPath, data); err != nil {
+	// Publish the archive first so current-session never points at a state that
+	// was not durably archived.
+	if err := writeSessionFile(archivePath, data); err != nil {
 		return err
 	}
-	return writeSessionFile(archivePath, data)
+	return writeSessionFile(currentPath, data)
 }
 
 // List 读取归档 session，并按更新时间从新到旧排序。
@@ -208,10 +211,28 @@ func writeSessionFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".session-*")
+	if err != nil {
 		return err
 	}
-	return os.Chmod(path, 0o600)
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // newID 封装局部逻辑，保持调用方流程清晰。

@@ -1,12 +1,15 @@
 package app
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"codeworld/internal/agent"
 	"codeworld/internal/capability"
@@ -38,21 +41,29 @@ type Options struct {
 }
 
 type Runtime struct {
-	Config     config.Config
-	Workspace  workspace.Workspace
-	Store      session.Store
-	Session    session.Session
-	Messages   []model.Message
-	Usage      model.Usage
-	Skills     []skill.Skill
-	MCPClients []*mcp.Client
-	Subagents  *subagent.Manager
-	Runner     agent.Runner
-	Hooks      *hooks.Runner
-	Diff       func(context.Context) (string, error)
-	In         io.Reader
-	Out        io.Writer
-	Err        io.Writer
+	Config           config.Config
+	Workspace        workspace.Workspace
+	Store            session.Store
+	Session          session.Session
+	Messages         []model.Message
+	Usage            model.Usage
+	Skills           []skill.Skill
+	MCPClients       []*mcp.Client
+	Subagents        *subagent.Manager
+	Runner           agent.Runner
+	ChildRunner      *agent.Runner
+	Hooks            *hooks.Runner
+	BaseSystemPrompt string
+	Diff             func(context.Context) (string, error)
+	In               io.Reader
+	Out              io.Writer
+	Err              io.Writer
+	closer           *runtimeCloser
+}
+
+type runtimeCloser struct {
+	once sync.Once
+	err  error
 }
 
 // SaveTurn 持久化当前状态，并处理路径、权限或归档细节。
@@ -66,21 +77,63 @@ func (r *Runtime) SaveTurn(result agent.TurnResult) error {
 
 // Close 释放持有的资源，避免后台进程或句柄泄漏。
 func (r *Runtime) Close() error {
-	if r.Hooks != nil {
-		_ = r.Hooks.Run(context.Background(), "Stop", hooks.Context{})
+	if r.closer == nil {
+		return r.closeResources()
 	}
-	capability.CloseClients(r.MCPClients)
-	return nil
+	r.closer.once.Do(func() { r.closer.err = r.closeResources() })
+	return r.closer.err
+}
+
+func (r *Runtime) closeResources() error {
+	var errs []error
+	if r.Subagents != nil {
+		if err := r.Subagents.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if r.Hooks != nil {
+		if err := r.Hooks.Run(context.Background(), "Stop", hooks.Context{}); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if err := capability.CloseClients(r.MCPClients); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+// RefreshSystemPrompt rebuilds mutable goal, mode, and summary context.
+func (r *Runtime) RefreshSystemPrompt() {
+	prompt := r.SystemPromptFor(r.Session)
+	r.Runner.SystemPrompt = prompt
+	if r.ChildRunner != nil {
+		r.ChildRunner.SystemPrompt = prompt + "\n\nSubagent mode:\nYou are a local read-only subagent. Investigate independently, avoid editing files, and return concise findings for the parent agent."
+	}
+}
+
+// SystemPromptFor renders a prompt for a session snapshot.
+func (r *Runtime) SystemPromptFor(sess session.Session) string {
+	return composeSystemPrompt(r.BaseSystemPrompt, sess)
+}
+
+// SetModel keeps parent and subagent runners aligned with the session model.
+func (r *Runtime) SetModel(name string) {
+	r.Session.Model = name
+	r.Runner.ModelName = name
+	if r.ChildRunner != nil {
+		r.ChildRunner.ModelName = name
+	}
 }
 
 // MaybeSummarize 在会话过长时压缩旧历史，降低后续模型调用的上下文压力。
 func (r *Runtime) MaybeSummarize(ctx context.Context) error {
-	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, r.Usage, summarizer.Options{MaxMessages: r.Config.SummaryMaxMessages}) {
+	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, summarizer.Options{MaxMessages: r.Config.SummaryMaxMessages, MaxTokens: r.Config.SummaryMaxTokens}) {
 		return nil
 	}
 	// 摘要只压缩较早的对话，保留最近若干轮原文，避免工具调用上下文被过度概括。
 	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
 		MaxMessages: r.Config.SummaryMaxMessages,
+		MaxTokens:   r.Config.SummaryMaxTokens,
 		KeepRecent:  20,
 	})
 	if err != nil {
@@ -89,6 +142,7 @@ func (r *Runtime) MaybeSummarize(ctx context.Context) error {
 	r.Session.Summary = summary
 	r.Messages = recent
 	r.Session.Messages = modelMessagesToSession(recent)
+	r.RefreshSystemPrompt()
 	return r.Store.SaveCurrent(r.Session)
 }
 
@@ -109,7 +163,18 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if err != nil {
 		return Runtime{}, err
 	}
-	ws, err := workspace.New(root)
+	configRoot, err := workspace.New(root)
+	if err != nil {
+		return Runtime{}, err
+	}
+	workspaceRoot := configRoot.Root
+	if cfg.Workspace != "" && cfg.Workspace != "." {
+		workspaceRoot, err = configRoot.Resolve(cfg.Workspace)
+		if err != nil {
+			return Runtime{}, fmt.Errorf("resolve configured workspace: %w", err)
+		}
+	}
+	ws, err := workspace.New(workspaceRoot)
 	if err != nil {
 		return Runtime{}, err
 	}
@@ -137,13 +202,6 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if projectInstructions.Text != "" {
 		systemPrompt += "\n\nProject instructions:\n" + projectInstructions.Text
 	}
-	hookRunner, err := hooks.Load(ws.Root)
-	if err != nil {
-		return Runtime{}, err
-	}
-	if err := hookRunner.Run(ctx, "SessionStart", hooks.Context{}); err != nil {
-		return Runtime{}, err
-	}
 	store := session.NewStore(ws.Root)
 	if opts.ResumeLast {
 		sessions, err := store.List()
@@ -162,19 +220,48 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return Runtime{}, err
 		}
 	}
-	sess := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
-	if sess.Summary != "" {
-		systemPrompt += "\n\nConversation summary:\n" + sess.Summary
+	sess, err := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
+	if err != nil {
+		return Runtime{}, err
 	}
-	if sess.Goal != "" {
-		systemPrompt += "\n\nCurrent goal:\n" + sess.Goal
-	}
-	if sess.Mode == "plan" {
-		systemPrompt += "\n\nPlan mode:\nBefore making code changes, propose a concise implementation plan and wait for explicit approval unless the user has already approved the plan."
-	}
-	messages := sanitizeModelMessages(sessionMessagesToModel(sess.Messages))
+	// Approvals are process-local trust decisions. Do not trust approvals read
+	// from a workspace-controlled session file after a restart.
+	sess.Approvals = nil
+	sess.ApprovalMode = ""
+	messages := sanitizeModelMessages(sessionMessagesToModel(sess.Messages, ws))
 	sess.Messages = modelMessagesToSession(messages)
+	confirmationIn := opts.In
+	if confirmationIn != nil {
+		if _, ok := confirmationIn.(*bufio.Reader); !ok {
+			confirmationIn = bufio.NewReader(confirmationIn)
+		}
+	}
+	confirmer := repl.Confirmer{In: confirmationIn, Out: opts.Out, Approvals: &sess.Approvals}
+	authorizeExternal := func(ctx context.Context, req permissions.Request) error {
+		allowed, err := confirmer.Confirm(ctx, req, permissions.Decision{Kind: permissions.DecisionAsk, Reason: req.Reason})
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return fmt.Errorf("permission denied: %s", req.Reason)
+		}
+		return nil
+	}
+	hookRunner, err := hooks.Load(ws.Root)
+	if err != nil {
+		return Runtime{}, err
+	}
+	for _, command := range hookRunner.Commands() {
+		if err := authorizeExternal(ctx, permissions.Request{Action: permissions.ActionShell, Target: command, Risk: permissions.RiskExecute, Reason: "run workspace hook"}); err != nil {
+			return Runtime{}, err
+		}
+	}
+	hookRunner.Enable()
 	modelName := firstNonEmpty(sess.Model, cfg.Model)
+	logPath := ""
+	if cfg.ModelCallLogging {
+		logPath = modelCallLogPath(ws.Root)
+	}
 	// provider client 负责隐藏各家 API 差异；Runtime 只关心统一的 Generate/Stream 接口。
 	client, err := provider.NewClient(provider.Config{
 		Provider:        cfg.Provider,
@@ -184,44 +271,56 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		AnthropicAPIKey: cfg.AnthropicAPIKey,
 		LocalBaseURL:    cfg.LocalBaseURL,
 		Root:            ws.Root,
-		LogPath:         modelCallLogPath(ws.Root),
+		LogPath:         logPath,
 	})
 	if err != nil {
 		return Runtime{}, err
 	}
 	// capability loader 会合并原生 skill、Codex plugin 和 MCP 工具，再统一注册进工具表。
 	loadedCapabilities, err := capability.Load(ctx, capability.Options{
-		Root:           ws.Root,
-		Workspace:      ws,
-		PluginsEnabled: cfg.PluginsEnabled,
-		MCPServers:     cfg.MCPServers,
+		Root:              ws.Root,
+		Workspace:         ws,
+		PluginsEnabled:    cfg.PluginsEnabled,
+		MCPServers:        cfg.MCPServers,
+		AuthorizeExternal: authorizeExternal,
 	})
 	if err != nil {
 		return Runtime{}, err
 	}
 	registry := tools.NewDefaultRegistry(ws)
 	for _, tool := range loadedCapabilities.Tools {
-		registry.Register(tool)
+		if err := registry.RegisterChecked(tool); err != nil {
+			_ = capability.CloseClients(loadedCapabilities.MCPClients)
+			return Runtime{}, err
+		}
 	}
 	if len(loadedCapabilities.Skills) > 0 {
-		registry.Register(tools.NewSkillOpenTool(loadedCapabilities.Skills))
+		if err := registry.RegisterChecked(tools.NewSkillOpenTool(loadedCapabilities.Skills)); err != nil {
+			_ = capability.CloseClients(loadedCapabilities.MCPClients)
+			return Runtime{}, err
+		}
 	}
 	if loadedCapabilities.SkillContext != "" {
 		systemPrompt += "\n\n" + loadedCapabilities.SkillContext
 	}
 	diffTool := tools.NewGitDiffTool(ws)
 
-	confirmer := repl.Confirmer{In: opts.In, Out: opts.Out}
-	approvalMode := permissions.Mode(firstNonEmpty(cfg.ApprovalMode, string(permissions.ModeAuto)))
+	approvalMode := permissions.Mode(firstNonEmpty(sess.ApprovalMode, cfg.ApprovalMode, string(permissions.ModeAuto)))
 	childRegistry := tools.NewDefaultRegistry(ws)
 	for _, tool := range loadedCapabilities.Tools {
-		childRegistry.Register(tool)
+		if err := childRegistry.RegisterChecked(tool); err != nil {
+			_ = capability.CloseClients(loadedCapabilities.MCPClients)
+			return Runtime{}, err
+		}
 	}
 	if len(loadedCapabilities.Skills) > 0 {
-		childRegistry.Register(tools.NewSkillOpenTool(loadedCapabilities.Skills))
+		if err := childRegistry.RegisterChecked(tools.NewSkillOpenTool(loadedCapabilities.Skills)); err != nil {
+			_ = capability.CloseClients(loadedCapabilities.MCPClients)
+			return Runtime{}, err
+		}
 	}
-	var childRunner agent.Runner
-	subagentManager, err := subagent.NewManager(ws.Root, func(ctx context.Context, prompt string) (subagent.RunResult, error) {
+	childRunner := &agent.Runner{}
+	subagentManager, err := subagent.NewManagerWithContext(ctx, ws.Root, func(ctx context.Context, prompt string) (subagent.RunResult, error) {
 		result, err := childRunner.RunTurn(ctx, nil, prompt)
 		if err != nil {
 			return subagent.RunResult{}, err
@@ -231,16 +330,24 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if err != nil {
 		return Runtime{}, err
 	}
-	registry.Register(subagent.NewStartTool(subagentManager))
-	registry.Register(subagent.NewStatusTool(subagentManager))
-	childRunner = agent.Runner{
+	if err := registry.RegisterChecked(subagent.NewStartTool(subagentManager)); err != nil {
+		_ = subagentManager.Close()
+		_ = capability.CloseClients(loadedCapabilities.MCPClients)
+		return Runtime{}, err
+	}
+	if err := registry.RegisterChecked(subagent.NewStatusTool(subagentManager)); err != nil {
+		_ = subagentManager.Close()
+		_ = capability.CloseClients(loadedCapabilities.MCPClients)
+		return Runtime{}, err
+	}
+	*childRunner = agent.Runner{
 		Model:        client,
 		Tools:        childRegistry,
 		Policy:       permissions.ModePolicy{Mode: permissions.ModeReadOnly},
 		Hooks:        hookRunner,
 		MaxSteps:     cfg.MaxSteps,
 		ModelName:    modelName,
-		SystemPrompt: systemPrompt + "\n\nSubagent mode:\nYou are a local read-only subagent. Investigate independently, avoid editing files, and return concise findings for the parent agent.",
+		SystemPrompt: composeSystemPrompt(systemPrompt, sess) + "\n\nSubagent mode:\nYou are a local read-only subagent. Investigate independently, avoid editing files, and return concise findings for the parent agent.",
 	}
 	runner := agent.Runner{
 		Model:        client,
@@ -250,7 +357,17 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		Hooks:        hookRunner,
 		MaxSteps:     cfg.MaxSteps,
 		ModelName:    modelName,
-		SystemPrompt: systemPrompt,
+		SystemPrompt: composeSystemPrompt(systemPrompt, sess),
+	}
+	if err := store.SaveCurrent(sess); err != nil {
+		_ = subagentManager.Close()
+		_ = capability.CloseClients(loadedCapabilities.MCPClients)
+		return Runtime{}, err
+	}
+	if err := hookRunner.Run(ctx, "SessionStart", hooks.Context{}); err != nil {
+		_ = subagentManager.Close()
+		_ = capability.CloseClients(loadedCapabilities.MCPClients)
+		return Runtime{}, err
 	}
 	return Runtime{
 		Config:    cfg,
@@ -264,14 +381,17 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			CacheTokens:  sess.Usage.CacheTokens,
 			TotalTokens:  sess.Usage.TotalTokens,
 		},
-		Skills:     loadedCapabilities.Skills,
-		MCPClients: loadedCapabilities.MCPClients,
-		Subagents:  subagentManager,
-		Runner:     runner,
-		Hooks:      hookRunner,
-		In:         opts.In,
-		Out:        opts.Out,
-		Err:        opts.Err,
+		Skills:           loadedCapabilities.Skills,
+		MCPClients:       loadedCapabilities.MCPClients,
+		Subagents:        subagentManager,
+		Runner:           runner,
+		ChildRunner:      childRunner,
+		Hooks:            hookRunner,
+		BaseSystemPrompt: systemPrompt,
+		In:               opts.In,
+		Out:              opts.Out,
+		Err:              opts.Err,
+		closer:           &runtimeCloser{},
 		Diff: func(ctx context.Context) (string, error) {
 			result, err := diffTool.Execute(ctx, json.RawMessage(`{}`))
 			return result.Content, err
@@ -294,6 +414,7 @@ func (r *Runtime) Compact(ctx context.Context) (string, error) {
 	}
 	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
 		MaxMessages: r.Config.SummaryMaxMessages,
+		MaxTokens:   r.Config.SummaryMaxTokens,
 		KeepRecent:  20,
 	})
 	if err != nil {
@@ -303,6 +424,7 @@ func (r *Runtime) Compact(ctx context.Context) (string, error) {
 	r.Session.Summary = summary
 	r.Messages = recent
 	r.Session.Messages = modelMessagesToSession(recent)
+	r.RefreshSystemPrompt()
 	if err := r.Store.SaveCurrent(r.Session); err != nil {
 		return "", err
 	}
@@ -315,25 +437,42 @@ func (r *Runtime) Compact(ctx context.Context) (string, error) {
 }
 
 // loadOrCreateSession 复用同 workspace/provider 的当前会话，否则创建新的会话状态。
-func loadOrCreateSession(store session.Store, workspaceRoot, provider, modelName string) session.Session {
+func loadOrCreateSession(store session.Store, workspaceRoot, provider, modelName string) (session.Session, error) {
 	sess, err := store.LoadCurrent()
 	if err == nil && sess.Workspace == workspaceRoot && sess.Provider == provider {
 		if sess.Model == "" {
 			sess.Model = modelName
 		}
-		return sess
+		return sess, nil
 	}
-	return session.New(workspaceRoot, provider, modelName)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return session.Session{}, fmt.Errorf("load current session: %w", err)
+	}
+	return session.New(workspaceRoot, provider, modelName), nil
+}
+
+func composeSystemPrompt(base string, sess session.Session) string {
+	prompt := base
+	if sess.Summary != "" {
+		prompt += "\n\nConversation summary:\n" + sess.Summary
+	}
+	if sess.Goal != "" {
+		prompt += "\n\nCurrent goal:\n" + sess.Goal
+	}
+	if sess.Mode == "plan" {
+		prompt += "\n\nPlan mode:\nBefore making code changes, propose a concise implementation plan and wait for explicit approval unless the user has already approved the plan."
+	}
+	return prompt
 }
 
 // sessionMessagesToModel 把持久化会话消息转换为模型层消息结构。
-func sessionMessagesToModel(messages []session.Message) []model.Message {
+func sessionMessagesToModel(messages []session.Message, ws workspace.Workspace) []model.Message {
 	out := make([]model.Message, 0, len(messages))
 	for _, msg := range messages {
 		out = append(out, model.Message{
 			Role:       model.Role(msg.Role),
 			Content:    msg.Content,
-			Parts:      sessionContentPartsToModel(msg.Parts),
+			Parts:      sessionContentPartsToModel(msg.Parts, ws),
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  sessionToolCallsToModel(msg.ToolCalls),
 		})
@@ -395,17 +534,31 @@ func modelMessagesToSession(messages []model.Message) []session.Message {
 }
 
 // sessionContentPartsToModel 把 session 中的多模态内容恢复为模型消息块。
-func sessionContentPartsToModel(parts []session.ContentPart) []model.ContentPart {
+func sessionContentPartsToModel(parts []session.ContentPart, ws workspace.Workspace) []model.ContentPart {
 	out := make([]model.ContentPart, 0, len(parts))
 	for _, part := range parts {
-		out = append(out, model.ContentPart{
+		restored := model.ContentPart{
 			Type:      model.ContentPartType(part.Type),
 			Text:      part.Text,
 			ImageURL:  part.ImageURL,
 			MediaType: part.MediaType,
 			Data:      part.Data,
 			Path:      part.Path,
-		})
+		}
+		if restored.Type == model.ContentPartImage && restored.ImageURL == "" && restored.Data == "" && restored.Path != "" {
+			path, err := ws.Resolve(restored.Path)
+			if err != nil {
+				restored = model.TextPart("[image unavailable: " + restored.Path + "]")
+			} else {
+				image, err := model.ImagePartFromFile(path)
+				if err != nil {
+					restored = model.TextPart("[image unavailable: " + restored.Path + "]")
+				} else {
+					restored = image
+				}
+			}
+		}
+		out = append(out, restored)
 	}
 	return out
 }

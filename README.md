@@ -55,7 +55,9 @@ model = "deepseek-v4-pro"
 max_steps = 20
 plugins_enabled = true
 summary_max_messages = 40
+summary_max_tokens = 65536
 index_max_file_bytes = 262144
+model_call_logging = false
 ```
 
 MCP servers can also be configured in the same file:
@@ -136,9 +138,9 @@ go run ./cmd/codeworld run "list the Go packages"
 
 ## TUI Commands
 
-The TUI uses a Codex-like terminal layout: a single-line status header, a
-role-aligned transcript, inline tool and permission events, and a bordered
-bottom composer with shortcut hints.
+The TUI uses a responsive terminal layout with a compact two-line status
+header, an empty-workspace welcome state, visually distinct conversation/tool/
+permission blocks, and a state-aware bordered composer with shortcut hints.
 
 Inside the TUI:
 
@@ -372,15 +374,16 @@ use:
 codeworld run --image screenshot.png "explain this screenshot"
 ```
 
-DeepSeek text models currently return a clear unsupported-image error when an
-image is attached.
+DeepSeek text models and the Codex OAuth provider currently return a clear
+unsupported-image error when an image is attached. Persisted local images are
+reloaded from their original path when a session resumes.
 
 ## Permissions
 
 Every tool exposes a permission request with an action, target, risk, and
-reason. The default runtime uses an auto policy that allows ordinary workspace
-actions but still asks for high-risk actions such as destructive or networked
-shell commands and web search. The TUI shows permission prompts inline and
+reason. The default runtime uses an auto policy that allows structured
+workspace reads and writes, but asks before shell, MCP, and
+plugin execution as well as destructive or networked actions. The TUI shows permission prompts inline and
 supports allowing once, denying, or approving similar shell commands for the
 current session.
 
@@ -388,13 +391,17 @@ Approval modes:
 
 - `auto`: allow ordinary workspace actions and ask for high-risk actions.
 - `read-only`: allow reads and ask before writes, patches, or commands.
-- `full-access`: allow in-workspace and network actions without prompting.
+- `full-access`: allow in-workspace and network actions without prompting for
+  the current process only.
 
 Set the default in `.codeworld/config.toml`:
 
 ```toml
 approval_mode = "auto"
 ```
+
+Project config accepts only `auto` and `read-only`; select `full-access`
+interactively when it is intentionally needed.
 
 ## Hooks
 
@@ -418,8 +425,11 @@ startup, user prompts, tool use, compaction, and shutdown. Supported events are
 }
 ```
 
-This is not full sandbox parity with Codex yet. Fine-grained filesystem
-profiles, network policy, and hook trust remain future work.
+Every unique workspace hook command requires explicit approval before
+`SessionStart`; choosing the session approval option remembers the exact
+command for the current process. Persisted workspace session files are never
+trusted as an approval source after restart. Hook timeouts default to 60 seconds. This is not full sandbox parity
+with Codex yet; fine-grained filesystem and network profiles remain future work.
 
 ## Logs And State
 
@@ -434,7 +444,9 @@ Important files:
 .codeworld/logs/model-calls.jsonl
 ```
 
-Model call logs keep compact `body_json` records and redact API keys.
+Model call logs are disabled by default. Set `model_call_logging = true` to
+write compact `body_json` records; API keys are redacted, but prompts and tool
+results may still contain sensitive workspace data.
 
 ## Limitations
 

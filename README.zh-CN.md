@@ -50,7 +50,9 @@ model = "deepseek-v4-pro"
 max_steps = 20
 plugins_enabled = true
 summary_max_messages = 40
+summary_max_tokens = 65536
 index_max_file_bytes = 262144
+model_call_logging = false
 ```
 
 配置 stdio MCP server：
@@ -128,7 +130,7 @@ go run ./cmd/codeworld run "list the Go packages"
 
 ## TUI 命令
 
-TUI 使用接近 Codex CLI 的终端布局：顶部单行状态栏、按角色对齐的 transcript、内联工具和权限事件、带边框的底部输入区以及快捷键提示。
+TUI 使用响应式终端布局：顶部紧凑双行状态栏、空会话欢迎卡片、视觉上明确区分的对话/工具/权限区块，以及会显示运行、附件和授权状态的底部输入区。
 
 进入 TUI 后可以输入：
 
@@ -356,11 +358,11 @@ OpenAI-compatible 和 Anthropic provider 可以接收图片 content parts。TUI 
 codeworld run --image screenshot.png "explain this screenshot"
 ```
 
-DeepSeek 文本模型当前不支持图片输入；附加图片时会返回明确的 unsupported-image 错误。
+DeepSeek 文本模型和 Codex OAuth provider 当前不支持图片输入；附加图片时会返回明确的 unsupported-image 错误。恢复 session 时，本地图片会从原始路径重新加载。
 
 ## 权限
 
-每个工具都会声明权限请求，包括 action、target、risk 和 reason。默认 runtime 使用 auto policy：普通 workspace 操作会自动允许，高风险操作如破坏性 shell、网络 shell 或 web search 会要求确认。
+每个工具都会声明权限请求，包括 action、target、risk 和 reason。默认 runtime 使用 auto policy：结构化的 workspace 读写会自动允许，shell、MCP、plugin 执行以及破坏性或网络操作会要求确认。
 
 TUI 会内联展示权限请求，并支持：
 
@@ -368,19 +370,21 @@ TUI 会内联展示权限请求，并支持：
 - 拒绝；
 - 对类似 shell 命令在当前 session 内批准。
 
-这还不是完整 Codex sandbox。细粒度 filesystem profiles、network policy 和 hook trust 是后续工作。
+这还不是完整 Codex sandbox。细粒度 filesystem profiles 和 network policy 仍是后续工作。
 
 权限模式：
 
 - `auto`：普通 workspace 操作自动允许，高风险操作询问；
 - `read-only`：读操作自动允许，写入、patch、命令执行前询问；
-- `full-access`：workspace 和网络操作默认允许。
+- `full-access`：仅在当前进程内允许 workspace 和网络操作。
 
 可以在 `.codeworld/config.toml` 中设置默认模式：
 
 ```toml
 approval_mode = "auto"
 ```
+
+项目配置只接受 `auto` 和 `read-only`；确实需要时请在交互界面临时选择 `full-access`。
 
 ## Hooks
 
@@ -401,6 +405,8 @@ Codeworld 可以从 `.codeworld/hooks.json` 读取命令型 hooks，并在 sessi
 }
 ```
 
+每条唯一的 workspace hook 命令都会在 `SessionStart` 前要求显式批准；选择 session 批准会在当前进程内记住该精确命令。重启后不会把 workspace session 文件中的批准当作可信输入。未配置 timeout 时默认限制为 60 秒。
+
 ## 日志和状态
 
 workspace 状态保存在 `.codeworld/`：
@@ -412,7 +418,8 @@ workspace 状态保存在 `.codeworld/`：
 .codeworld/logs/model-calls.jsonl
 ```
 
-模型调用日志只记录 compact `body_json`，并会隐藏 API key。
+模型调用日志默认关闭。设置 `model_call_logging = true` 后会记录 compact
+`body_json` 并隐藏 API key，但提示词和工具结果仍可能包含 workspace 敏感信息。
 
 ## 限制
 

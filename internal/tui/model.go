@@ -19,6 +19,7 @@ import (
 )
 
 type Model struct {
+	ctx               context.Context
 	rt                *app.Runtime
 	adapter           RunnerAdapter
 	toolEvents        <-chan TranscriptItem
@@ -41,20 +42,21 @@ type Model struct {
 // NewModel 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewModel(rt *app.Runtime) Model {
 	input := textarea.New()
-	input.Placeholder = "Ask codeworld..."
-	input.Prompt = "> "
+	input.Placeholder = "Describe a task or type / for commands"
+	input.Prompt = "› "
 	input.ShowLineNumbers = false
 	input.EndOfBufferCharacter = ' '
-	input.SetHeight(3)
+	input.SetHeight(2)
+	input.SetWidth(76)
 	input.Focus()
-	vp := viewport.New(80, 20)
+	vp := viewport.New(80, 13)
 	reporter := NewToolReporter()
 	confirmer := NewTUIConfirmer()
 	turnEvents := make(chan agent.TurnEvent, 64)
 	rt.Runner.Reporter = reporter
 	rt.Runner.Confirmer = confirmer
 	// TUI 用 channel 接收 agent 事件，避免模型流式输出阻塞 Bubble Tea 的按键和绘制循环。
-	m := Model{rt: rt, adapter: NewRunnerAdapter(rt, turnEvents), toolEvents: reporter.Events(), turnEvents: turnEvents, confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24, theme: "system", historyIndex: -1}
+	m := Model{ctx: context.Background(), rt: rt, adapter: NewRunnerAdapter(rt, turnEvents), toolEvents: reporter.Events(), turnEvents: turnEvents, confirmer: confirmer, input: input, viewport: vp, width: 80, height: 24, theme: "system", historyIndex: -1}
 	m.refreshViewport()
 	return m
 }
@@ -91,7 +93,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.viewport.Width = msg.Width
-		m.viewport.Height = max(3, msg.Height-7)
+		m.viewport.Height = max(3, msg.Height-11)
 		m.input.SetWidth(max(10, msg.Width-4))
 		m.refreshViewport()
 		return m, nil
@@ -140,12 +142,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.restorePromptHistory(1)
 			return m, nil
 		case "enter":
+			if m.running {
+				return m, nil
+			}
 			text := strings.TrimSpace(m.input.Value())
 			if text != "" {
 				m.recordPrompt(text)
 				if strings.HasPrefix(text, "/") {
 					m.items = append(m.items, TranscriptItem{Kind: ItemUser, Text: text})
-					next, quit := m.handleSlashCommand(context.Background(), text)
+					next, quit := m.handleSlashCommand(m.ctx, text)
 					if quit {
 						next.quitting = true
 						return next, tea.Quit
@@ -164,9 +169,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, func() tea.Msg {
 					if len(images) > 0 {
 						userMessage := model.Message{Role: model.RoleUser, Content: prompt, Parts: append([]model.ContentPart{model.TextPart(prompt)}, images...)}
-						return m.adapter.RunTurnMessage(context.Background(), userMessage)
+						return m.adapter.RunTurnMessage(m.ctx, userMessage)
 					}
-					return m.adapter.RunTurn(context.Background(), prompt)
+					return m.adapter.RunTurn(m.ctx, prompt)
 				}
 			}
 			return m, nil
@@ -183,13 +188,24 @@ func (m Model) View() string {
 		return ""
 	}
 	header := m.renderHeader()
-	body := m.viewport.View()
 	composer := m.renderComposer()
+	bodyHeight := max(3, m.height-lipgloss.Height(header)-lipgloss.Height(composer)-2)
+	viewport := m.viewport
+	viewport.Height = bodyHeight
+	body := viewport.View()
+	if len(m.items) == 0 {
+		body = m.renderWelcome(bodyHeight)
+	}
 	return fmt.Sprintf("%s\n%s\n%s", header, body, composer)
 }
 
 // refreshViewport 重新渲染 transcript，并把滚动位置保持在最新消息底部。
 func (m *Model) refreshViewport() {
+	if len(m.items) == 0 {
+		m.viewport.SetContent("")
+		m.viewport.GotoTop()
+		return
+	}
 	blocks := make([]string, 0, len(m.items))
 	for _, item := range m.items {
 		blocks = append(blocks, m.renderTranscriptItem(item))
@@ -198,75 +214,141 @@ func (m *Model) refreshViewport() {
 	m.viewport.GotoBottom()
 }
 
-// renderHeader 渲染接近 Codex CLI 的状态栏，窄屏时拆出 token 行。
+// renderHeader 渲染紧凑的品牌、运行状态和会话指标。
 func (m Model) renderHeader() string {
 	status := RuntimeStatus(m.rt)
 	status.Running = m.running
 	status.Workspace = filepath.Base(status.Workspace)
-	title := lipgloss.NewStyle().Bold(true).Render("codeworld")
-	full := title + "  " + HeaderStatusLine(status)
-	if m.width <= 0 || lipgloss.Width(full) <= m.width {
-		return m.fitLine(full)
-	}
-	summary := fmt.Sprintf("%s  model=%s provider=%s workspace=%s git=%s", title, status.Model, status.Provider, status.Workspace, status.Git)
-	metrics := fmt.Sprintf("tokens input=%d output=%d cache=%d total=%d",
-		status.Usage.InputTokens,
-		status.Usage.OutputTokens,
-		status.Usage.CacheTokens,
-		status.Usage.TotalTokens,
-	)
-	withCounts := fmt.Sprintf("%s messages=%d approvals=%d", metrics, status.Messages, status.Approvals)
-	if m.width <= 0 || lipgloss.Width(withCounts) <= m.width {
-		metrics = withCounts
-	}
+	p := paletteFor(m.theme)
+	width := max(20, m.width)
+	brand := styled(p.accent).Bold(true).Render("◆ CODEWORLD")
+	stateText := "● ready"
+	stateColor := p.success
 	if status.Running {
-		metrics += " running"
+		stateText = "● working"
+		stateColor = p.accent
 	}
-	return m.fitLine(summary) + "\n" + m.fitLine(metrics)
+	state := styled(stateColor).Bold(true).Render(stateText)
+	contextLine := styled(p.text).Render(status.Model) + styled(p.muted).Render("  ·  "+status.Provider+"  ·  "+status.Workspace)
+	gitColor := p.success
+	if status.Git == "dirty" {
+		gitColor = p.warning
+	}
+	git := styled(gitColor).Render("git " + status.Git)
+	metrics := styled(p.muted).Render(fmt.Sprintf("%s tok  ·  %d msg  ·  %d approvals", compactCount(status.Usage.TotalTokens), status.Messages, status.Approvals))
+	line1 := joinEdges(brand, state, width)
+	line2 := joinEdges(contextLine+"  "+git, metrics, width)
+	rule := styled(p.border).Render(strings.Repeat("─", width))
+	return line1 + "\n" + line2 + "\n" + rule
+}
+
+func (m Model) renderWelcome(height int) string {
+	p := paletteFor(m.theme)
+	width := min(max(28, m.viewport.Width-8), 68)
+	title := styled(p.accent).Bold(true).Render("Welcome to Codeworld")
+	body := styled(p.text).Render("A local coding agent that works with you in this workspace.")
+	hints := styled(p.muted).Render("Try  “inspect this project”  ·  type / for commands")
+	card := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(p.border)).
+		Padding(1, 2).
+		Width(width).
+		Render(title + "\n\n" + body + "\n" + hints)
+	return lipgloss.Place(max(1, m.viewport.Width), max(1, height), lipgloss.Center, lipgloss.Center, card)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // renderComposer 渲染底部输入区和常用快捷键提示。
 func (m Model) renderComposer() string {
 	width := max(10, m.width)
 	inputWidth := max(8, width-4)
+	p := paletteFor(m.theme)
+	borderColor := p.accent
+	status := "ready"
+	if m.running {
+		borderColor = p.secondary
+		status = "working…"
+	}
+	if m.pendingPermission != nil {
+		borderColor = p.warning
+		status = "permission required"
+	}
+	if len(m.pendingImages) > 0 {
+		status += fmt.Sprintf("  ·  %d image", len(m.pendingImages))
+	}
+	caption := joinEdges(styled(borderColor).Bold(true).Render("MESSAGE"), styled(p.muted).Render(status), width)
 	inputView := lipgloss.NewStyle().
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("8")).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color(borderColor)).
 		Padding(0, 1).
 		Width(inputWidth).
 		Render(m.input.View())
-	help := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("8")).
-		Width(width).
-		Render("Enter send  Shift+Enter newline  Ctrl+C exit  /help")
-	if suggestions := m.renderSlashSuggestions(); suggestions != "" {
-		return inputView + "\n" + suggestions + "\n" + help
+	helpText := "↵ send   shift+↵ newline   ↑↓ history   / commands   ctrl+c quit"
+	if width < 70 {
+		helpText = "↵ send   ↑↓ history   / commands   ctrl+c quit"
 	}
-	return inputView + "\n" + help
+	if width < 46 {
+		helpText = "↵ send   / commands   ctrl+c quit"
+	}
+	if m.pendingPermission != nil {
+		helpText = "y allow once   a allow for session   n deny"
+	} else if m.running {
+		helpText = "Working on your request…   ctrl+c cancel and quit"
+	}
+	help := styled(p.muted).
+		Width(width).
+		Render(helpText)
+	if suggestions := m.renderSlashSuggestions(); suggestions != "" {
+		return caption + "\n" + inputView + "\n" + suggestions + "\n" + help
+	}
+	return caption + "\n" + inputView + "\n" + help
 }
 
 // renderTranscriptItem 渲染单条消息，使用固定角色列让内容像 Codex CLI 一样对齐。
 func (m Model) renderTranscriptItem(item TranscriptItem) string {
-	role := string(item.Kind)
+	p := paletteFor(m.theme)
 	text := strings.TrimRight(item.Text, "\n")
 	if text == "" {
 		text = " "
 	}
-	lines := strings.Split(text, "\n")
-	out := make([]string, 0, len(lines))
-	out = append(out, fmt.Sprintf("%10s  %s", role, lines[0]))
-	for _, line := range lines[1:] {
-		out = append(out, fmt.Sprintf("%10s  %s", "", line))
+	label := strings.ToUpper(string(item.Kind))
+	color := p.muted
+	icon := "·"
+	switch item.Kind {
+	case ItemUser:
+		label, color, icon = "YOU", p.user, "›"
+	case ItemAssistant:
+		label, color, icon = "CODEWORLD", p.accent, "◆"
+	case ItemTool:
+		label, color, icon = "TOOL", p.secondary, "⚙"
+	case ItemPermission:
+		label, color, icon = "PERMISSION", p.warning, "!"
+	case ItemError:
+		label, color, icon = "ERROR", p.error, "×"
+	case ItemNotice:
+		label, color, icon = "INFO", p.success, "i"
+	case ItemCommand:
+		label, color, icon = "COMMAND", p.muted, "/"
 	}
-	return strings.Join(out, "\n")
-}
-
-// fitLine 按终端宽度裁剪单行内容，避免状态栏横向溢出。
-func (m Model) fitLine(line string) string {
-	if m.width <= 0 {
-		return line
+	heading := styled(color).Bold(true).Render(icon + " " + label)
+	content := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(p.text)).
+		BorderStyle(lipgloss.ThickBorder()).
+		BorderLeft(true).
+		BorderForeground(lipgloss.Color(color)).
+		PaddingLeft(1).
+		MaxWidth(max(10, m.viewport.Width-2)).
+		Render(text)
+	if item.Kind == ItemTool || item.Kind == ItemNotice || item.Kind == ItemCommand {
+		content = styled(p.muted).PaddingLeft(2).MaxWidth(max(10, m.viewport.Width-2)).Render(text)
 	}
-	return lipgloss.NewStyle().MaxWidth(m.width).Render(line)
+	return heading + "\n" + content
 }
 
 // renderSlashSuggestions 在输入 slash 前缀时展示可用命令，提供接近 Codex 的发现体验。
@@ -279,10 +361,15 @@ func (m Model) renderSlashSuggestions() string {
 	if len(matches) == 0 {
 		return ""
 	}
+	p := paletteFor(m.theme)
 	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color("8")).
-		Width(max(10, m.width)).
-		Render("commands  " + strings.Join(matches, "  "))
+		Foreground(lipgloss.Color(p.muted)).
+		BorderStyle(lipgloss.NormalBorder()).
+		BorderLeft(true).
+		BorderForeground(lipgloss.Color(p.secondary)).
+		PaddingLeft(1).
+		Width(max(8, m.width-2)).
+		Render("COMMANDS  " + strings.Join(matches, "  "))
 }
 
 // recordPrompt 保存已提交草稿，供 Up/Down 在 composer 中恢复。

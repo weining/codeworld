@@ -63,7 +63,7 @@ func TestPluginToolPermissionUsesConfiguredRisk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PermissionRequest returned error: %v", err)
 	}
-	if req.Action != permissions.ActionShell || req.Risk != permissions.RiskExecute || req.Target != "go test ./..." {
+	if req.Action != permissions.ActionShell || req.Risk != permissions.RiskExecute || req.Target != `"go" "test" "./..."` {
 		t.Fatalf("request = %#v, want shell execute go test", req)
 	}
 }

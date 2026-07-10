@@ -30,6 +30,17 @@ func (r *Registry) Register(tool Tool) {
 	r.tools[tool.Definition().Name] = tool
 }
 
+// RegisterChecked rejects ambiguous tool names instead of silently shadowing
+// an existing capability.
+func (r *Registry) RegisterChecked(tool Tool) error {
+	name := tool.Definition().Name
+	if _, exists := r.tools[name]; exists {
+		return fmt.Errorf("duplicate tool %q", name)
+	}
+	r.tools[name] = tool
+	return nil
+}
+
 // Definitions 提供对外可复用的能力，并隐藏内部实现细节。
 func (r *Registry) Definitions() []model.ToolDefinition {
 	names := make([]string, 0, len(r.tools))

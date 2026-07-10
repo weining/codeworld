@@ -3,6 +3,7 @@ package repl
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -26,13 +27,20 @@ type REPL struct {
 	Usage              model.Usage
 	Subagents          *subagent.Manager
 	SummaryMaxMessages int
+	SummaryMaxTokens   int
 	ShowStatusLine     bool
 	ShowTerminalTitle  bool
 	Diff               func(context.Context) (string, error)
+	Close              func() error
+	BuildSystemPrompt  func(session.Session) string
+	SetChildModel      func(string)
 }
 
 // Run 执行主要流程，并把运行结果或错误返回给调用方。
-func (r *REPL) Run(ctx context.Context) error {
+func (r *REPL) Run(ctx context.Context) (err error) {
+	if r.Close != nil {
+		defer func() { err = errors.Join(err, r.Close()) }()
+	}
 	if r.In == nil {
 		return fmt.Errorf("input is nil")
 	}
@@ -75,6 +83,12 @@ func (r *REPL) Run(ctx context.Context) error {
 
 		result, err := r.Runner.RunTurn(ctx, r.Messages, line)
 		if err != nil {
+			if len(result.Messages) > 0 || !result.Usage.IsZero() {
+				r.Usage = r.Usage.Add(result.Usage)
+				r.Messages = historyMessages(result.Messages)
+				r.syncSession()
+				r.saveSession()
+			}
 			fmt.Fprintf(r.Out, "error: %v\n", err)
 			continue
 		}
@@ -116,6 +130,9 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 		}
 		r.Session.Model = next
 		r.Runner.ModelName = next
+		if r.SetChildModel != nil {
+			r.SetChildModel(next)
+		}
 		fmt.Fprintf(r.Out, "model=%s\n", next)
 		r.writeTerminalTitle()
 		r.saveSession()
@@ -153,13 +170,16 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 			r.Session.Goal = next
 			fmt.Fprintf(r.Out, "goal=%s\n", next)
 		}
+		r.refreshSystemPrompt()
 		r.saveSession()
 	case line == "/plan":
 		r.Session.Mode = "plan"
+		r.refreshSystemPrompt()
 		fmt.Fprintln(r.Out, "mode=plan")
 		r.saveSession()
 	case line == "/plan off":
 		r.Session.Mode = ""
+		r.refreshSystemPrompt()
 		fmt.Fprintln(r.Out, "mode=default")
 		r.saveSession()
 	case line == "/compact":
@@ -167,9 +187,11 @@ func (r *REPL) handleCommand(ctx context.Context, line string) bool {
 	case line == "/clear":
 		r.Messages = nil
 		r.Session.Messages = nil
+		r.Session.Summary = ""
 		r.Session.Approvals = nil
 		r.Usage = model.Usage{}
 		r.Session.Usage = session.Usage{}
+		r.refreshSystemPrompt()
 		r.writeTerminalTitle()
 		fmt.Fprintln(r.Out, "cleared")
 		r.saveSession()
@@ -228,6 +250,7 @@ func (r *REPL) compact(ctx context.Context) {
 	}
 	r.Session.Summary = summary
 	r.Messages = recent
+	r.refreshSystemPrompt()
 	r.syncSession()
 	r.saveSession()
 	fmt.Fprintf(r.Out, "compacted messages=%d kept=%d\n", before, len(recent))
@@ -284,11 +307,12 @@ func (r *REPL) saveSession() {
 
 // maybeSummarize 封装局部逻辑，保持调用方流程清晰。
 func (r *REPL) maybeSummarize(ctx context.Context) {
-	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, r.Usage, summarizer.Options{MaxMessages: r.SummaryMaxMessages}) {
+	if r.Runner.Model == nil || !summarizer.ShouldSummarize(r.Messages, summarizer.Options{MaxMessages: r.SummaryMaxMessages, MaxTokens: r.SummaryMaxTokens}) {
 		return
 	}
 	summary, recent, err := summarizer.Summarize(ctx, r.Runner.Model, r.Session.Summary, r.Messages, summarizer.Options{
 		MaxMessages: r.SummaryMaxMessages,
+		MaxTokens:   r.SummaryMaxTokens,
 		KeepRecent:  20,
 	})
 	if err != nil {
@@ -297,8 +321,15 @@ func (r *REPL) maybeSummarize(ctx context.Context) {
 	}
 	r.Session.Summary = summary
 	r.Messages = recent
+	r.refreshSystemPrompt()
 	r.syncSession()
 	r.saveSession()
+}
+
+func (r *REPL) refreshSystemPrompt() {
+	if r.BuildSystemPrompt != nil {
+		r.Runner.SystemPrompt = r.BuildSystemPrompt(r.Session)
+	}
 }
 
 // restoreUsageFromSession 封装局部逻辑，保持调用方流程清晰。

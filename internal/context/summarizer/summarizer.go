@@ -2,6 +2,7 @@ package summarizer
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"codeworld/internal/model"
@@ -9,16 +10,36 @@ import (
 
 type Options struct {
 	MaxMessages int
+	MaxTokens   int
 	KeepRecent  int
 }
 
 // ShouldSummarize 提供对外可复用的能力，并隐藏内部实现细节。
-func ShouldSummarize(messages []model.Message, usage model.Usage, opts Options) bool {
+func ShouldSummarize(messages []model.Message, opts Options) bool {
 	maxMessages := opts.MaxMessages
 	if maxMessages <= 0 {
 		maxMessages = 40
 	}
-	return len(messages) > maxMessages
+	maxTokens := opts.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 64 * 1024
+	}
+	return len(messages) > maxMessages || estimateTokens(messages) > maxTokens
+}
+
+func estimateTokens(messages []model.Message) int {
+	bytes := 0
+	for _, msg := range messages {
+		bytes += len(msg.Content)
+		for _, part := range msg.Parts {
+			bytes += len(part.Text) + len(part.Data) + len(part.ImageURL)
+		}
+		for _, call := range msg.ToolCalls {
+			bytes += len(call.Name) + len(call.Arguments)
+		}
+	}
+	// A byte-based approximation is deliberately conservative for source code.
+	return (bytes + 3) / 4
 }
 
 // Summarize 提供对外可复用的能力，并隐藏内部实现细节。
@@ -60,8 +81,13 @@ func buildPrompt(summary string, messages []model.Message) string {
 		b.WriteString(string(msg.Role))
 		b.WriteString(": ")
 		b.WriteString(msg.Content)
-		if len(msg.ToolCalls) > 0 {
-			b.WriteString(" [tool calls]")
+		for _, call := range msg.ToolCalls {
+			b.WriteString(fmt.Sprintf(" [tool %s args=%s]", call.Name, call.Arguments))
+		}
+		for _, part := range msg.Parts {
+			if part.Type == model.ContentPartImage {
+				b.WriteString(" [image " + part.Path + "]")
+			}
 		}
 		b.WriteString("\n")
 	}

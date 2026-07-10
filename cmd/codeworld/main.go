@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -51,30 +52,34 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			if err != nil {
 				return err
 			}
-			if len(images) > 0 {
-				return runmode.OnceWithImages(context.Background(), &rt, prompt, images)
-			}
-			return runmode.Once(context.Background(), &rt, prompt)
+			return withRuntime(rt, func(rt *app.Runtime) error {
+				if len(images) > 0 {
+					return runmode.OnceWithImages(context.Background(), rt, prompt, images)
+				}
+				return runmode.Once(context.Background(), rt, prompt)
+			})
 		case "index":
 			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
 			if err != nil {
 				return err
 			}
-			idx, err := indexer.Build(rt.Workspace.Root, int64(rt.Config.IndexMaxFileBytes))
-			if err != nil {
-				return err
-			}
-			if err := indexer.Save(indexer.DefaultPath(rt.Workspace.Root), idx); err != nil {
-				return err
-			}
-			skipped := 0
-			for _, entry := range idx.Entries {
-				if entry.Skipped {
-					skipped++
+			return withRuntime(rt, func(rt *app.Runtime) error {
+				idx, err := indexer.Build(rt.Workspace.Root, int64(rt.Config.IndexMaxFileBytes))
+				if err != nil {
+					return err
 				}
-			}
-			_, err = fmt.Fprintf(out, "indexed files=%d skipped=%d\n", len(idx.Entries), skipped)
-			return err
+				if err := indexer.Save(indexer.DefaultPath(rt.Workspace.Root), idx); err != nil {
+					return err
+				}
+				skipped := 0
+				for _, entry := range idx.Entries {
+					if entry.Skipped {
+						skipped++
+					}
+				}
+				_, err = fmt.Fprintf(out, "indexed files=%d skipped=%d\n", len(idx.Entries), skipped)
+				return err
+			})
 		case "resume":
 			opts := app.Options{Root: root, In: in, Out: out, Err: stderr}
 			if len(args) < 2 || args[1] == "--last" {
@@ -86,13 +91,17 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			if err != nil {
 				return err
 			}
-			return tui.RunWithOptions(context.Background(), &rt, tui.Options{TestMode: !shouldShowTerminalTitle(out)})
+			return withRuntime(rt, func(rt *app.Runtime) error {
+				return tui.RunWithOptions(context.Background(), rt, tui.Options{TestMode: !shouldShowTerminalTitle(out)})
+			})
 		case "tui":
 			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
 			if err != nil {
 				return err
 			}
-			return tui.RunWithOptions(context.Background(), &rt, tui.Options{TestMode: !shouldShowTerminalTitle(out)})
+			return withRuntime(rt, func(rt *app.Runtime) error {
+				return tui.RunWithOptions(context.Background(), rt, tui.Options{TestMode: !shouldShowTerminalTitle(out)})
+			})
 		default:
 			return fmt.Errorf("unknown command: %s", args[0])
 		}
@@ -102,7 +111,7 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 		if err != nil {
 			return err
 		}
-		return tui.Run(context.Background(), &rt)
+		return withRuntime(rt, func(rt *app.Runtime) error { return tui.Run(context.Background(), rt) })
 	}
 	app, err := newAppWithIO(in, out, stderr, root)
 	if err != nil {
@@ -163,9 +172,24 @@ func newAppWithIO(in io.Reader, out io.Writer, stderr io.Writer, root string) (r
 		Usage:              rt.Usage,
 		Subagents:          rt.Subagents,
 		SummaryMaxMessages: rt.Config.SummaryMaxMessages,
+		SummaryMaxTokens:   rt.Config.SummaryMaxTokens,
 		ShowTerminalTitle:  shouldShowTerminalTitle(out),
 		Diff:               rt.Diff,
+		Close:              rt.Close,
+		BuildSystemPrompt:  rt.SystemPromptFor,
+		SetChildModel: func(name string) {
+			if rt.ChildRunner != nil {
+				rt.ChildRunner.ModelName = name
+			}
+		},
 	}, nil
+}
+
+func withRuntime(rt app.Runtime, run func(*app.Runtime) error) (err error) {
+	defer func() {
+		err = errors.Join(err, rt.Close())
+	}()
+	return run(&rt)
 }
 
 func shouldShowTerminalTitle(out io.Writer) bool {

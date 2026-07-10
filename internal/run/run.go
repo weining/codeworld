@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"codeworld/internal/agent"
@@ -30,6 +31,9 @@ func OnceWithImages(ctx context.Context, rt *app.Runtime, input string, imagePar
 	}
 	result, err := rt.Runner.RunTurnMessage(ctx, rt.Messages, userMessage)
 	if err != nil {
+		if len(result.Messages) > 0 || !result.Usage.IsZero() {
+			return errors.Join(err, rt.SaveTurn(result))
+		}
 		return err
 	}
 	if err := rt.SaveTurn(result); err != nil {

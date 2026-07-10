@@ -72,6 +72,9 @@ func (c *Client) SetLogger(logger CallLogger) {
 
 // Generate 通过 SSE Responses 请求聚合出非流式结果。
 func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model.GenerateResponse, error) {
+	if model.HasImageParts(req.Messages) {
+		return model.GenerateResponse{}, fmt.Errorf("codex provider does not support image input")
+	}
 	var text string
 	var usage model.Usage
 	var toolCalls []model.ToolCall
@@ -99,6 +102,9 @@ func (c *Client) Generate(ctx context.Context, req model.GenerateRequest) (model
 
 // Stream 调用 ChatGPT backend 的 /codex/responses SSE 接口。
 func (c *Client) Stream(ctx context.Context, req model.GenerateRequest, emit func(model.StreamEvent) error) error {
+	if model.HasImageParts(req.Messages) {
+		return fmt.Errorf("codex provider does not support image input")
+	}
 	body := requestBody{
 		Model:  firstNonEmpty(req.Model, c.model),
 		Stream: true,

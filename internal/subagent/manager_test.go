@@ -2,6 +2,8 @@ package subagent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +37,13 @@ func TestManagerStartsAndPersistsTask(t *testing.T) {
 	if len(done.Transcript) != 2 {
 		t.Fatalf("transcript = %#v, want two messages", done.Transcript)
 	}
+	info, err := os.Stat(filepath.Join(root, ".codeworld", "subagents", task.ID+".json"))
+	if err != nil {
+		t.Fatalf("Stat task file: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("task file mode = %o, want 600", info.Mode().Perm())
+	}
 
 	restored, err := NewManager(root, func(ctx context.Context, prompt string) (RunResult, error) {
 		return RunResult{}, nil
@@ -45,6 +54,27 @@ func TestManagerStartsAndPersistsTask(t *testing.T) {
 	loaded, ok := restored.Get(task.ID)
 	if !ok || loaded.Status != StatusDone || loaded.Result == "" {
 		t.Fatalf("restored task = %#v, ok=%v", loaded, ok)
+	}
+}
+
+func TestManagerCloseCancelsRunningTasks(t *testing.T) {
+	manager, err := NewManager(t.TempDir(), func(ctx context.Context, prompt string) (RunResult, error) {
+		<-ctx.Done()
+		return RunResult{}, ctx.Err()
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	task, err := manager.Start("wait")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if err := manager.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	done, ok := manager.Get(task.ID)
+	if !ok || done.Status != StatusError || !strings.Contains(done.Error, "canceled") {
+		t.Fatalf("task after Close = %#v, ok=%v", done, ok)
 	}
 }
 

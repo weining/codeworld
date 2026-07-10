@@ -111,7 +111,12 @@ func (AutoPolicy) Check(ctx context.Context, req Request) (Decision, error) {
 		return Decision{Kind: DecisionDeny, Reason: "path is outside the workspace"}, nil
 	case RiskDestructive, RiskNetwork:
 		return Decision{Kind: DecisionAsk, Reason: "high-risk action requires confirmation"}, nil
-	default:
-		return Decision{Kind: DecisionAllow, Reason: "workspace action allowed by auto policy"}, nil
 	}
+	// Shell and extension tools can execute arbitrary code or read outside the
+	// workspace, so heuristic risk classification must not be their security
+	// boundary.
+	if req.Action == ActionShell {
+		return Decision{Kind: DecisionAsk, Reason: "command execution requires confirmation"}, nil
+	}
+	return Decision{Kind: DecisionAllow, Reason: "workspace action allowed by auto policy"}, nil
 }

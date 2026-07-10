@@ -33,6 +33,14 @@ func TestRegistryRejectsUnknownTool(t *testing.T) {
 	}
 }
 
+func TestRegistryRejectsDuplicateToolName(t *testing.T) {
+	tool := NewGitStatusTool(newTestWorkspace(t))
+	registry := NewRegistry([]Tool{tool}, nil)
+	if err := registry.RegisterChecked(tool); err == nil {
+		t.Fatal("RegisterChecked accepted duplicate tool name")
+	}
+}
+
 // TestDefaultRegistryIncludesIndexWorkspaceTool 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestDefaultRegistryIncludesIndexWorkspaceTool(t *testing.T) {
 	registry := NewDefaultRegistry(newTestWorkspace(t))

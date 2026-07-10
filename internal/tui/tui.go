@@ -61,27 +61,6 @@ func StatusLine(status Status) string {
 	)
 }
 
-// HeaderStatusLine 渲染 TUI 顶部短状态，优先保留模型、git 和 token 信息。
-func HeaderStatusLine(status Status) string {
-	running := ""
-	if status.Running {
-		running = " running"
-	}
-	return fmt.Sprintf("model=%s git=%s tokens input=%d output=%d cache=%d total=%d workspace=%s provider=%s messages=%d approvals=%d%s",
-		status.Model,
-		status.Git,
-		status.Usage.InputTokens,
-		status.Usage.OutputTokens,
-		status.Usage.CacheTokens,
-		status.Usage.TotalTokens,
-		status.Workspace,
-		status.Provider,
-		status.Messages,
-		status.Approvals,
-		running,
-	)
-}
-
 // gitState 封装局部逻辑，保持调用方流程清晰。
 func gitState(root string) string {
 	if root == "" {
@@ -105,7 +84,10 @@ func Run(ctx context.Context, rt *app.Runtime) error {
 
 // RunWithOptions 执行主要流程，并把运行结果或错误返回给调用方。
 func RunWithOptions(ctx context.Context, rt *app.Runtime, opts Options) error {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	m := NewModel(rt)
+	m.ctx = runCtx
 	if opts.TestMode {
 		_, err := fmt.Fprint(rt.Out, m.View())
 		return err

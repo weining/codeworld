@@ -184,6 +184,9 @@ func TestRunHandlesGoalPlanAndCompactCommands(t *testing.T) {
 		Runner:  agent.Runner{ModelName: "deepseek-v4-pro"},
 		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
 		Store:   store,
+		BuildSystemPrompt: func(sess session.Session) string {
+			return "base\nCurrent goal:\n" + sess.Goal + "\nmode=" + sess.Mode
+		},
 	}
 
 	if err := app.Run(context.Background()); err != nil {
@@ -201,6 +204,9 @@ func TestRunHandlesGoalPlanAndCompactCommands(t *testing.T) {
 	}
 	if saved.Goal != "finish docs" || saved.Mode != "plan" {
 		t.Fatalf("saved goal/mode = %q/%q, want finish docs/plan", saved.Goal, saved.Mode)
+	}
+	if !strings.Contains(app.Runner.SystemPrompt, "finish docs") || !strings.Contains(app.Runner.SystemPrompt, "mode=plan") {
+		t.Fatalf("system prompt was not refreshed: %q", app.Runner.SystemPrompt)
 	}
 }
 
@@ -436,7 +442,7 @@ func TestConfirmerAddsSessionShellApprovalOnA(t *testing.T) {
 
 	allowed, err := confirmer.Confirm(context.Background(), permissions.Request{
 		Action: permissions.ActionShell,
-		Target: " go   test ./... ",
+		Target: "go test ./...",
 		Risk:   permissions.RiskExecute,
 		Reason: "run tests",
 	}, permissions.Decision{Kind: permissions.DecisionAsk})
@@ -462,7 +468,7 @@ func TestConfirmerUsesExistingSessionShellApprovalWithoutPrompt(t *testing.T) {
 
 	allowed, err := confirmer.Confirm(context.Background(), permissions.Request{
 		Action: permissions.ActionShell,
-		Target: " go   test ./... ",
+		Target: "go test ./...",
 		Risk:   permissions.RiskExecute,
 		Reason: "run tests",
 	}, permissions.Decision{Kind: permissions.DecisionAsk})

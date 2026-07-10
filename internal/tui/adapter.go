@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"codeworld/internal/agent"
@@ -38,6 +39,9 @@ func (a RunnerAdapter) RunTurnMessage(ctx context.Context, userMessage model.Mes
 		}
 	})
 	if err != nil {
+		if len(result.Messages) > 0 || !result.Usage.IsZero() {
+			err = errors.Join(err, a.rt.SaveTurn(result))
+		}
 		return turnDoneMsg{err: err}
 	}
 	if err := a.rt.SaveTurn(result); err != nil {

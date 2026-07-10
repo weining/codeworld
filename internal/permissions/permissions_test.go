@@ -55,8 +55,6 @@ func TestAutoPolicyAllowsWorkspaceActionsAndAsksForHighRiskShell(t *testing.T) {
 	allowCases := []Request{
 		{Action: ActionPatch, Risk: RiskWrite, Target: "patch"},
 		{Action: ActionWrite, Risk: RiskWrite, Target: "main.go"},
-		{Action: ActionShell, Risk: RiskExecute, Target: "go test ./..."},
-		{Action: ActionShell, Risk: RiskWrite, Target: "go mod tidy"},
 	}
 	for _, req := range allowCases {
 		decision, err := policy.Check(context.Background(), req)
@@ -69,6 +67,9 @@ func TestAutoPolicyAllowsWorkspaceActionsAndAsksForHighRiskShell(t *testing.T) {
 	}
 
 	askCases := []Request{
+		{Action: ActionShell, Risk: RiskRead, Target: "git status"},
+		{Action: ActionShell, Risk: RiskExecute, Target: "go test ./..."},
+		{Action: ActionShell, Risk: RiskWrite, Target: "go mod tidy"},
 		{Action: ActionShell, Risk: RiskDestructive, Target: "rm -rf ."},
 		{Action: ActionShell, Risk: RiskNetwork, Target: "curl https://example.com"},
 	}

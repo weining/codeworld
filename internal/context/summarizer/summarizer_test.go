@@ -16,11 +16,18 @@ func TestShouldSummarizeWhenMessageCountExceedsThreshold(t *testing.T) {
 		{Role: model.RoleAssistant, Content: "2"},
 		{Role: model.RoleUser, Content: "3"},
 	}
-	if !ShouldSummarize(messages, model.Usage{}, Options{MaxMessages: 2}) {
+	if !ShouldSummarize(messages, Options{MaxMessages: 2}) {
 		t.Fatalf("ShouldSummarize returned false, want true")
 	}
-	if ShouldSummarize(messages[:2], model.Usage{}, Options{MaxMessages: 2}) {
+	if ShouldSummarize(messages[:2], Options{MaxMessages: 2}) {
 		t.Fatalf("ShouldSummarize returned true at threshold")
+	}
+}
+
+func TestShouldSummarizeWhenEstimatedTokensExceedThreshold(t *testing.T) {
+	messages := []model.Message{{Role: model.RoleTool, Content: strings.Repeat("x", 100)}}
+	if !ShouldSummarize(messages, Options{MaxMessages: 10, MaxTokens: 20}) {
+		t.Fatal("ShouldSummarize returned false for oversized tool output")
 	}
 }
 

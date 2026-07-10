@@ -129,7 +129,7 @@ func (r Runner) RunTurnMessage(ctx context.Context, history []model.Message, use
 			Tools:    r.Tools.Definitions(),
 		})
 		if err != nil {
-			return TurnResult{}, err
+			return TurnResult{Messages: messages, Usage: usage}, err
 		}
 		usage = usage.Add(resp.Usage)
 
@@ -145,7 +145,7 @@ func (r Runner) RunTurnMessage(ctx context.Context, history []model.Message, use
 
 		finalText := responseFinalText(resp)
 		if finalText == "" {
-			return TurnResult{}, fmt.Errorf("model returned no final text and no tool calls")
+			return TurnResult{Messages: messages, Usage: usage}, fmt.Errorf("model returned no final text and no tool calls")
 		}
 		messages = append(messages, model.Message{Role: model.RoleAssistant, Content: finalText})
 		if isDeferredActionPlaceholder(finalText) {
@@ -154,7 +154,7 @@ func (r Runner) RunTurnMessage(ctx context.Context, history []model.Message, use
 		}
 		return TurnResult{FinalText: finalText, Messages: messages, Usage: usage}, nil
 	}
-	return TurnResult{}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
+	return TurnResult{Messages: messages, Usage: usage}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
 }
 
 // RunTurnStream 优先使用流式模型接口，并在不支持流式时回退到 RunTurn。
@@ -173,15 +173,15 @@ func (r Runner) RunTurnStreamMessage(ctx context.Context, history []model.Messag
 		if emit != nil {
 			_ = emit(TurnEvent{Kind: TurnEventError, Err: err, Text: err.Error()})
 		}
-		return TurnResult{}, err
+		return result, err
 	}
 	if emit != nil {
 		if err := emit(TurnEvent{Kind: TurnEventAssistantDone, Text: result.FinalText}); err != nil {
-			return TurnResult{}, err
+			return result, err
 		}
 		if !result.Usage.IsZero() {
 			if err := emit(TurnEvent{Kind: TurnEventUsage, Usage: result.Usage}); err != nil {
-				return TurnResult{}, err
+				return result, err
 			}
 		}
 	}
@@ -225,7 +225,7 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 			if emit != nil {
 				_ = emit(TurnEvent{Kind: TurnEventError, Err: err, Text: err.Error()})
 			}
-			return TurnResult{}, err
+			return TurnResult{Messages: messages, Usage: usage.Add(stepUsage)}, err
 		}
 		usage = usage.Add(stepUsage)
 
@@ -245,7 +245,7 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 			if emit != nil {
 				_ = emit(TurnEvent{Kind: TurnEventError, Err: err, Text: err.Error()})
 			}
-			return TurnResult{}, err
+			return TurnResult{Messages: messages, Usage: usage}, err
 		}
 		messages = append(messages, model.Message{Role: model.RoleAssistant, Content: finalText})
 		if isDeferredActionPlaceholder(finalText) {
@@ -254,12 +254,12 @@ func (r Runner) runTurnWithStream(ctx context.Context, client model.StreamClient
 		}
 		if emit != nil {
 			if err := emit(TurnEvent{Kind: TurnEventAssistantDone, Text: finalText}); err != nil {
-				return TurnResult{}, err
+				return TurnResult{FinalText: finalText, Messages: messages, Usage: usage}, err
 			}
 		}
 		return TurnResult{FinalText: finalText, Messages: messages, Usage: usage}, nil
 	}
-	return TurnResult{}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
+	return TurnResult{Messages: messages, Usage: usage}, fmt.Errorf("agent exceeded max steps %d", maxSteps)
 }
 
 // runUserPromptSubmitHook 在模型调用前触发用户输入 hook，便于外部审计或补充上下文。

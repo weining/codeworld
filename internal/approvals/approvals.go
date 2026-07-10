@@ -8,7 +8,9 @@ type Set struct {
 
 // NormalizeCommand 规范化输入，减少等价写法对后续判断的影响。
 func NormalizeCommand(command string) string {
-	return strings.Join(strings.Fields(command), " ")
+	// Preserve internal whitespace because it can change shell semantics inside
+	// quoted arguments. Only harmless surrounding whitespace is normalized.
+	return strings.TrimSpace(command)
 }
 
 // Allows 判断输入是否满足特定条件，并用于后续分支决策。

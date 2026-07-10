@@ -44,22 +44,36 @@ type TranscriptMessage struct {
 type RunnerFunc func(ctx context.Context, prompt string) (RunResult, error)
 
 type Manager struct {
-	root  string
-	dir   string
-	run   RunnerFunc
-	mu    sync.Mutex
-	tasks map[string]Task
+	root      string
+	dir       string
+	run       RunnerFunc
+	ctx       context.Context
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	tasks     map[string]Task
+	wg        sync.WaitGroup
+	closeOnce sync.Once
+	closing   bool
 }
 
 // NewManager 创建本地子代理管理器，并恢复已持久化的历史任务。
 func NewManager(root string, run RunnerFunc) (*Manager, error) {
+	return NewManagerWithContext(context.Background(), root, run)
+}
+
+// NewManagerWithContext binds all background tasks to the runtime lifecycle.
+func NewManagerWithContext(ctx context.Context, root string, run RunnerFunc) (*Manager, error) {
+	runCtx, cancel := context.WithCancel(ctx)
 	manager := &Manager{
-		root:  root,
-		dir:   filepath.Join(root, ".codeworld", "subagents"),
-		run:   run,
-		tasks: map[string]Task{},
+		root:   root,
+		dir:    filepath.Join(root, ".codeworld", "subagents"),
+		run:    run,
+		ctx:    runCtx,
+		cancel: cancel,
+		tasks:  map[string]Task{},
 	}
 	if err := manager.load(); err != nil {
+		cancel()
 		return nil, err
 	}
 	return manager, nil
@@ -83,6 +97,10 @@ func (m *Manager) Start(prompt string) (Task, error) {
 		UpdatedAt: now,
 	}
 	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		return Task{}, context.Canceled
+	}
 	for {
 		if _, exists := m.tasks[task.ID]; !exists {
 			break
@@ -90,13 +108,33 @@ func (m *Manager) Start(prompt string) (Task, error) {
 		task.ID = newTaskID(time.Now().UTC())
 	}
 	m.tasks[task.ID] = task
+	m.wg.Add(1)
 	m.mu.Unlock()
 	if err := m.save(task); err != nil {
+		m.mu.Lock()
+		delete(m.tasks, task.ID)
+		m.mu.Unlock()
+		m.wg.Done()
 		return Task{}, err
 	}
 
 	go m.runTask(task.ID, prompt)
 	return task, nil
+}
+
+// Close cancels running tasks and waits for their final state to be saved.
+func (m *Manager) Close() error {
+	if m == nil {
+		return nil
+	}
+	m.closeOnce.Do(func() {
+		m.mu.Lock()
+		m.closing = true
+		m.cancel()
+		m.mu.Unlock()
+	})
+	m.wg.Wait()
+	return nil
 }
 
 // Get 返回指定任务的快照。
@@ -126,7 +164,8 @@ func (m *Manager) List(limit int) []Task {
 
 // runTask 在后台执行模型任务，并把最终状态写回内存和磁盘。
 func (m *Manager) runTask(id, prompt string) {
-	result, err := m.run(context.Background(), prompt)
+	defer m.wg.Done()
+	result, err := m.run(m.ctx, prompt)
 	m.mu.Lock()
 	task := m.tasks[id]
 	task.UpdatedAt = time.Now().UTC()
@@ -177,14 +216,36 @@ func (m *Manager) load() error {
 
 // save 原子性要求不高，直接覆盖单任务 JSON，便于人工排查。
 func (m *Manager) save(task Task) error {
-	if err := os.MkdirAll(m.dir, 0o755); err != nil {
+	if err := os.MkdirAll(m.dir, 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(task, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(m.dir, task.ID+".json"), append(data, '\n'), 0o644)
+	path := filepath.Join(m.dir, task.ID+".json")
+	tmp, err := os.CreateTemp(m.dir, ".subagent-*")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpPath, path)
 }
 
 // newTaskID 生成时间有序的短 ID，方便 TUI 和日志里阅读。

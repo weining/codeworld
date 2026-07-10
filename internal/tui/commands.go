@@ -46,10 +46,9 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 			m.appendNotice(m.rt.Session.Model)
 			return m, false
 		}
-		m.rt.Session.Model = next
-		m.rt.Runner.ModelName = next
+		m.rt.SetModel(next)
 		m.appendNotice("model=" + next)
-		_ = m.rt.Store.SaveCurrent(m.rt.Session)
+		m.saveSession()
 	case line == "/status":
 		m.appendNotice(StatusLine(RuntimeStatus(m.rt)))
 	case line == "/diff":
@@ -68,7 +67,10 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		}
 		m.items = append(m.items, TranscriptItem{Kind: ItemCommand, Text: diff})
 	case line == "/permissions":
-		mode := m.rt.Config.ApprovalMode
+		mode := m.rt.Session.ApprovalMode
+		if mode == "" {
+			mode = m.rt.Config.ApprovalMode
+		}
 		if mode == "" {
 			mode = "auto"
 		}
@@ -91,7 +93,9 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		switch mode {
 		case string(permissions.ModeAuto), string(permissions.ModeReadOnly), string(permissions.ModeFullAccess):
 			m.rt.Config.ApprovalMode = mode
+			m.rt.Session.ApprovalMode = mode
 			m.rt.Runner.Policy = permissions.ModePolicy{Mode: permissions.Mode(mode)}
+			m.saveSession()
 			m.appendNotice("mode=" + mode)
 		default:
 			m.appendError("unknown permission mode: " + mode)
@@ -139,15 +143,18 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 			m.rt.Session.Goal = next
 			m.appendNotice("goal=" + next)
 		}
-		_ = m.rt.Store.SaveCurrent(m.rt.Session)
+		m.rt.RefreshSystemPrompt()
+		m.saveSession()
 	case line == "/plan":
 		m.rt.Session.Mode = "plan"
+		m.rt.RefreshSystemPrompt()
 		m.appendNotice("mode=plan")
-		_ = m.rt.Store.SaveCurrent(m.rt.Session)
+		m.saveSession()
 	case line == "/plan off":
 		m.rt.Session.Mode = ""
+		m.rt.RefreshSystemPrompt()
 		m.appendNotice("mode=default")
-		_ = m.rt.Store.SaveCurrent(m.rt.Session)
+		m.saveSession()
 	case line == "/compact":
 		message, err := m.rt.Compact(ctx)
 		if err != nil {
@@ -185,10 +192,12 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		m.items = nil
 		m.rt.Messages = nil
 		m.rt.Session.Messages = nil
+		m.rt.Session.Summary = ""
 		m.rt.Session.Approvals = nil
 		m.rt.Usage = model.Usage{}
 		m.rt.Session.Usage = session.Usage{}
-		_ = m.rt.Store.SaveCurrent(m.rt.Session)
+		m.rt.RefreshSystemPrompt()
+		m.saveSession()
 		m.appendNotice("cleared")
 	case line == "/exit":
 		return m, true
@@ -197,6 +206,12 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 	}
 	m.refreshViewport()
 	return m, false
+}
+
+func (m *Model) saveSession() {
+	if err := m.rt.Store.SaveCurrent(m.rt.Session); err != nil {
+		m.appendError("session save error: " + err.Error())
+	}
 }
 
 // handleAgentsCommand 展示本地子代理任务列表或指定任务详情。

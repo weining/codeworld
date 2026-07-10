@@ -176,6 +176,33 @@ func TestOnceSummarizesWhenMessageCountExceedsThreshold(t *testing.T) {
 	}
 }
 
+func TestOnceSavesPartialTurnWhenAgentFailsAfterTool(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	tool := &fakeShellTool{}
+	rt := app.Runtime{
+		Out:     &bytes.Buffer{},
+		Store:   store,
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+		Runner: agent.Runner{
+			Model:    &fakeModel{responses: []model.GenerateResponse{{ToolCalls: []model.ToolCall{{ID: "call-1", Name: "shell", Arguments: json.RawMessage(`{}`)}}}}},
+			Tools:    tools.NewRegistry([]tools.Tool{tool}, nil),
+			Policy:   permissions.ModePolicy{Mode: permissions.ModeFullAccess},
+			MaxSteps: 1,
+		},
+	}
+
+	if err := Once(context.Background(), &rt, "change file"); err == nil {
+		t.Fatal("Once succeeded, want max steps error")
+	}
+	saved, err := store.LoadCurrent()
+	if err != nil {
+		t.Fatalf("LoadCurrent: %v", err)
+	}
+	if len(saved.Messages) != 3 || saved.Messages[0].Content != "change file" || saved.Messages[2].Role != "tool" {
+		t.Fatalf("saved partial messages = %#v", saved.Messages)
+	}
+}
+
 type fakeModel struct {
 	responses []model.GenerateResponse
 	requests  []model.GenerateRequest
@@ -192,7 +219,7 @@ func (f *fakeShellTool) Definition() model.ToolDefinition {
 
 // PermissionRequest 是测试辅助函数，用于复用测试准备或断言逻辑。
 func (f *fakeShellTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
-	return permissions.Request{Action: permissions.ActionShell, Risk: permissions.RiskExecute, Target: " go   test ./... ", Reason: "run tests"}, nil
+	return permissions.Request{Action: permissions.ActionShell, Risk: permissions.RiskExecute, Target: "go test ./...", Reason: "run tests"}, nil
 }
 
 // Execute 是测试辅助函数，用于复用测试准备或断言逻辑。

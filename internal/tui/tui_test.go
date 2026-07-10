@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"codeworld/internal/agent"
 	"codeworld/internal/app"
@@ -76,7 +77,7 @@ func TestModelViewContainsTranscriptStatusAndComposer(t *testing.T) {
 	m.refreshViewport()
 
 	view := m.View()
-	for _, want := range []string{"codeworld", "deepseek-v4-pro", "input=10", "ready", ">"} {
+	for _, want := range []string{"CODEWORLD", "deepseek-v4-pro", "13 tok", "ready", "›"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q in:\n%s", want, view)
 		}
@@ -112,20 +113,68 @@ func TestModelViewUsesCodexLikeChrome(t *testing.T) {
 
 	view := m.View()
 	for _, want := range []string{
-		"codeworld",
-		"workspace=",
+		"◆ CODEWORLD",
 		"deepseek-v4-pro",
-		"user",
-		"assistant",
-		"tool",
+		"YOU",
+		"CODEWORLD",
+		"TOOL",
 		"Permission required: shell",
 		"Allow? [y/N/a=session]",
-		"Enter send",
-		"Shift+Enter newline",
-		"/help",
+		"↵ send",
+		"shift+↵ newline",
+		"/ commands",
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view missing %q in:\n%s", want, view)
+		}
+	}
+}
+
+func TestModelViewShowsWelcomeStateAndWorkingComposer(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{Workspace: workspace.Workspace{Root: root}, Session: session.New(root, "deepseek", "deepseek-v4-pro")}
+	m := NewModel(&rt)
+	view := m.View()
+	for _, want := range []string{"Welcome to Codeworld", "inspect this project", "● ready", "MESSAGE"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("welcome view missing %q in:\n%s", want, view)
+		}
+	}
+	m.running = true
+	view = m.View()
+	for _, want := range []string{"● working", "working…", "Working on your request"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("working view missing %q in:\n%s", want, view)
+		}
+	}
+}
+
+func TestThemePalettesAreDistinct(t *testing.T) {
+	dark := paletteFor("dark")
+	light := paletteFor("light")
+	if dark.accent == light.accent || dark.text == light.text || dark.border == light.border {
+		t.Fatalf("theme palettes are not distinct: dark=%#v light=%#v", dark, light)
+	}
+}
+
+func TestModelViewFitsNarrowTerminal(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{Workspace: workspace.Workspace{Root: root}, Session: session.New(root, "deepseek", "deepseek-v4-pro")}
+	m := NewModel(&rt)
+	m.width = 42
+	m.height = 20
+	m.viewport.Width = 42
+	m.input.SetWidth(38)
+	m.refreshViewport()
+
+	view := m.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) != m.height {
+		t.Fatalf("view height = %d, want %d:\n%s", len(lines), m.height, view)
+	}
+	for i, line := range lines {
+		if width := lipgloss.Width(line); width > m.width {
+			t.Fatalf("line %d width = %d, want <= %d: %q", i+1, width, m.width, line)
 		}
 	}
 }
@@ -460,12 +509,18 @@ func TestHandleGoalPlanAndCompactCommands(t *testing.T) {
 	if m.rt.Session.Goal != "ship the feature" {
 		t.Fatalf("goal = %q, want ship the feature", m.rt.Session.Goal)
 	}
+	if !strings.Contains(m.rt.Runner.SystemPrompt, "Current goal:\nship the feature") {
+		t.Fatalf("system prompt did not refresh goal: %q", m.rt.Runner.SystemPrompt)
+	}
 	m, quit = mustHandleCommand(t, m, "/plan")
 	if quit {
 		t.Fatalf("plan command requested quit")
 	}
 	if m.rt.Session.Mode != "plan" {
 		t.Fatalf("mode = %q, want plan", m.rt.Session.Mode)
+	}
+	if !strings.Contains(m.rt.Runner.SystemPrompt, "Plan mode:") {
+		t.Fatalf("system prompt did not refresh plan mode: %q", m.rt.Runner.SystemPrompt)
 	}
 	m, quit = mustHandleCommand(t, m, "/compact")
 	if quit {
@@ -476,6 +531,22 @@ func TestHandleGoalPlanAndCompactCommands(t *testing.T) {
 		if !strings.Contains(all, want) {
 			t.Fatalf("transcript missing %q in:\n%s", want, all)
 		}
+	}
+}
+
+func TestHandlePermissionsPersistsSessionMode(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{Store: session.NewStore(root), Session: session.New(root, "deepseek", "deepseek-v4-pro")}
+	m, quit := mustHandleCommand(t, NewModel(&rt), "/permissions read-only")
+	if quit {
+		t.Fatal("permissions command requested quit")
+	}
+	saved, err := m.rt.Store.LoadCurrent()
+	if err != nil {
+		t.Fatalf("LoadCurrent: %v", err)
+	}
+	if saved.ApprovalMode != "read-only" {
+		t.Fatalf("approval mode = %q, want read-only", saved.ApprovalMode)
 	}
 }
 

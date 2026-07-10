@@ -7,6 +7,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"time"
 )
 
 type Context struct {
@@ -16,8 +18,39 @@ type Context struct {
 }
 
 type Runner struct {
-	root   string
-	events map[string][]Matcher
+	root    string
+	events  map[string][]Matcher
+	enabled bool
+}
+
+// Commands returns the unique command hooks that require workspace trust.
+func (r *Runner) Commands() []string {
+	if r == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, groups := range r.events {
+		for _, group := range groups {
+			for _, hook := range group.Hooks {
+				if hook.Type == "command" && hook.Command != "" {
+					seen[hook.Command] = true
+				}
+			}
+		}
+	}
+	commands := make([]string, 0, len(seen))
+	for command := range seen {
+		commands = append(commands, command)
+	}
+	sort.Strings(commands)
+	return commands
+}
+
+// Enable marks all loaded commands as explicitly trusted for this runtime.
+func (r *Runner) Enable() {
+	if r != nil {
+		r.enabled = true
+	}
 }
 
 type Matcher struct {
@@ -61,6 +94,9 @@ func (r *Runner) Run(ctx context.Context, event string, hookCtx Context) error {
 	if r == nil {
 		return nil
 	}
+	if len(r.Commands()) > 0 && !r.enabled {
+		return fmt.Errorf("workspace hooks are not authorized")
+	}
 	for _, group := range r.events[event] {
 		if group.Matcher != "" && group.Matcher != "*" && group.Matcher != hookCtx.Tool {
 			continue
@@ -69,7 +105,12 @@ func (r *Runner) Run(ctx context.Context, event string, hookCtx Context) error {
 			if hook.Type != "command" || hook.Command == "" {
 				continue
 			}
-			cmd := exec.CommandContext(ctx, "sh", "-c", hook.Command)
+			timeout := hook.Timeout
+			if timeout <= 0 {
+				timeout = 60
+			}
+			runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+			cmd := exec.CommandContext(runCtx, "sh", "-c", hook.Command)
 			cmd.Dir = r.root
 			cmd.Env = append(os.Environ(),
 				"CODEWORLD_HOOK_EVENT="+event,
@@ -78,6 +119,7 @@ func (r *Runner) Run(ctx context.Context, event string, hookCtx Context) error {
 				"CODEWORLD_HOOK_RISK="+hookCtx.Risk,
 			)
 			out, err := cmd.CombinedOutput()
+			cancel()
 			if err != nil {
 				return fmt.Errorf("hook %s failed: %w: %s", event, err, out)
 			}

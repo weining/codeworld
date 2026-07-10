@@ -123,6 +123,7 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	sess.Summary = "previous conversation summary"
 	sess.Goal = "finish migration"
 	sess.Mode = "plan"
+	sess.ApprovalMode = "read-only"
 	sess.Tools = []ToolEvent{
 		{ID: "tool-1", Name: "go test", Summary: "passed", CreatedAt: sess.CreatedAt.Add(time.Second)},
 	}
@@ -163,6 +164,9 @@ func TestLoadCurrentReturnsSavedSession(t *testing.T) {
 	}
 	if got.Goal != "finish migration" || got.Mode != "plan" {
 		t.Fatalf("LoadCurrent goal/mode = %q/%q, want finish migration/plan", got.Goal, got.Mode)
+	}
+	if got.ApprovalMode != "read-only" {
+		t.Fatalf("LoadCurrent approval mode = %q", got.ApprovalMode)
 	}
 	if len(got.Messages[1].ToolCalls) != 1 || got.Messages[1].ToolCalls[0].ID != "call-1" || got.Messages[1].ToolCalls[0].Name != "read_file" {
 		t.Fatalf("LoadCurrent tool calls = %#v", got.Messages[1].ToolCalls)

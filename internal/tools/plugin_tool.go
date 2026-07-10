@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -72,7 +73,7 @@ func (t pluginTool) Execute(ctx context.Context, args json.RawMessage) (Result, 
 	return Result{
 		Content: content,
 		Metadata: map[string]any{
-			"command":          strings.TrimSpace(t.spec.Command + " " + strings.Join(rendered, " ")),
+			"command":          quotedCommand(t.spec.Command, rendered),
 			"exit_code":        exitCode(err),
 			"duration_ms":      time.Since(start).Milliseconds(),
 			"truncated":        truncated,
@@ -88,7 +89,15 @@ func (t pluginTool) renderCommand(args json.RawMessage) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(t.spec.Command + " " + strings.Join(rendered, " ")), nil
+	return quotedCommand(t.spec.Command, rendered), nil
+}
+
+func quotedCommand(command string, args []string) string {
+	parts := append([]string{command}, args...)
+	for i := range parts {
+		parts[i] = strconv.Quote(parts[i])
+	}
+	return strings.Join(parts, " ")
 }
 
 // renderArgs 封装局部逻辑，保持调用方流程清晰。

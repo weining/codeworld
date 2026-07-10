@@ -3,10 +3,14 @@ package capability
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
 
 	"codeworld/internal/codexplugin"
 	"codeworld/internal/config"
 	"codeworld/internal/mcp"
+	"codeworld/internal/permissions"
 	"codeworld/internal/plugin"
 	"codeworld/internal/skill"
 	"codeworld/internal/tools"
@@ -14,10 +18,11 @@ import (
 )
 
 type Options struct {
-	Root           string
-	Workspace      workspace.Workspace
-	PluginsEnabled bool
-	MCPServers     []config.MCPServer
+	Root              string
+	Workspace         workspace.Workspace
+	PluginsEnabled    bool
+	MCPServers        []config.MCPServer
+	AuthorizeExternal func(context.Context, permissions.Request) error
 }
 
 type Loaded struct {
@@ -55,9 +60,9 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 		loaded.Tools = append(loaded.Tools, tools.NewPluginTool(opts.Workspace, spec))
 	}
 
-	mcpTools, clients, err := loadMCPTools(ctx, mcpServers)
+	mcpTools, clients, err := loadMCPTools(ctx, mcpServers, opts.AuthorizeExternal)
 	if err != nil {
-		CloseClients(loaded.MCPClients)
+		_ = CloseClients(loaded.MCPClients)
 		return Loaded{}, err
 	}
 	loaded.Tools = append(loaded.Tools, mcpTools...)
@@ -66,17 +71,39 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 }
 
 // CloseClients 释放持有的资源，避免后台进程或句柄泄漏。
-func CloseClients(clients []*mcp.Client) {
+func CloseClients(clients []*mcp.Client) error {
+	var errs []error
 	for _, client := range clients {
-		_ = client.Close()
+		if err := client.Close(); err != nil {
+			errs = append(errs, err)
+		}
 	}
+	return errors.Join(errs...)
 }
 
 // loadMCPTools 加载外部或项目内配置，并把原始数据转换为内部结构。
-func loadMCPTools(ctx context.Context, servers []config.MCPServer) ([]tools.Tool, []*mcp.Client, error) {
+func loadMCPTools(ctx context.Context, servers []config.MCPServer, authorize func(context.Context, permissions.Request) error) ([]tools.Tool, []*mcp.Client, error) {
 	var out []tools.Tool
 	clients := make([]*mcp.Client, 0, len(servers))
 	for _, server := range servers {
+		target := server.URL
+		risk := permissions.RiskNetwork
+		if target == "" {
+			parts := append([]string{server.Command}, server.Args...)
+			for i := range parts {
+				parts[i] = fmt.Sprintf("%q", parts[i])
+			}
+			target = strings.Join(parts, " ")
+			risk = permissions.RiskExecute
+		}
+		if authorize == nil {
+			_ = CloseClients(clients)
+			return nil, nil, fmt.Errorf("MCP server %q requires explicit authorization", server.Name)
+		}
+		if err := authorize(ctx, permissions.Request{Action: permissions.ActionShell, Target: target, Risk: risk, Reason: "start MCP server " + server.Name}); err != nil {
+			_ = CloseClients(clients)
+			return nil, nil, err
+		}
 		var client interface {
 			Initialize(context.Context) error
 			ListTools(context.Context) ([]mcp.Tool, error)
@@ -87,19 +114,19 @@ func loadMCPTools(ctx context.Context, servers []config.MCPServer) ([]tools.Tool
 		} else {
 			stdioClient, err := mcp.StartStdio(ctx, mcp.ServerConfig{Name: server.Name, Command: server.Command, Args: server.Args})
 			if err != nil {
-				CloseClients(clients)
+				_ = CloseClients(clients)
 				return nil, nil, err
 			}
 			clients = append(clients, stdioClient)
 			client = stdioClient
 		}
 		if err := client.Initialize(ctx); err != nil {
-			CloseClients(clients)
+			_ = CloseClients(clients)
 			return nil, nil, err
 		}
 		listed, err := client.ListTools(ctx)
 		if err != nil {
-			CloseClients(clients)
+			_ = CloseClients(clients)
 			return nil, nil, err
 		}
 		for _, spec := range listed {

@@ -26,6 +26,12 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.SummaryMaxMessages != 40 {
 		t.Fatalf("SummaryMaxMessages = %d, want 40", cfg.SummaryMaxMessages)
 	}
+	if cfg.SummaryMaxTokens != 64*1024 {
+		t.Fatalf("SummaryMaxTokens = %d, want 65536", cfg.SummaryMaxTokens)
+	}
+	if cfg.ModelCallLogging {
+		t.Fatal("ModelCallLogging = true, want secure default false")
+	}
 	if cfg.IndexMaxFileBytes != 256*1024 {
 		t.Fatalf("IndexMaxFileBytes = %d, want 256 KiB", cfg.IndexMaxFileBytes)
 	}
@@ -64,7 +70,9 @@ func TestLoadExtendedProjectConfig(t *testing.T) {
 		"local_base_url = \"http://127.0.0.1:11434/v1\"",
 		"plugins_enabled = true",
 		"summary_max_messages = 80",
+		"summary_max_tokens = 32000",
 		"index_max_file_bytes = 65536",
+		"model_call_logging = true",
 	}, "\n"))
 
 	cfg, err := Load(dir)
@@ -82,6 +90,9 @@ func TestLoadExtendedProjectConfig(t *testing.T) {
 	}
 	if cfg.SummaryMaxMessages != 80 {
 		t.Fatalf("SummaryMaxMessages = %d, want 80", cfg.SummaryMaxMessages)
+	}
+	if cfg.SummaryMaxTokens != 32000 || !cfg.ModelCallLogging {
+		t.Fatalf("summary/log config = %d/%v", cfg.SummaryMaxTokens, cfg.ModelCallLogging)
 	}
 	if cfg.IndexMaxFileBytes != 65536 {
 		t.Fatalf("IndexMaxFileBytes = %d, want 65536", cfg.IndexMaxFileBytes)
@@ -172,6 +183,29 @@ func TestLoadRejectsUnknownConfigKeys(t *testing.T) {
 
 	if _, err := Load(dir); err == nil {
 		t.Fatalf("Load accepted an unknown config key")
+	}
+}
+
+func TestLoadRejectsUnsafeOrInvalidLimits(t *testing.T) {
+	for _, content := range []string{
+		"approval_mode = \"surprise\"\n",
+		"approval_mode = \"full-access\"\n",
+		"max_steps = 0\n",
+		"summary_max_tokens = -1\n",
+	} {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), content)
+		if _, err := Load(dir); err == nil {
+			t.Fatalf("Load accepted invalid config %q", content)
+		}
+	}
+}
+
+func TestLoadRejectsRemoteLocalProviderURL(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), "provider = \"local\"\nlocal_base_url = \"https://example.com/v1\"\n")
+	if _, err := Load(dir); err == nil {
+		t.Fatal("Load accepted remote URL for local provider")
 	}
 }
 
