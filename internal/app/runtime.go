@@ -35,6 +35,7 @@ type Options struct {
 	Root       string
 	SessionID  string
 	ResumeLast bool
+	Ephemeral  bool
 	In         io.Reader
 	Out        io.Writer
 	Err        io.Writer
@@ -220,9 +221,14 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return Runtime{}, err
 		}
 	}
-	sess, err := loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
-	if err != nil {
-		return Runtime{}, err
+	var sess session.Session
+	if opts.Ephemeral {
+		sess = session.New(ws.Root, cfg.Provider, cfg.Model)
+	} else {
+		sess, err = loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
+		if err != nil {
+			return Runtime{}, err
+		}
 	}
 	// Approvals are process-local trust decisions. Do not trust approvals read
 	// from a workspace-controlled session file after a restart.
@@ -359,10 +365,12 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		ModelName:    modelName,
 		SystemPrompt: composeSystemPrompt(systemPrompt, sess),
 	}
-	if err := store.SaveCurrent(sess); err != nil {
-		_ = subagentManager.Close()
-		_ = capability.CloseClients(loadedCapabilities.MCPClients)
-		return Runtime{}, err
+	if !opts.Ephemeral {
+		if err := store.SaveCurrent(sess); err != nil {
+			_ = subagentManager.Close()
+			_ = capability.CloseClients(loadedCapabilities.MCPClients)
+			return Runtime{}, err
+		}
 	}
 	if err := hookRunner.Run(ctx, "SessionStart", hooks.Context{}); err != nil {
 		_ = subagentManager.Close()

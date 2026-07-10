@@ -32,6 +32,8 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 	}
 	if len(args) > 0 {
 		switch args[0] {
+		case "help", "--help", "-h":
+			return printCLIHelp(out)
 		case "auth":
 			return runAuthCommand(in, out, root, args[1:])
 		case "repl":
@@ -58,6 +60,10 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 				}
 				return runmode.Once(context.Background(), rt, prompt)
 			})
+		case "exec":
+			return runExecCommand(context.Background(), in, out, stderr, root, args[1:])
+		case "review":
+			return runReviewCommand(context.Background(), in, out, stderr, root, args[1:])
 		case "index":
 			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, In: in, Out: out, Err: stderr})
 			if err != nil {
@@ -118,6 +124,35 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 		return err
 	}
 	return app.Run(context.Background())
+}
+
+func printCLIHelp(out io.Writer) error {
+	_, err := fmt.Fprint(out, `Codeworld local coding agent
+
+Usage:
+  codeworld                         Start the interactive TUI
+  codeworld exec [options] <task|-> Run a script-friendly task
+  codeworld review [options]        Review a Git change set in read-only mode
+  codeworld run [--image path] task Run one compatible non-interactive turn
+  codeworld resume [--last|id]      Resume an archived session
+  codeworld index                   Refresh the workspace index
+  codeworld repl                    Start the line-oriented REPL
+
+Exec options:
+  --json                 Emit JSONL events
+  --ephemeral            Do not load or save the current session
+  --image <path>         Attach an image
+  --output-schema <path> Validate the final JSON response
+  -o <path>              Also write the final message to a file
+
+Review options:
+  --base <branch>        Review changes against a base branch
+  --commit <sha>         Review one commit
+  --json                 Emit JSONL events
+  --output-schema <path> Validate the final JSON response
+  -o <path>              Also write the final message to a file
+`)
+	return err
 }
 
 func runAuthCommand(in io.Reader, out io.Writer, root string, args []string) error {

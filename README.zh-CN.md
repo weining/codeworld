@@ -9,6 +9,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 - OpenAI-compatible provider 的流式输出；
 - 面向 workspace 的读写、patch、shell、git、context 和原生 web search 工具；
 - project skills、plugin tools、Codex plugin bundle 基础兼容、stdio/HTTP MCP tools、hooks 和本地子代理；
+- 面向脚本的 JSONL 执行、结构化 JSON 输出校验和本地 Git review；
 - session 持久化、图片输入、token 统计、模型调用日志；
 - `AGENTS.md` / `AGENTS.override.md` 项目指令加载；
 - skills progressive disclosure：默认只注入 skill 索引，需要完整内容时通过 `skill_open` 工具读取。
@@ -17,7 +18,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 
 Codeworld 已经可以作为本地 coding agent 使用，但还不是完整 Codex 替代品。当前重点是接近 Codex CLI 风格的本地 TUI、模型调用、workspace 工具、原生 web search、权限确认、skills/plugins/MCP、hooks、本地子代理和确定性的上下文系统。
 
-尚未实现或仍明显简化的 Codex 类能力包括：cloud tasks、IDE 集成、浏览器控制、Computer Use、GitHub PR review、图片生成，以及更完整的 MCP OAuth 体验等。
+尚未实现或仍明显简化的 Codex 类能力包括：cloud tasks、IDE 集成、浏览器控制、Computer Use、托管 GitHub PR review、图片生成，以及更完整的 MCP OAuth 体验等。
 
 ## 安装
 
@@ -106,6 +107,12 @@ codeworld resume <session-id>
 codeworld repl
 codeworld run "inspect the project and explain the entry points"
 codeworld run --image screenshot.png "explain this screenshot"
+codeworld exec --json "summarize the repository"
+printf 'inspect this repository' | codeworld exec --ephemeral -
+codeworld exec --output-schema schema.json -o result.json "extract project metadata"
+codeworld review
+codeworld review --base main
+codeworld review --commit HEAD
 codeworld index
 ```
 
@@ -119,13 +126,20 @@ codeworld index
 - `codeworld repl`：启动旧的行式 REPL；
 - `codeworld run <task>`：执行一次非交互任务后退出；
 - `codeworld run --image <path> <task>`：给非交互任务附加图片；
+- `codeworld exec <task|->`：执行面向脚本的任务；使用 `-` 从 stdin 读取提示词；
+- `codeworld exec --json`：以 JSONL 输出生命周期、工具、用量和最终结果事件；
+- `codeworld exec --ephemeral`：不加载也不保存当前 session；
+- `codeworld exec --output-schema <path>`：要求并校验结构化 JSON 输出。当前校验器支持 `type`、`properties`、`required`、`items`、`enum` 和 `additionalProperties`；
+- `codeworld exec -o <path>`：额外把最终消息写入文件；
+- `codeworld review`：以只读模式审查 staged 和 unstaged 修改；
+- `codeworld review --base <branch>`、`--commit <sha>`：审查指定 Git 变更集；
 - `codeworld index`：刷新 `.codeworld/index.json`。
 
 从源码运行：
 
 ```bash
 go run ./cmd/codeworld
-go run ./cmd/codeworld run "list the Go packages"
+go run ./cmd/codeworld exec --ephemeral "list the Go packages"
 ```
 
 ## TUI 命令
@@ -429,7 +443,7 @@ workspace 状态保存在 `.codeworld/`：
 - subagents 还是本地只读调查任务，不是 cloud tasks；
 - MCP OAuth token refresh 和 dynamic registration 仍不完整；
 - 图片生成；
-- cloud tasks 和 PR review 集成；
+- cloud tasks 和托管 GitHub PR review 集成；
 - TUI 中的代码块/diff 高亮和 slash popup。
 
 ## 开发

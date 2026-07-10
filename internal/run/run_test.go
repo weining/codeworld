@@ -58,6 +58,93 @@ func TestOnceRunsTurnPrintsFinalTextAndSavesSession(t *testing.T) {
 	}
 }
 
+func TestExecuteWritesPlainFinalTextAndPersists(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	out := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+	rt := app.Runtime{
+		Out: out, Err: stderr, Store: store,
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+		Runner: agent.Runner{
+			Model: &fakeModel{responses: []model.GenerateResponse{{FinalText: "done"}}},
+			Tools: tools.NewRegistry(nil, nil), MaxSteps: 3,
+		},
+	}
+	result, err := Execute(context.Background(), &rt, "inspect", Options{})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.FinalText != "done" || out.String() != "done\n" {
+		t.Fatalf("result/output = %#v %q", result, out.String())
+	}
+	if _, err := store.LoadCurrent(); err != nil {
+		t.Fatalf("LoadCurrent: %v", err)
+	}
+}
+
+func TestExecuteJSONEmitsMachineReadableLifecycle(t *testing.T) {
+	out := &bytes.Buffer{}
+	rt := app.Runtime{
+		Out: out, Store: session.NewStore(t.TempDir()),
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+		Runner: agent.Runner{
+			Model: &fakeModel{responses: []model.GenerateResponse{{FinalText: "done", Usage: model.Usage{TotalTokens: 5}}}},
+			Tools: tools.NewRegistry(nil, nil), MaxSteps: 3,
+		},
+	}
+	if _, err := Execute(context.Background(), &rt, "inspect", Options{JSON: true, Ephemeral: true}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var types []string
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("invalid JSONL line %q: %v", line, err)
+		}
+		types = append(types, event["type"].(string))
+	}
+	joined := strings.Join(types, ",")
+	for _, want := range []string{"thread.started", "turn.started", "item.completed", "turn.completed"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("event types = %v, missing %s", types, want)
+		}
+	}
+}
+
+func TestExecuteEphemeralDoesNotSaveTurn(t *testing.T) {
+	store := session.NewStore(t.TempDir())
+	rt := app.Runtime{
+		Out: &bytes.Buffer{}, Store: store,
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+		Runner: agent.Runner{
+			Model: &fakeModel{responses: []model.GenerateResponse{{FinalText: "done"}}},
+			Tools: tools.NewRegistry(nil, nil), MaxSteps: 3,
+		},
+	}
+	if _, err := Execute(context.Background(), &rt, "inspect", Options{Ephemeral: true}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if _, err := store.LoadCurrent(); err == nil {
+		t.Fatal("ephemeral execute saved a session")
+	}
+}
+
+func TestExecuteRejectsOutputOutsideSchema(t *testing.T) {
+	schema := []byte(`{"type":"object","properties":{"ok":{"type":"boolean"}},"required":["ok"],"additionalProperties":false}`)
+	rt := app.Runtime{
+		Out: &bytes.Buffer{}, Store: session.NewStore(t.TempDir()),
+		Session: session.New("workspace", "deepseek", "deepseek-v4-pro"),
+		Runner: agent.Runner{
+			Model: &fakeModel{responses: []model.GenerateResponse{{FinalText: `{"wrong":true}`}}},
+			Tools: tools.NewRegistry(nil, nil), MaxSteps: 3,
+		},
+	}
+	_, err := Execute(context.Background(), &rt, "inspect", Options{Ephemeral: true, OutputSchema: schema})
+	if err == nil || !strings.Contains(err.Error(), "$.ok is required") {
+		t.Fatalf("err = %v, want schema validation error", err)
+	}
+}
+
 // TestOnceRejectsEmptyInput 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestOnceRejectsEmptyInput(t *testing.T) {
 	err := Once(context.Background(), &app.Runtime{Out: &bytes.Buffer{}}, "")

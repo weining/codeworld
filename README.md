@@ -10,6 +10,7 @@ The current version focuses on:
 - streaming assistant output for OpenAI-compatible providers;
 - workspace-safe tools for reading, writing, patching, shell commands, git, context search, and native web search;
 - project skills, plugin tools, stdio/HTTP MCP tools, hooks, and local subagents;
+- scriptable JSONL execution, structured JSON output, and local Git review;
 - session persistence, image input, token accounting, and model call logs.
 
 Chinese documentation is available in [README.zh-CN.md](README.zh-CN.md).
@@ -21,7 +22,7 @@ smaller than Codex. The current implementation covers a Codex-like local TUI,
 provider calls, workspace tools, native web search, permissions, skills,
 plugins, stdio/HTTP MCP, hooks, local subagents, image input, and deterministic
 context. Larger Codex-style surfaces such as cloud tasks, IDE integration,
-browser control, computer use, and hosted review workflows are future work.
+browser control, computer use, and hosted GitHub review workflows are future work.
 
 ## Install
 
@@ -114,6 +115,12 @@ codeworld resume <session-id>
 codeworld repl
 codeworld run "inspect the project and explain the entry points"
 codeworld run --image screenshot.png "explain this screenshot"
+codeworld exec --json "summarize the repository"
+printf 'inspect this repository' | codeworld exec --ephemeral -
+codeworld exec --output-schema schema.json -o result.json "extract project metadata"
+codeworld review
+codeworld review --base main
+codeworld review --commit HEAD
 codeworld index
 ```
 
@@ -127,13 +134,20 @@ Command behavior:
 - `codeworld repl` starts the line-oriented REPL.
 - `codeworld run <task>` runs one non-interactive turn and exits.
 - `codeworld run --image <path> <task>` attaches an image to a non-interactive turn.
+- `codeworld exec <task|->` runs a script-friendly turn; `-` reads the prompt from stdin.
+- `codeworld exec --json` emits lifecycle, tool, usage, and result events as JSONL.
+- `codeworld exec --ephemeral` avoids loading or saving the current session.
+- `codeworld exec --output-schema <path>` requests and validates structured JSON output. The current validator covers `type`, `properties`, `required`, `items`, `enum`, and `additionalProperties`.
+- `codeworld exec -o <path>` also writes the final message to a file.
+- `codeworld review` reviews staged and unstaged changes in read-only mode.
+- `codeworld review --base <branch>` and `--commit <sha>` review a selected Git change set.
 - `codeworld index` refreshes `.codeworld/index.json`.
 
 If you are running from source:
 
 ```bash
 go run ./cmd/codeworld
-go run ./cmd/codeworld run "list the Go packages"
+go run ./cmd/codeworld exec --ephemeral "list the Go packages"
 ```
 
 ## TUI Commands
@@ -456,7 +470,7 @@ Known gaps compared with Codex include:
 - subagents are local read-only investigation tasks, not cloud tasks;
 - MCP OAuth token refresh and dynamic registration are still partial;
 - no image generation;
-- no cloud task or PR review integration;
+- no cloud task or hosted GitHub PR review integration;
 - no syntax-highlighted TUI diff/code blocks yet.
 
 ## Development
