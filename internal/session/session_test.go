@@ -238,6 +238,96 @@ func TestStoreRejectsInvalidResumeID(t *testing.T) {
 	}
 }
 
+func TestStoreForkPreservesOriginalAndClearsApprovals(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+	original := New(root, "deepseek", "deepseek-v4-pro")
+	original.ID = "original-session"
+	original.Messages = []Message{{Role: "user", Content: "hello"}, {Role: "assistant", Content: "hi"}}
+	original.Approvals = []Approval{{Kind: "shell", Command: "go test ./..."}}
+	if err := store.SaveCurrent(original); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+
+	forked, err := store.Fork(original.ID)
+	if err != nil {
+		t.Fatalf("Fork: %v", err)
+	}
+	if forked.ID == original.ID || len(forked.Messages) != 2 || len(forked.Approvals) != 0 {
+		t.Fatalf("forked session = %#v", forked)
+	}
+	if loaded, err := store.Load(original.ID); err != nil || loaded.ID != original.ID {
+		t.Fatalf("original session changed: %#v err=%v", loaded, err)
+	}
+	current, err := store.LoadCurrent()
+	if err != nil || current.ID != forked.ID {
+		t.Fatalf("current = %#v err=%v, want fork", current, err)
+	}
+}
+
+func TestStoreArchiveUnarchiveAndDeleteLifecycle(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+	sess := New(root, "deepseek", "deepseek-v4-pro")
+	sess.ID = "lifecycle-session"
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatalf("SaveCurrent: %v", err)
+	}
+	if err := store.Archive(sess.ID); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	if _, err := store.Load(sess.ID); !os.IsNotExist(err) {
+		t.Fatalf("active session still exists: %v", err)
+	}
+	if archived, err := store.LoadArchived(sess.ID); err != nil || archived.ID != sess.ID {
+		t.Fatalf("archived = %#v err=%v", archived, err)
+	}
+	if _, err := store.LoadCurrent(); !os.IsNotExist(err) {
+		t.Fatalf("current pointer still exists: %v", err)
+	}
+	archivedList, err := store.ListArchived()
+	if err != nil || len(archivedList) != 1 || archivedList[0].ID != sess.ID {
+		t.Fatalf("archived list = %#v err=%v", archivedList, err)
+	}
+	if err := store.Unarchive(sess.ID); err != nil {
+		t.Fatalf("Unarchive: %v", err)
+	}
+	if _, err := store.Load(sess.ID); err != nil {
+		t.Fatalf("Load restored: %v", err)
+	}
+	if _, err := store.LoadArchived(sess.ID); !os.IsNotExist(err) {
+		t.Fatalf("archived copy still exists: %v", err)
+	}
+	if err := store.Delete(sess.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if err := store.Delete(sess.ID); err == nil {
+		t.Fatal("second Delete succeeded")
+	}
+}
+
+func TestStoreArchiveNonCurrentPreservesCurrent(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+	old := New(root, "deepseek", "old")
+	old.ID = "old-session"
+	if err := store.SaveCurrent(old); err != nil {
+		t.Fatalf("SaveCurrent old: %v", err)
+	}
+	current := New(root, "deepseek", "current")
+	current.ID = "current-session"
+	if err := store.SaveCurrent(current); err != nil {
+		t.Fatalf("SaveCurrent current: %v", err)
+	}
+	if err := store.Archive(old.ID); err != nil {
+		t.Fatalf("Archive old: %v", err)
+	}
+	loaded, err := store.LoadCurrent()
+	if err != nil || loaded.ID != current.ID {
+		t.Fatalf("current = %#v err=%v", loaded, err)
+	}
+}
+
 // requireRegularFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func requireRegularFile(t *testing.T, path string) os.FileInfo {
 	t.Helper()

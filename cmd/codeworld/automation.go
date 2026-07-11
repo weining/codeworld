@@ -12,9 +12,10 @@ import (
 	"codeworld/internal/permissions"
 	"codeworld/internal/review"
 	runmode "codeworld/internal/run"
+	"codeworld/internal/sandbox"
 )
 
-const execUsage = "usage: codeworld exec [--json] [--ephemeral] [--image <path>] [--output-schema <path>] [-o <path>] <task|->"
+const execUsage = "usage: codeworld exec [--json] [--ephemeral] [--approval-mode <auto|read-only|full-access>] [--sandbox <read-only|workspace-write|danger-full-access>] [--network|--no-network] [--image <path>] [--output-schema <path>] [-o <path>] <task|->"
 const reviewUsage = "usage: codeworld review [--base <branch>|--commit <sha>] [--json] [--output-schema <path>] [-o <path>] [instructions]"
 
 type automationOptions struct {
@@ -24,20 +25,27 @@ type automationOptions struct {
 	ephemeral    bool
 	outputSchema []byte
 	outputPath   string
+	approvalMode permissions.Mode
+	sandboxMode  sandbox.Mode
+	network      *bool
 }
 
-func runExecCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, root string, args []string) error {
+func runExecCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, root, profile string, args []string) error {
 	opts, err := parseAutomationArgs(in, args, execUsage, true, true)
 	if err != nil {
 		return err
 	}
 	rt, err := app.NewRuntime(ctx, app.Options{
-		Root: root, In: in, Out: out, Err: stderr, Ephemeral: opts.ephemeral,
+		Root: root, Profile: profile, In: in, Out: out, Err: stderr, Ephemeral: opts.ephemeral,
+		SandboxMode: opts.sandboxMode, SandboxNetwork: opts.network,
 	})
 	if err != nil {
 		return err
 	}
 	return withRuntime(rt, func(rt *app.Runtime) error {
+		if opts.approvalMode != "" {
+			rt.Runner.Policy = permissions.ModePolicy{Mode: opts.approvalMode}
+		}
 		result, err := runmode.Execute(ctx, rt, opts.prompt, runmode.Options{
 			Images: opts.images, JSON: opts.json, Ephemeral: opts.ephemeral, OutputSchema: opts.outputSchema,
 		})
@@ -48,16 +56,23 @@ func runExecCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, ro
 	})
 }
 
-func runReviewCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, root string, args []string) error {
+func runReviewCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, root, profile string, args []string) error {
 	target, automation, err := parseReviewArgs(in, args)
 	if err != nil {
 		return err
+	}
+	if automation.approvalMode != "" || automation.sandboxMode != "" || automation.network != nil {
+		return fmt.Errorf("review always runs in read-only permissions and sandboxing")
 	}
 	prompt, err := review.BuildPrompt(ctx, root, target, automation.prompt)
 	if err != nil {
 		return err
 	}
-	rt, err := app.NewRuntime(ctx, app.Options{Root: root, In: in, Out: out, Err: stderr, Ephemeral: true})
+	network := false
+	rt, err := app.NewRuntime(ctx, app.Options{
+		Root: root, Profile: profile, In: in, Out: out, Err: stderr, Ephemeral: true,
+		SandboxMode: sandbox.ModeReadOnly, SandboxNetwork: &network,
+	})
 	if err != nil {
 		return err
 	}
@@ -83,6 +98,34 @@ func parseAutomationArgs(in io.Reader, args []string, usage string, allowImages,
 			opts.json = true
 		case "--ephemeral":
 			opts.ephemeral = true
+		case "--approval-mode":
+			if i+1 >= len(args) {
+				return automationOptions{}, fmt.Errorf("%s", usage)
+			}
+			opts.approvalMode = permissions.Mode(args[i+1])
+			switch opts.approvalMode {
+			case permissions.ModeAuto, permissions.ModeReadOnly, permissions.ModeFullAccess:
+			default:
+				return automationOptions{}, fmt.Errorf("invalid approval mode %q", args[i+1])
+			}
+			i++
+		case "--sandbox":
+			if i+1 >= len(args) {
+				return automationOptions{}, fmt.Errorf("%s", usage)
+			}
+			opts.sandboxMode = sandbox.Mode(args[i+1])
+			switch opts.sandboxMode {
+			case sandbox.ModeReadOnly, sandbox.ModeWorkspaceWrite, sandbox.ModeDangerFullAccess:
+			default:
+				return automationOptions{}, fmt.Errorf("invalid sandbox mode %q", args[i+1])
+			}
+			i++
+		case "--network", "--no-network":
+			if opts.network != nil {
+				return automationOptions{}, fmt.Errorf("network sandbox option may be specified only once")
+			}
+			enabled := args[i] == "--network"
+			opts.network = &enabled
 		case "--image":
 			if !allowImages || i+1 >= len(args) {
 				return automationOptions{}, fmt.Errorf("%s", usage)
@@ -123,6 +166,9 @@ func parseAutomationArgs(in io.Reader, args []string, usage string, allowImages,
 		}
 	}
 	opts.prompt = strings.TrimSpace(strings.Join(promptParts, " "))
+	if opts.sandboxMode == sandbox.ModeDangerFullAccess && opts.network != nil {
+		return automationOptions{}, fmt.Errorf("--network and --no-network cannot be combined with danger-full-access")
+	}
 	if requirePrompt && opts.prompt == "" {
 		return automationOptions{}, fmt.Errorf("%s", usage)
 	}

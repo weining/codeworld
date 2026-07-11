@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"codeworld/internal/context/indexer"
+	"codeworld/internal/sandbox"
 	"codeworld/internal/session"
 )
 
@@ -51,6 +52,14 @@ func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {
 	}
 	if _, ok := rt.Runner.Tools.Get("subagent_status"); !ok {
 		t.Fatalf("subagent_status tool was not registered")
+	}
+	for _, name := range []string{"shell_start", "shell_poll", "shell_write", "shell_resize", "shell_terminate"} {
+		if _, ok := rt.Runner.Tools.Get(name); !ok {
+			t.Fatalf("%s tool was not registered", name)
+		}
+	}
+	if rt.CommandSessions == nil {
+		t.Fatal("command session manager missing")
 	}
 	if rt.Diff == nil {
 		t.Fatalf("runtime diff function missing")
@@ -120,10 +129,11 @@ func TestRuntimeRunsLifecycleHooks(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "test-key")
 
 	rt, err := NewRuntime(context.Background(), Options{
-		Root: root,
-		In:   strings.NewReader("a\na\n"),
-		Out:  &bytes.Buffer{},
-		Err:  &bytes.Buffer{},
+		Root:        root,
+		In:          strings.NewReader("a\na\n"),
+		Out:         &bytes.Buffer{},
+		Err:         &bytes.Buffer{},
+		SandboxMode: sandbox.ModeDangerFullAccess,
 	})
 	if err != nil {
 		t.Fatalf("NewRuntime returned error: %v", err)

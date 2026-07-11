@@ -9,6 +9,7 @@ import (
 
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
+	"codeworld/internal/sandbox"
 	"codeworld/internal/workspace"
 )
 
@@ -82,22 +83,34 @@ func (t gitDiffTool) Execute(ctx context.Context, args json.RawMessage) (Result,
 
 // NewDefaultRegistry 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewDefaultRegistry(ws workspace.Workspace) *Registry {
+	return NewDefaultRegistryWithSandbox(ws, sandbox.FullAccess(ws.Root))
+}
+
+// NewDefaultRegistryWithSandbox 创建所有本地进程共享同一沙箱策略的工具表。
+func NewDefaultRegistryWithSandbox(ws workspace.Workspace, policy sandbox.Policy) *Registry {
 	contextStore := NewContextStore(ws, 256*1024)
-	return NewRegistry([]Tool{
+	registered := []Tool{
 		NewListDirTool(ws),
 		NewReadFileTool(ws),
 		NewSearchTool(ws),
-		NewWriteFileTool(ws),
-		NewApplyPatchTool(ws),
-		NewShellTool(ws),
+		NewShellToolWithSandbox(ws, policy),
 		NewGitStatusTool(ws),
 		NewGitDiffTool(ws),
-		NewWebSearchTool(),
-		NewIndexWorkspaceTool(ws),
 		NewContextRefreshTool(contextStore),
 		NewContextSearchTool(contextStore),
 		NewContextOpenTool(contextStore),
-	}, nil)
+	}
+	if policy.Network {
+		registered = append(registered, NewWebSearchTool())
+	}
+	if policy.Mode != sandbox.ModeReadOnly {
+		registered = append(registered,
+			NewWriteFileTool(ws),
+			NewApplyPatchTool(ws),
+			NewIndexWorkspaceTool(ws),
+		)
+	}
+	return NewRegistry(registered, nil)
 }
 
 // parseEmptyArgs 解析输入数据，并执行必要的格式校验。

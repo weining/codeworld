@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,10 +51,48 @@ func TestCLIHelpListsAutomationCommands(t *testing.T) {
 	if err := runWithIO(strings.NewReader(""), &out, &bytes.Buffer{}, []string{"--help"}); err != nil {
 		t.Fatalf("runWithIO: %v", err)
 	}
-	for _, want := range []string{"codeworld exec", "codeworld review", "--output-schema", "--ephemeral"} {
+	for _, want := range []string{"codeworld exec", "codeworld review", "codeworld sessions", "codeworld fork", "--output-schema", "--ephemeral", "--approval-mode"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("help missing %q:\n%s", want, out.String())
 		}
+	}
+}
+
+func TestGlobalProfileSelectsProfileConfig(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "profiles"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "profiles", "fast.toml"), []byte("model = \"profile-model\"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t.Setenv("CODEWORLD_HOME", home)
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalWD) })
+	var out, stderr bytes.Buffer
+	if err := runWithIO(strings.NewReader("/status\n/exit\n"), &out, &stderr, []string{"--profile", "fast"}); err != nil {
+		t.Fatalf("runWithIO: %v", err)
+	}
+	if !strings.Contains(out.String(), "model=profile-model") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestParseGlobalOptions(t *testing.T) {
+	opts, args, err := parseGlobalOptions([]string{"--profile", "fast", "exec", "inspect"})
+	if err != nil || opts.Profile != "fast" || strings.Join(args, " ") != "exec inspect" {
+		t.Fatalf("opts=%#v args=%#v err=%v", opts, args, err)
+	}
+	if _, _, err := parseGlobalOptions([]string{"--profile"}); err == nil {
+		t.Fatal("missing profile name accepted")
 	}
 }
 
@@ -133,6 +172,35 @@ func TestParseAutomationArgsRequiresExecPrompt(t *testing.T) {
 	}
 }
 
+func TestParseAutomationArgsValidatesApprovalMode(t *testing.T) {
+	opts, err := parseAutomationArgs(strings.NewReader(""), []string{"--approval-mode", "full-access", "inspect"}, execUsage, true, true)
+	if err != nil {
+		t.Fatalf("parseAutomationArgs: %v", err)
+	}
+	if opts.approvalMode != "full-access" {
+		t.Fatalf("approval mode = %q", opts.approvalMode)
+	}
+	if _, err := parseAutomationArgs(strings.NewReader(""), []string{"--approval-mode", "unsafe", "inspect"}, execUsage, true, true); err == nil {
+		t.Fatal("invalid approval mode accepted")
+	}
+}
+
+func TestParseAutomationArgsValidatesSandbox(t *testing.T) {
+	opts, err := parseAutomationArgs(strings.NewReader(""), []string{"--sandbox", "workspace-write", "--network", "inspect"}, execUsage, true, true)
+	if err != nil {
+		t.Fatalf("parseAutomationArgs: %v", err)
+	}
+	if opts.sandboxMode != "workspace-write" || opts.network == nil || !*opts.network {
+		t.Fatalf("sandbox options = %#v", opts)
+	}
+	if _, err := parseAutomationArgs(strings.NewReader(""), []string{"--sandbox", "unsafe", "inspect"}, execUsage, true, true); err == nil {
+		t.Fatal("invalid sandbox mode accepted")
+	}
+	if _, err := parseAutomationArgs(strings.NewReader(""), []string{"--sandbox", "danger-full-access", "--no-network", "inspect"}, execUsage, true, true); err == nil {
+		t.Fatal("misleading danger-full-access network restriction accepted")
+	}
+}
+
 func TestParseReviewArgsAllowsFlagsWithoutInstructions(t *testing.T) {
 	target, opts, err := parseReviewArgs(strings.NewReader(""), []string{"--base", "main", "--json"})
 	if err != nil {
@@ -147,6 +215,13 @@ func TestParseReviewArgsRejectsMultipleTargets(t *testing.T) {
 	_, _, err := parseReviewArgs(strings.NewReader(""), []string{"--base", "main", "--commit", "HEAD"})
 	if err == nil || !strings.Contains(err.Error(), "only one") {
 		t.Fatalf("err = %v, want target conflict", err)
+	}
+}
+
+func TestReviewRejectsApprovalModeOverride(t *testing.T) {
+	err := runReviewCommand(context.Background(), strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, t.TempDir(), "", []string{"--approval-mode", "full-access"})
+	if err == nil || !strings.Contains(err.Error(), "always runs in read-only") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

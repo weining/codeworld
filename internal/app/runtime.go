@@ -24,6 +24,7 @@ import (
 	"codeworld/internal/model/provider"
 	"codeworld/internal/permissions"
 	"codeworld/internal/repl"
+	"codeworld/internal/sandbox"
 	"codeworld/internal/session"
 	"codeworld/internal/skill"
 	"codeworld/internal/subagent"
@@ -32,13 +33,16 @@ import (
 )
 
 type Options struct {
-	Root       string
-	SessionID  string
-	ResumeLast bool
-	Ephemeral  bool
-	In         io.Reader
-	Out        io.Writer
-	Err        io.Writer
+	Root           string
+	Profile        string
+	SessionID      string
+	ResumeLast     bool
+	Ephemeral      bool
+	SandboxMode    sandbox.Mode
+	SandboxNetwork *bool
+	In             io.Reader
+	Out            io.Writer
+	Err            io.Writer
 }
 
 type Runtime struct {
@@ -51,6 +55,7 @@ type Runtime struct {
 	Skills           []skill.Skill
 	MCPClients       []*mcp.Client
 	Subagents        *subagent.Manager
+	CommandSessions  *tools.CommandSessionManager
 	Runner           agent.Runner
 	ChildRunner      *agent.Runner
 	Hooks            *hooks.Runner
@@ -87,6 +92,11 @@ func (r *Runtime) Close() error {
 
 func (r *Runtime) closeResources() error {
 	var errs []error
+	if r.CommandSessions != nil {
+		if err := r.CommandSessions.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if r.Subagents != nil {
 		if err := r.Subagents.Close(); err != nil {
 			errs = append(errs, err)
@@ -160,7 +170,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return Runtime{}, err
 		}
 	}
-	cfg, err := config.Load(root)
+	cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: opts.Profile})
 	if err != nil {
 		return Runtime{}, err
 	}
@@ -181,6 +191,27 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}
 	if opts.Err != nil && !ws.IsGitRepo() {
 		fmt.Fprintln(opts.Err, "warning: current workspace is not a git repository; patch workflows are safer in git repositories")
+	}
+	sandboxMode := sandbox.Mode(cfg.SandboxMode)
+	if opts.SandboxMode != "" {
+		sandboxMode = opts.SandboxMode
+		cfg.SandboxMode = string(opts.SandboxMode)
+	}
+	sandboxNetwork := cfg.SandboxNetwork
+	if opts.SandboxNetwork != nil {
+		sandboxNetwork = *opts.SandboxNetwork
+		cfg.SandboxNetwork = sandboxNetwork
+	}
+	if sandboxMode == sandbox.ModeDangerFullAccess {
+		sandboxNetwork = true
+		cfg.SandboxNetwork = true
+		if opts.Err != nil {
+			fmt.Fprintln(opts.Err, "warning: danger-full-access disables OS filesystem and network sandboxing")
+		}
+	}
+	sandboxPolicy := sandbox.Policy{Mode: sandboxMode, Workspace: ws.Root, Network: sandboxNetwork}
+	if err := sandboxPolicy.Validate(); err != nil {
+		return Runtime{}, err
 	}
 
 	// system prompt 由静态身份、工作区摘要、索引图、项目指令和历史摘要拼接而成。
@@ -253,7 +284,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		}
 		return nil
 	}
-	hookRunner, err := hooks.Load(ws.Root)
+	hookRunner, err := hooks.LoadWithSandbox(ws.Root, sandboxPolicy)
 	if err != nil {
 		return Runtime{}, err
 	}
@@ -289,11 +320,12 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		PluginsEnabled:    cfg.PluginsEnabled,
 		MCPServers:        cfg.MCPServers,
 		AuthorizeExternal: authorizeExternal,
+		Sandbox:           sandboxPolicy,
 	})
 	if err != nil {
 		return Runtime{}, err
 	}
-	registry := tools.NewDefaultRegistry(ws)
+	registry := tools.NewDefaultRegistryWithSandbox(ws, sandboxPolicy)
 	for _, tool := range loadedCapabilities.Tools {
 		if err := registry.RegisterChecked(tool); err != nil {
 			_ = capability.CloseClients(loadedCapabilities.MCPClients)
@@ -312,13 +344,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	diffTool := tools.NewGitDiffTool(ws)
 
 	approvalMode := permissions.Mode(firstNonEmpty(sess.ApprovalMode, cfg.ApprovalMode, string(permissions.ModeAuto)))
-	childRegistry := tools.NewDefaultRegistry(ws)
-	for _, tool := range loadedCapabilities.Tools {
-		if err := childRegistry.RegisterChecked(tool); err != nil {
-			_ = capability.CloseClients(loadedCapabilities.MCPClients)
-			return Runtime{}, err
-		}
-	}
+	childSandbox := sandboxPolicy
+	childSandbox.Mode = sandbox.ModeReadOnly
+	childRegistry := tools.NewDefaultRegistryWithSandbox(ws, childSandbox)
 	if len(loadedCapabilities.Skills) > 0 {
 		if err := childRegistry.RegisterChecked(tools.NewSkillOpenTool(loadedCapabilities.Skills)); err != nil {
 			_ = capability.CloseClients(loadedCapabilities.MCPClients)
@@ -346,6 +374,15 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		_ = capability.CloseClients(loadedCapabilities.MCPClients)
 		return Runtime{}, err
 	}
+	commandSessions := tools.NewCommandSessionManagerWithSandbox(ws, sandboxPolicy)
+	for _, tool := range tools.NewCommandSessionTools(commandSessions) {
+		if err := registry.RegisterChecked(tool); err != nil {
+			_ = commandSessions.Close()
+			_ = subagentManager.Close()
+			_ = capability.CloseClients(loadedCapabilities.MCPClients)
+			return Runtime{}, err
+		}
+	}
 	*childRunner = agent.Runner{
 		Model:        client,
 		Tools:        childRegistry,
@@ -367,12 +404,14 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}
 	if !opts.Ephemeral {
 		if err := store.SaveCurrent(sess); err != nil {
+			_ = commandSessions.Close()
 			_ = subagentManager.Close()
 			_ = capability.CloseClients(loadedCapabilities.MCPClients)
 			return Runtime{}, err
 		}
 	}
 	if err := hookRunner.Run(ctx, "SessionStart", hooks.Context{}); err != nil {
+		_ = commandSessions.Close()
 		_ = subagentManager.Close()
 		_ = capability.CloseClients(loadedCapabilities.MCPClients)
 		return Runtime{}, err
@@ -392,6 +431,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		Skills:           loadedCapabilities.Skills,
 		MCPClients:       loadedCapabilities.MCPClients,
 		Subagents:        subagentManager,
+		CommandSessions:  commandSessions,
 		Runner:           runner,
 		ChildRunner:      childRunner,
 		Hooks:            hookRunner,

@@ -25,6 +25,8 @@ type Status struct {
 	Usage     model.Usage
 	Git       string
 	Running   bool
+	Sandbox   string
+	Network   bool
 }
 
 // RuntimeStatus 执行主要流程，并把运行结果或错误返回给调用方。
@@ -37,6 +39,8 @@ func RuntimeStatus(rt *app.Runtime) Status {
 		Approvals: len(rt.Session.Approvals),
 		Usage:     rt.Usage,
 		Git:       gitState(rt.Workspace.Root),
+		Sandbox:   rt.Config.SandboxMode,
+		Network:   rt.Config.SandboxNetwork,
 	}
 }
 
@@ -46,11 +50,13 @@ func StatusLine(status Status) string {
 	if status.Running {
 		running = " running"
 	}
-	return fmt.Sprintf("workspace=%s provider=%s model=%s git=%s messages=%d approvals=%d tokens input=%d output=%d cache=%d total=%d%s",
+	return fmt.Sprintf("workspace=%s provider=%s model=%s git=%s sandbox=%s network=%t messages=%d approvals=%d tokens input=%d output=%d cache=%d total=%d%s",
 		status.Workspace,
 		status.Provider,
 		status.Model,
 		status.Git,
+		status.Sandbox,
+		status.Network,
 		status.Messages,
 		status.Approvals,
 		status.Usage.InputTokens,

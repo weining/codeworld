@@ -30,6 +30,8 @@ type REPL struct {
 	SummaryMaxTokens   int
 	ShowStatusLine     bool
 	ShowTerminalTitle  bool
+	SandboxMode        string
+	SandboxNetwork     bool
 	Diff               func(context.Context) (string, error)
 	Close              func() error
 	BuildSystemPrompt  func(session.Session) string
@@ -368,10 +370,12 @@ func (r *REPL) writeStatusLine() {
 	if !r.ShowStatusLine {
 		return
 	}
-	fmt.Fprintf(r.Out, "status workspace=%s provider=%s model=%s messages=%d approvals=%d tokens %s\n",
+	fmt.Fprintf(r.Out, "status workspace=%s provider=%s model=%s sandbox=%s network=%t messages=%d approvals=%d tokens %s\n",
 		r.Session.Workspace,
 		r.Session.Provider,
 		r.currentModelName(),
+		r.SandboxMode,
+		r.SandboxNetwork,
 		len(r.Messages),
 		len(r.Session.Approvals),
 		formatUsage(r.Usage),
