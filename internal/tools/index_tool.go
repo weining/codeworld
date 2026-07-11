@@ -34,9 +34,9 @@ func (t indexWorkspaceTool) PermissionRequest(args json.RawMessage) (permissions
 		return permissions.Request{}, err
 	}
 	return permissions.Request{
-		Action: permissions.ActionRead,
+		Action: permissions.ActionWrite,
 		Target: "workspace index",
-		Risk:   permissions.RiskRead,
+		Risk:   permissions.RiskWrite,
 		Reason: "refresh workspace index",
 	}, nil
 }

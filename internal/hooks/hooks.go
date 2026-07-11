@@ -5,10 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"time"
+
+	"codeworld/internal/sandbox"
 )
 
 type Context struct {
@@ -21,6 +22,7 @@ type Runner struct {
 	root    string
 	events  map[string][]Matcher
 	enabled bool
+	sandbox sandbox.Policy
 }
 
 // Commands returns the unique command hooks that require workspace trust.
@@ -71,11 +73,16 @@ type fileConfig struct {
 
 // Load 读取 workspace 的 .codeworld/hooks.json；不存在时返回空 runner。
 func Load(root string) (*Runner, error) {
+	return LoadWithSandbox(root, sandbox.FullAccess(root))
+}
+
+// LoadWithSandbox 读取 hooks，并为所有 hook 命令绑定统一沙箱策略。
+func LoadWithSandbox(root string, policy sandbox.Policy) (*Runner, error) {
 	path := filepath.Join(root, ".codeworld", "hooks.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &Runner{root: root, events: map[string][]Matcher{}}, nil
+			return &Runner{root: root, events: map[string][]Matcher{}, sandbox: policy}, nil
 		}
 		return nil, err
 	}
@@ -86,7 +93,7 @@ func Load(root string) (*Runner, error) {
 	if cfg.Hooks == nil {
 		cfg.Hooks = map[string][]Matcher{}
 	}
-	return &Runner{root: root, events: cfg.Hooks}, nil
+	return &Runner{root: root, events: cfg.Hooks, sandbox: policy}, nil
 }
 
 // Run 执行指定事件匹配到的 command hooks。
@@ -110,8 +117,11 @@ func (r *Runner) Run(ctx context.Context, event string, hookCtx Context) error {
 				timeout = 60
 			}
 			runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-			cmd := exec.CommandContext(runCtx, "sh", "-c", hook.Command)
-			cmd.Dir = r.root
+			cmd, err := r.sandbox.CommandContext(runCtx, r.root, "sh", "-c", hook.Command)
+			if err != nil {
+				cancel()
+				return err
+			}
 			cmd.Env = append(os.Environ(),
 				"CODEWORLD_HOOK_EVENT="+event,
 				"CODEWORLD_HOOK_TOOL="+hookCtx.Tool,

@@ -13,6 +13,7 @@ import (
 
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
+	"codeworld/internal/sandbox"
 	"codeworld/internal/workspace"
 )
 
@@ -23,6 +24,7 @@ const (
 
 type shellTool struct {
 	workspace workspace.Workspace
+	sandbox   sandbox.Policy
 }
 
 type shellArgs struct {
@@ -34,7 +36,12 @@ type shellArgs struct {
 
 // NewShellTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewShellTool(ws workspace.Workspace) Tool {
-	return shellTool{workspace: ws}
+	return NewShellToolWithSandbox(ws, sandbox.FullAccess(ws.Root))
+}
+
+// NewShellToolWithSandbox 创建由 OS 沙箱约束的 shell 工具。
+func NewShellToolWithSandbox(ws workspace.Workspace, policy sandbox.Policy) Tool {
+	return shellTool{workspace: ws, sandbox: policy}
 }
 
 // Definition 返回工具暴露给模型的名称、描述和参数 schema。
@@ -106,8 +113,10 @@ func (t shellTool) Execute(ctx context.Context, args json.RawMessage) (Result, e
 	defer cancel()
 
 	start := time.Now()
-	cmd := exec.Command("sh", "-c", parsed.Command)
-	cmd.Dir = resolvedCwd
+	cmd, err := t.sandbox.Command(resolvedCwd, "sh", "-c", parsed.Command)
+	if err != nil {
+		return Result{}, err
+	}
 	// 独立进程组便于超时或取消时清理子进程，避免 shell 派生的命令残留。
 	configureCommandProcessGroup(cmd)
 

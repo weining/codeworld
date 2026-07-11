@@ -10,6 +10,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 - 面向 workspace 的读写、patch、shell、git、context 和原生 web search 工具；
 - project skills、plugin tools、Codex plugin bundle 基础兼容、stdio/HTTP MCP tools、hooks 和本地子代理；
 - 面向脚本的 JSONL 执行、结构化 JSON 输出校验和本地 Git review；
+- 支持增量输出、stdin、resize 和终止的 PTY 后台命令会话；
 - session 持久化、图片输入、token 统计、模型调用日志；
 - `AGENTS.md` / `AGENTS.override.md` 项目指令加载；
 - skills progressive disclosure：默认只注入 skill 索引，需要完整内容时通过 `skill_open` 工具读取。
@@ -37,7 +38,11 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 
 ## 配置
 
-Codeworld 从 workspace root 读取 `.codeworld/config.toml`。API-key provider 从环境变量读取 key；Codex OAuth 使用本地登录文件。
+Codeworld 会依次加载用户配置 `$CODEWORLD_HOME/config.toml`（默认
+`~/.codeworld/config.toml`）、项目配置 `.codeworld/config.toml` 和可选的
+`$CODEWORLD_HOME/profiles/<name>.toml`。项目配置覆盖用户配置，显式选择的
+profile 再覆盖前两者。API-key provider 从环境变量读取 key；Codex OAuth
+使用本地登录文件。
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
@@ -54,7 +59,20 @@ summary_max_messages = 40
 summary_max_tokens = 65536
 index_max_file_bytes = 262144
 model_call_logging = false
+sandbox_mode = "workspace-write"
+sandbox_network = false
 ```
+
+可以通过全局参数或环境变量选择 profile：
+
+```bash
+codeworld --profile fast
+codeworld --profile review exec "inspect this repository"
+export CODEWORLD_PROFILE=fast
+```
+
+项目配置不能启用 approval `full-access`、sandbox `danger-full-access` 或网络访问；
+这些信任扩展只能来自用户/profile 配置或显式的 `exec` 参数。
 
 配置 stdio MCP server：
 
@@ -110,9 +128,15 @@ codeworld run --image screenshot.png "explain this screenshot"
 codeworld exec --json "summarize the repository"
 printf 'inspect this repository' | codeworld exec --ephemeral -
 codeworld exec --output-schema schema.json -o result.json "extract project metadata"
+codeworld exec --approval-mode read-only "inspect without changing files"
 codeworld review
 codeworld review --base main
 codeworld review --commit HEAD
+codeworld sessions
+codeworld fork --last
+codeworld archive <session-id>
+codeworld unarchive <session-id>
+codeworld delete <session-id>
 codeworld index
 ```
 
@@ -121,18 +145,23 @@ codeworld index
 - `codeworld`：连接到终端时默认启动 TUI；
 - `codeworld tui`：显式启动 TUI；
 - `codeworld auth codex login`：使用 ChatGPT/Codex OAuth 登录，供 `provider = "codex"` 使用；
-- `codeworld resume --last`：恢复最新的本地归档 session；
-- `codeworld resume <session-id>`：恢复指定归档 session；
+- `codeworld resume --last`：恢复最新的活动 session；
+- `codeworld resume <session-id>`：恢复指定活动 session；
 - `codeworld repl`：启动旧的行式 REPL；
 - `codeworld run <task>`：执行一次非交互任务后退出；
 - `codeworld run --image <path> <task>`：给非交互任务附加图片；
 - `codeworld exec <task|->`：执行面向脚本的任务；使用 `-` 从 stdin 读取提示词；
 - `codeworld exec --json`：以 JSONL 输出生命周期、工具、用量和最终结果事件；
 - `codeworld exec --ephemeral`：不加载也不保存当前 session；
+- `codeworld exec --approval-mode <auto|read-only|full-access>`：覆盖本次确认策略，与 OS 沙箱相互独立；
+- `codeworld exec --sandbox <read-only|workspace-write|danger-full-access>`：覆盖文件系统沙箱；`--network` 会开放受限进程和 `web_search` 的网络访问；
 - `codeworld exec --output-schema <path>`：要求并校验结构化 JSON 输出。当前校验器支持 `type`、`properties`、`required`、`items`、`enum` 和 `additionalProperties`；
 - `codeworld exec -o <path>`：额外把最终消息写入文件；
 - `codeworld review`：以只读模式审查 staged 和 unstaged 修改；
 - `codeworld review --base <branch>`、`--commit <sha>`：审查指定 Git 变更集；
+- `codeworld sessions [--archived]`：列出活动或归档 session；
+- `codeworld fork <session-id|--last>`：复制会话历史并进入新的交互 session；
+- `codeworld archive`、`unarchive`、`delete`：管理已保存 session 的生命周期；
 - `codeworld index`：刷新 `.codeworld/index.json`。
 
 从源码运行：
@@ -384,8 +413,6 @@ TUI 会内联展示权限请求，并支持：
 - 拒绝；
 - 对类似 shell 命令在当前 session 内批准。
 
-这还不是完整 Codex sandbox。细粒度 filesystem profiles 和 network policy 仍是后续工作。
-
 权限模式：
 
 - `auto`：普通 workspace 操作自动允许，高风险操作询问；
@@ -399,6 +426,23 @@ approval_mode = "auto"
 ```
 
 项目配置只接受 `auto` 和 `read-only`；确实需要时请在交互界面临时选择 `full-access`。
+
+## 进程沙箱
+
+模型触发的普通 shell、后台/PTY、plugin 和 hook 命令默认运行在 OS 沙箱中。
+`workspace-write` 将宿主文件系统设为只读，仅允许写 workspace；`read-only`
+还会移除结构化 write/patch/index 工具；`danger-full-access` 会显式绕过 OS 沙箱。
+网络默认关闭，并决定是否注册原生 `web_search` 工具。
+
+```toml
+sandbox_mode = "workspace-write"
+sandbox_network = false
+```
+
+macOS 使用系统自带的 `sandbox-exec`；Linux 需要安装 Bubblewrap 的 `bwrap`。
+后端缺失或宿主禁止嵌套沙箱时，受限模式会明确失败，不会静默降级。
+Windows 会明确报告暂不支持。已配置的 MCP server 作为可信扩展，启动时仍单独确认；
+provider API 流量不经过命令沙箱。
 
 ## Hooks
 
@@ -441,6 +485,8 @@ workspace 状态保存在 `.codeworld/`：
 
 - browser/computer-use；
 - subagents 还是本地只读调查任务，不是 cloud tasks；
+- Unix 平台支持 PTY session；Windows 会明确返回 PTY unsupported，不会静默退回管道；
+- 权限策略仍是进程内控制，尚无 OS 级文件系统/网络沙箱；
 - MCP OAuth token refresh 和 dynamic registration 仍不完整；
 - 图片生成；
 - cloud tasks 和托管 GitHub PR review 集成；

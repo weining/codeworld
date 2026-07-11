@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -12,17 +11,24 @@ import (
 	"codeworld/internal/model"
 	"codeworld/internal/permissions"
 	"codeworld/internal/plugin"
+	"codeworld/internal/sandbox"
 	"codeworld/internal/workspace"
 )
 
 type pluginTool struct {
 	workspace workspace.Workspace
 	spec      plugin.Tool
+	sandbox   sandbox.Policy
 }
 
 // NewPluginTool 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewPluginTool(ws workspace.Workspace, spec plugin.Tool) Tool {
-	return pluginTool{workspace: ws, spec: spec}
+	return NewPluginToolWithSandbox(ws, spec, sandbox.FullAccess(ws.Root))
+}
+
+// NewPluginToolWithSandbox 创建受统一 OS 沙箱约束的插件命令工具。
+func NewPluginToolWithSandbox(ws workspace.Workspace, spec plugin.Tool, policy sandbox.Policy) Tool {
+	return pluginTool{workspace: ws, spec: spec, sandbox: policy}
 }
 
 // Definition 返回工具暴露给模型的名称、描述和参数 schema。
@@ -59,8 +65,10 @@ func (t pluginTool) Execute(ctx context.Context, args json.RawMessage) (Result, 
 	}
 	runCtx, cancel := context.WithTimeout(ctx, defaultShellTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(runCtx, t.spec.Command, rendered...)
-	cmd.Dir = t.workspace.Root
+	cmd, err := t.sandbox.CommandContext(runCtx, t.workspace.Root, t.spec.Command, rendered...)
+	if err != nil {
+		return Result{}, err
+	}
 	configureCommandProcessGroup(cmd)
 	stdout := &cappedBuffer{limit: defaultReadLimit}
 	stderr := &cappedBuffer{limit: defaultReadLimit}

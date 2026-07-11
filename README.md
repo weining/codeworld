@@ -11,6 +11,7 @@ The current version focuses on:
 - workspace-safe tools for reading, writing, patching, shell commands, git, context search, and native web search;
 - project skills, plugin tools, stdio/HTTP MCP tools, hooks, and local subagents;
 - scriptable JSONL execution, structured JSON output, and local Git review;
+- PTY-capable background command sessions with incremental output, stdin, resize, and termination;
 - session persistence, image input, token accounting, and model call logs.
 
 Chinese documentation is available in [README.zh-CN.md](README.zh-CN.md).
@@ -41,8 +42,12 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 
 ## Configure
 
-Codeworld reads `.codeworld/config.toml` from the workspace root. API-key
-providers read keys from the environment; Codex OAuth uses a local login file.
+Codeworld layers user configuration from `$CODEWORLD_HOME/config.toml`
+(default `~/.codeworld/config.toml`), project configuration from
+`.codeworld/config.toml`, and an optional profile from
+`$CODEWORLD_HOME/profiles/<name>.toml`. Project values override user values;
+an explicitly selected profile overrides both. API-key providers read keys
+from the environment; Codex OAuth uses a local login file.
 
 ```bash
 export DEEPSEEK_API_KEY="sk-..."
@@ -59,7 +64,21 @@ summary_max_messages = 40
 summary_max_tokens = 65536
 index_max_file_bytes = 262144
 model_call_logging = false
+sandbox_mode = "workspace-write"
+sandbox_network = false
 ```
+
+Select a profile globally or through the environment:
+
+```bash
+codeworld --profile fast
+codeworld --profile review exec "inspect this repository"
+export CODEWORLD_PROFILE=fast
+```
+
+Project configuration cannot enable approval `full-access`, sandbox
+`danger-full-access`, or sandbox network access. Those trust expansions must
+come from a user/profile config or explicit `exec` flags.
 
 MCP servers can also be configured in the same file:
 
@@ -118,9 +137,15 @@ codeworld run --image screenshot.png "explain this screenshot"
 codeworld exec --json "summarize the repository"
 printf 'inspect this repository' | codeworld exec --ephemeral -
 codeworld exec --output-schema schema.json -o result.json "extract project metadata"
+codeworld exec --approval-mode read-only "inspect without changing files"
 codeworld review
 codeworld review --base main
 codeworld review --commit HEAD
+codeworld sessions
+codeworld fork --last
+codeworld archive <session-id>
+codeworld unarchive <session-id>
+codeworld delete <session-id>
 codeworld index
 ```
 
@@ -129,18 +154,23 @@ Command behavior:
 - `codeworld` starts the TUI when attached to a terminal.
 - `codeworld tui` starts the TUI explicitly.
 - `codeworld auth codex login` signs in with ChatGPT/Codex OAuth for `provider = "codex"`.
-- `codeworld resume --last` resumes the newest archived local session.
-- `codeworld resume <session-id>` resumes a specific archived session.
+- `codeworld resume --last` resumes the newest active saved session.
+- `codeworld resume <session-id>` resumes a specific active session.
 - `codeworld repl` starts the line-oriented REPL.
 - `codeworld run <task>` runs one non-interactive turn and exits.
 - `codeworld run --image <path> <task>` attaches an image to a non-interactive turn.
 - `codeworld exec <task|->` runs a script-friendly turn; `-` reads the prompt from stdin.
 - `codeworld exec --json` emits lifecycle, tool, usage, and result events as JSONL.
 - `codeworld exec --ephemeral` avoids loading or saving the current session.
+- `codeworld exec --approval-mode <auto|read-only|full-access>` overrides prompt/approval behavior independently of the OS sandbox.
+- `codeworld exec --sandbox <read-only|workspace-write|danger-full-access>` overrides the filesystem sandbox. Use `--network` to enable sandboxed process and `web_search` network access.
 - `codeworld exec --output-schema <path>` requests and validates structured JSON output. The current validator covers `type`, `properties`, `required`, `items`, `enum`, and `additionalProperties`.
 - `codeworld exec -o <path>` also writes the final message to a file.
 - `codeworld review` reviews staged and unstaged changes in read-only mode.
 - `codeworld review --base <branch>` and `--commit <sha>` review a selected Git change set.
+- `codeworld sessions [--archived]` lists active or archived sessions.
+- `codeworld fork <session-id|--last>` clones a transcript into a new interactive session.
+- `codeworld archive`, `unarchive`, and `delete` manage saved session lifecycle.
 - `codeworld index` refreshes `.codeworld/index.json`.
 
 If you are running from source:
@@ -173,7 +203,7 @@ Inside the TUI:
 /agents        list local subagent tasks
 /agents <id>   show one subagent task
 /theme <mode>  set system, dark, or light mode state
-/resume        list recent archived sessions
+/resume        list recent active sessions
 /goal <text>   set or show the current task goal
 /goal clear    clear the current task goal
 /plan          enable plan mode for the session
@@ -417,6 +447,26 @@ approval_mode = "auto"
 Project config accepts only `auto` and `read-only`; select `full-access`
 interactively when it is intentionally needed.
 
+## Process sandbox
+
+Model-triggered shell, background/PTY, plugin, and hook commands run in an OS
+sandbox by default. `workspace-write` exposes the host filesystem read-only and
+allows writes only below the workspace; `read-only` also removes structured
+write/patch/index tools; `danger-full-access` deliberately bypasses the OS
+sandbox. Network access is disabled by default and also controls whether the
+native `web_search` tool is registered.
+
+```toml
+sandbox_mode = "workspace-write"
+sandbox_network = false
+```
+
+macOS uses the built-in `sandbox-exec`. Linux requires `bwrap` from
+Bubblewrap. Restricted modes fail closed when the backend is missing or the
+host forbids nested sandboxing. Windows reports restricted modes as unsupported.
+Configured MCP servers remain trusted extensions with their own explicit
+startup approval; provider API traffic is not routed through the command sandbox.
+
 ## Hooks
 
 Codeworld can run command hooks from `.codeworld/hooks.json` around session
@@ -442,8 +492,8 @@ startup, user prompts, tool use, compaction, and shutdown. Supported events are
 Every unique workspace hook command requires explicit approval before
 `SessionStart`; choosing the session approval option remembers the exact
 command for the current process. Persisted workspace session files are never
-trusted as an approval source after restart. Hook timeouts default to 60 seconds. This is not full sandbox parity
-with Codex yet; fine-grained filesystem and network profiles remain future work.
+trusted as an approval source after restart. Hook timeouts default to 60 seconds,
+and hook processes use the same OS sandbox as shell tools.
 
 ## Logs And State
 
@@ -468,6 +518,8 @@ Known gaps compared with Codex include:
 
 - no browser/computer-use surface;
 - subagents are local read-only investigation tasks, not cloud tasks;
+- PTY sessions are available on Unix platforms; Windows reports PTY as unsupported instead of silently using pipes;
+- Linux sandboxing requires Bubblewrap to be installed; Windows restricted process sandboxing is not implemented;
 - MCP OAuth token refresh and dynamic registration are still partial;
 - no image generation;
 - no cloud task or hosted GitHub PR review integration;

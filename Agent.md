@@ -11,7 +11,7 @@ Codeworld is a Go coding agent with these main layers:
 - `internal/agent`: turn loop, model calls, tool calls, permission flow, and streaming turn events.
 - `internal/codexauth`: OpenClaw-style Codex OAuth login, token refresh, and credential storage.
 - `internal/model`: provider-neutral model types and provider clients.
-- `internal/tools`: workspace tools, git tools, plugin tools, MCP tool bridge, and context tools.
+- `internal/tools`: workspace tools, git tools, managed background command sessions, plugin tools, MCP tool bridge, and context tools.
 - `internal/tui`: Bubble Tea interactive UI.
 - `internal/capability`: project skills, plugins, and MCP loading.
 - `internal/hooks`: workspace hook loading and command hook execution.
@@ -36,7 +36,11 @@ Codeworld is a Go coding agent with these main layers:
   - `codeworld repl`
   - `codeworld run <task>`
   - `codeworld exec <task|->`
+  - `codeworld --profile <name> [command]`
   - `codeworld review [--base <branch>|--commit <sha>]`
+  - `codeworld sessions [--archived]`
+  - `codeworld fork <session-id|--last>`
+  - `codeworld archive|unarchive|delete <session-id|--last>`
   - `codeworld index`
 
 ## Testing

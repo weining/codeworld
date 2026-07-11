@@ -12,6 +12,7 @@ import (
 	"codeworld/internal/mcp"
 	"codeworld/internal/permissions"
 	"codeworld/internal/plugin"
+	"codeworld/internal/sandbox"
 	"codeworld/internal/skill"
 	"codeworld/internal/tools"
 	"codeworld/internal/workspace"
@@ -23,6 +24,7 @@ type Options struct {
 	PluginsEnabled    bool
 	MCPServers        []config.MCPServer
 	AuthorizeExternal func(context.Context, permissions.Request) error
+	Sandbox           sandbox.Policy
 }
 
 type Loaded struct {
@@ -35,6 +37,9 @@ type Loaded struct {
 // Load 加载外部或项目内配置，并把原始数据转换为内部结构。
 func Load(ctx context.Context, opts Options) (Loaded, error) {
 	var loaded Loaded
+	if opts.Sandbox.Mode == "" {
+		opts.Sandbox = sandbox.FullAccess(opts.Workspace.Root)
+	}
 	projectSkills, err := skill.LoadProject(opts.Root)
 	if err != nil {
 		return Loaded{}, err
@@ -57,7 +62,7 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 		return Loaded{}, err
 	}
 	for _, spec := range pluginTools {
-		loaded.Tools = append(loaded.Tools, tools.NewPluginTool(opts.Workspace, spec))
+		loaded.Tools = append(loaded.Tools, tools.NewPluginToolWithSandbox(opts.Workspace, spec, opts.Sandbox))
 	}
 
 	mcpTools, clients, err := loadMCPTools(ctx, mcpServers, opts.AuthorizeExternal)

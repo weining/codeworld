@@ -35,6 +35,24 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.IndexMaxFileBytes != 256*1024 {
 		t.Fatalf("IndexMaxFileBytes = %d, want 256 KiB", cfg.IndexMaxFileBytes)
 	}
+	if cfg.SandboxMode != "workspace-write" || cfg.SandboxNetwork {
+		t.Fatalf("sandbox = %q network=%v, want workspace-write without network", cfg.SandboxMode, cfg.SandboxNetwork)
+	}
+}
+
+func TestProjectConfigCannotDisableSandboxOrEnableNetwork(t *testing.T) {
+	for name, body := range map[string]string{
+		"full access": `sandbox_mode = "danger-full-access"`,
+		"network":     `sandbox_network = true`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			writeFile(t, filepath.Join(root, ".codeworld", "config.toml"), body)
+			if _, err := Load(root); err == nil {
+				t.Fatal("expected unsafe project sandbox config to be rejected")
+			}
+		})
+	}
 }
 
 // TestLoadProjectConfig 验证对应场景的行为，避免后续改动破坏既有约束。
@@ -206,6 +224,70 @@ func TestLoadRejectsRemoteLocalProviderURL(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), "provider = \"local\"\nlocal_base_url = \"https://example.com/v1\"\n")
 	if _, err := Load(dir); err == nil {
 		t.Fatal("Load accepted remote URL for local provider")
+	}
+}
+
+func TestLoadWithOptionsLayersUserProjectAndProfile(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, "config.toml"), strings.Join([]string{
+		`provider = "openai"`,
+		`model = "user-model"`,
+		`max_steps = 30`,
+		`[[mcp_servers]]`,
+		`name = "docs"`,
+		`command = "user-docs"`,
+	}, "\n"))
+	writeFile(t, filepath.Join(root, ".codeworld", "config.toml"), strings.Join([]string{
+		`model = "project-model"`,
+		`max_steps = 40`,
+		`[[mcp_servers]]`,
+		`name = "docs"`,
+		`command = "project-docs"`,
+	}, "\n"))
+	writeFile(t, filepath.Join(home, "profiles", "fast.toml"), strings.Join([]string{
+		`model = "profile-model"`,
+		`approval_mode = "full-access"`,
+		`sandbox_mode = "danger-full-access"`,
+		`sandbox_network = true`,
+	}, "\n"))
+
+	cfg, err := LoadWithOptions(root, LoadOptions{Home: home, Profile: "fast"})
+	if err != nil {
+		t.Fatalf("LoadWithOptions: %v", err)
+	}
+	if cfg.Provider != "openai" || cfg.Model != "profile-model" || cfg.MaxSteps != 40 || cfg.Profile != "fast" {
+		t.Fatalf("layered config = %#v", cfg)
+	}
+	if cfg.ApprovalMode != "full-access" {
+		t.Fatalf("approval mode = %q", cfg.ApprovalMode)
+	}
+	if cfg.SandboxMode != "danger-full-access" || !cfg.SandboxNetwork {
+		t.Fatalf("sandbox config = %q network=%v", cfg.SandboxMode, cfg.SandboxNetwork)
+	}
+	if len(cfg.MCPServers) != 1 || cfg.MCPServers[0].Command != "project-docs" {
+		t.Fatalf("MCP servers = %#v", cfg.MCPServers)
+	}
+}
+
+func TestLoadWithOptionsRejectsMissingOrUnsafeProfile(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	if _, err := LoadWithOptions(root, LoadOptions{Home: home, Profile: "missing"}); err == nil {
+		t.Fatal("missing profile accepted")
+	}
+	if _, err := LoadWithOptions(root, LoadOptions{Home: home, Profile: "../escape"}); err == nil {
+		t.Fatal("unsafe profile name accepted")
+	}
+}
+
+func TestLoadWithOptionsProjectCannotEnableFullAccess(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, "config.toml"), `approval_mode = "full-access"`)
+	writeFile(t, filepath.Join(root, ".codeworld", "config.toml"), `approval_mode = "full-access"`)
+	if _, err := LoadWithOptions(root, LoadOptions{Home: home}); err == nil || !strings.Contains(err.Error(), "project approval_mode") {
+		t.Fatalf("err = %v, want project full-access rejection", err)
 	}
 }
 
