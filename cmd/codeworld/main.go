@@ -40,6 +40,8 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			return printCLIHelp(out)
 		case "auth":
 			return runAuthCommand(in, out, root, args[1:])
+		case "mcp":
+			return runMCPCommand(out, root, global.Profile, args[1:])
 		case "repl":
 			app, err := newAppWithProfile(in, out, stderr, root, global.Profile)
 			if err != nil {
@@ -147,6 +149,7 @@ Usage:
   codeworld                         Start the interactive TUI
   codeworld exec [options] <task|-> Run a script-friendly task
   codeworld review [options]        Review a Git change set in read-only mode
+  codeworld mcp <command>           Manage user-level MCP servers
   codeworld sessions [--archived]   List saved sessions
   codeworld fork <id|--last>        Fork a session into a new interactive task
   codeworld archive <id|--last>     Archive a saved session

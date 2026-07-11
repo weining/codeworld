@@ -15,7 +15,7 @@ Codeworld is a Go coding agent with these main layers:
 - `internal/tui`: Bubble Tea interactive UI.
 - `internal/capability`: project skills, plugins, and MCP loading.
 - `internal/hooks`: workspace hook loading and command hook execution.
-- `internal/subagent`: local read-only subagent task manager and subagent tools.
+- `internal/subagent`: local read-only subagent lifecycle, roles, concurrency limits, and model tools.
 - `internal/context`: file index, conversation summary, and context graph.
 
 ## Local Rules

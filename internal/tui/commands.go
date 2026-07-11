@@ -214,13 +214,46 @@ func (m *Model) saveSession() {
 	}
 }
 
-// handleAgentsCommand 展示本地子代理任务列表或指定任务详情。
+// handleAgentsCommand 展示或控制本地子代理任务。
 func (m *Model) handleAgentsCommand(line string) {
 	if m.rt.Subagents == nil {
 		m.appendNotice("subagents unavailable")
 		return
 	}
-	id := strings.TrimSpace(strings.TrimPrefix(line, "/agents"))
+	remainder := strings.TrimSpace(strings.TrimPrefix(line, "/agents"))
+	fields := strings.Fields(remainder)
+	if len(fields) >= 2 {
+		switch fields[0] {
+		case "interrupt", "terminate":
+			var task subagent.Task
+			var err error
+			if fields[0] == "interrupt" {
+				task, err = m.rt.Subagents.Interrupt(fields[1])
+			} else {
+				task, err = m.rt.Subagents.Terminate(fields[1])
+			}
+			if err != nil {
+				m.appendError("subagent error: " + err.Error())
+				return
+			}
+			m.appendNotice(subagent.FormatTaskLine(task))
+			return
+		case "send":
+			parts := strings.SplitN(remainder, " ", 3)
+			if len(parts) < 3 || strings.TrimSpace(parts[2]) == "" {
+				m.appendError("usage: /agents send <id> <message>")
+				return
+			}
+			task, err := m.rt.Subagents.Send(parts[1], parts[2])
+			if err != nil {
+				m.appendError("subagent error: " + err.Error())
+				return
+			}
+			m.appendNotice(subagent.FormatTaskLine(task))
+			return
+		}
+	}
+	id := remainder
 	if id != "" {
 		task, ok := m.rt.Subagents.Get(id)
 		if !ok {

@@ -66,6 +66,12 @@ index_max_file_bytes = 262144
 model_call_logging = false
 sandbox_mode = "workspace-write"
 sandbox_network = false
+subagent_max_concurrent = 4
+
+[[subagent_roles]]
+name = "reviewer"
+description = "Review changes for regressions"
+instructions = "Prioritize correctness, security, and missing tests."
 ```
 
 Select a profile globally or through the environment:
@@ -88,6 +94,11 @@ name = "demo"
 command = "node"
 args = ["server.js"]
 ```
+
+Servers added with `codeworld mcp add` are stored atomically in
+`$CODEWORLD_HOME/mcp.toml`. This managed user layer overrides same-name entries
+in user `config.toml`; project config and an explicitly selected profile can
+still override it.
 
 Provider environment variables:
 
@@ -141,6 +152,10 @@ codeworld exec --approval-mode read-only "inspect without changing files"
 codeworld review
 codeworld review --base main
 codeworld review --commit HEAD
+codeworld mcp add docs --url https://example.com/mcp
+codeworld mcp add local -- node server.js --stdio
+codeworld mcp list --json
+codeworld mcp remove local
 codeworld sessions
 codeworld fork --last
 codeworld archive <session-id>
@@ -168,6 +183,7 @@ Command behavior:
 - `codeworld exec -o <path>` also writes the final message to a file.
 - `codeworld review` reviews staged and unstaged changes in read-only mode.
 - `codeworld review --base <branch>` and `--commit <sha>` review a selected Git change set.
+- `codeworld mcp list|get|add|remove` manages user-level stdio and HTTP MCP servers.
 - `codeworld sessions [--archived]` lists active or archived sessions.
 - `codeworld fork <session-id|--last>` clones a transcript into a new interactive session.
 - `codeworld archive`, `unarchive`, and `delete` manage saved session lifecycle.
@@ -202,6 +218,12 @@ Inside the TUI:
 /context       show context system status
 /agents        list local subagent tasks
 /agents <id>   show one subagent task
+/agents send <id> <message>
+               append an instruction and resume/restart the task
+/agents interrupt <id>
+               interrupt a running task so it can be resumed
+/agents terminate <id>
+               permanently terminate a task
 /theme <mode>  set system, dark, or light mode state
 /resume        list recent active sessions
 /goal <text>   set or show the current task goal
@@ -391,12 +413,14 @@ git changed state, project skills, summaries, and other configured context.
 ## Local Subagents
 
 The model can start independent read-only investigation tasks with
-`subagent_start` and inspect them with `subagent_status`. The TUI and REPL expose
-the same state through `/agents` and `/agents <id>`.
+`subagent_start`, inspect them with `subagent_status`, and control them with
+`subagent_send`, `subagent_interrupt`, and `subagent_terminate`. Starts may select
+a configured role. The manager enforces `subagent_max_concurrent`; interrupted
+tasks can be resumed with a follow-up message, while terminated tasks are final.
 
 Subagent tasks are stored as JSON files in `.codeworld/subagents/`. Each task
-records the prompt, status, final result, timestamps, and a compact transcript
-with role/content text only.
+records the prompt, role, follow-up messages, status, final result, timestamps,
+and a compact transcript with role/content text only.
 
 ## Web Search
 

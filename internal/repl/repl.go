@@ -211,7 +211,36 @@ func (r *REPL) printSubagents(line string) {
 		fmt.Fprintln(r.Out, "subagents unavailable")
 		return
 	}
-	id := strings.TrimSpace(strings.TrimPrefix(line, "/agents"))
+	remainder := strings.TrimSpace(strings.TrimPrefix(line, "/agents"))
+	fields := strings.Fields(remainder)
+	if len(fields) >= 2 {
+		var task subagent.Task
+		var err error
+		switch fields[0] {
+		case "interrupt":
+			task, err = r.Subagents.Interrupt(fields[1])
+		case "terminate":
+			task, err = r.Subagents.Terminate(fields[1])
+		case "send":
+			parts := strings.SplitN(remainder, " ", 3)
+			if len(parts) < 3 || strings.TrimSpace(parts[2]) == "" {
+				fmt.Fprintln(r.Out, "usage: /agents send <id> <message>")
+				return
+			}
+			task, err = r.Subagents.Send(parts[1], parts[2])
+		default:
+			break
+		}
+		if fields[0] == "interrupt" || fields[0] == "terminate" || fields[0] == "send" {
+			if err != nil {
+				fmt.Fprintf(r.Out, "subagent error: %v\n", err)
+				return
+			}
+			fmt.Fprintln(r.Out, subagent.FormatTaskLine(task))
+			return
+		}
+	}
+	id := remainder
 	if id != "" {
 		task, ok := r.Subagents.Get(id)
 		if !ok {
