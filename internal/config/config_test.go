@@ -143,6 +143,27 @@ func TestLoadMCPServers(t *testing.T) {
 	}
 }
 
+func TestLoadSubagentRoles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), strings.Join([]string{
+		`subagent_max_concurrent = 2`,
+		`[[subagent_roles]]`,
+		`name = "reviewer"`,
+		`description = "Review changes"`,
+		`instructions = "Focus on regressions."`,
+	}, "\n"))
+	cfg, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SubagentMaxConcurrent != 2 || len(cfg.SubagentRoles) != 1 {
+		t.Fatalf("subagent config = %#v", cfg)
+	}
+	if cfg.SubagentRoles[0].Name != "reviewer" || cfg.SubagentRoles[0].Instructions != "Focus on regressions." {
+		t.Fatalf("role = %#v", cfg.SubagentRoles[0])
+	}
+}
+
 // TestLoadHTTPMCPServerConfig 验证 HTTP MCP 的地址、鉴权和 tool 过滤配置。
 func TestLoadHTTPMCPServerConfig(t *testing.T) {
 	dir := t.TempDir()

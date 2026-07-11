@@ -354,13 +354,17 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		}
 	}
 	childRunner := &agent.Runner{}
-	subagentManager, err := subagent.NewManagerWithContext(ctx, ws.Root, func(ctx context.Context, prompt string) (subagent.RunResult, error) {
+	roles := make([]subagent.Role, 0, len(cfg.SubagentRoles))
+	for _, role := range cfg.SubagentRoles {
+		roles = append(roles, subagent.Role{Name: role.Name, Description: role.Description, Instructions: role.Instructions})
+	}
+	subagentManager, err := subagent.NewManagerWithOptions(ctx, ws.Root, func(ctx context.Context, prompt string) (subagent.RunResult, error) {
 		result, err := childRunner.RunTurn(ctx, nil, prompt)
 		if err != nil {
 			return subagent.RunResult{}, err
 		}
 		return subagent.RunResult{Content: result.FinalText, Transcript: subagentTranscript(result.Messages)}, nil
-	})
+	}, subagent.Options{MaxConcurrent: cfg.SubagentMaxConcurrent, Roles: roles})
 	if err != nil {
 		return Runtime{}, err
 	}
@@ -373,6 +377,13 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		_ = subagentManager.Close()
 		_ = capability.CloseClients(loadedCapabilities.MCPClients)
 		return Runtime{}, err
+	}
+	for _, tool := range subagent.NewControlTools(subagentManager) {
+		if err := registry.RegisterChecked(tool); err != nil {
+			_ = subagentManager.Close()
+			_ = capability.CloseClients(loadedCapabilities.MCPClients)
+			return Runtime{}, err
+		}
 	}
 	commandSessions := tools.NewCommandSessionManagerWithSandbox(ws, sandboxPolicy)
 	for _, tool := range tools.NewCommandSessionTools(commandSessions) {

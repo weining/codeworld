@@ -13,6 +13,7 @@ import (
 
 type startArgs struct {
 	Prompt string `json:"prompt"`
+	Role   string `json:"role"`
 }
 
 type statusArgs struct {
@@ -27,6 +28,20 @@ type statusTool struct {
 	manager *Manager
 }
 
+type messageArgs struct {
+	ID      string `json:"id"`
+	Message string `json:"message"`
+}
+
+type taskArgs struct {
+	ID string `json:"id"`
+}
+
+type controlTool struct {
+	manager *Manager
+	name    string
+}
+
 // NewStartTool 返回用于派发本地子代理任务的模型工具。
 func NewStartTool(manager *Manager) tools.Tool {
 	return startTool{manager: manager}
@@ -37,8 +52,26 @@ func NewStatusTool(manager *Manager) tools.Tool {
 	return statusTool{manager: manager}
 }
 
+// NewControlTools 返回消息追加、中断和终止工具。
+func NewControlTools(manager *Manager) []tools.Tool {
+	return []tools.Tool{
+		controlTool{manager: manager, name: "subagent_send"},
+		controlTool{manager: manager, name: "subagent_interrupt"},
+		controlTool{manager: manager, name: "subagent_terminate"},
+	}
+}
+
 // Definition 返回工具暴露给模型的名称、描述和参数 schema。
 func (t startTool) Definition() model.ToolDefinition {
+	roleSchema := map[string]any{"type": "string", "description": "Optional configured subagent role name."}
+	roles := t.manager.Roles()
+	if len(roles) > 0 {
+		names := make([]string, 0, len(roles))
+		for _, role := range roles {
+			names = append(names, role.Name)
+		}
+		roleSchema["enum"] = names
+	}
 	return model.ToolDefinition{
 		Name:        "subagent_start",
 		Description: "Start a local read-only subagent task for independent codebase investigation.",
@@ -46,6 +79,7 @@ func (t startTool) Definition() model.ToolDefinition {
 			"type": "object",
 			"properties": map[string]any{
 				"prompt": map[string]any{"type": "string", "description": "The investigation task for the subagent."},
+				"role":   roleSchema,
 			},
 			"required":             []string{"prompt"},
 			"additionalProperties": false,
@@ -76,7 +110,7 @@ func (t startTool) Execute(ctx context.Context, args json.RawMessage) (tools.Res
 	if err != nil {
 		return tools.Result{}, err
 	}
-	task, err := t.manager.Start(parsed.Prompt)
+	task, err := t.manager.StartWithOptions(parsed.Prompt, StartOptions{Role: parsed.Role})
 	if err != nil {
 		return tools.Result{}, err
 	}
@@ -87,6 +121,72 @@ func (t startTool) Execute(ctx context.Context, args json.RawMessage) (tools.Res
 			"status": string(task.Status),
 		},
 	}, nil
+}
+
+// Definition 返回子代理控制工具的 schema。
+func (t controlTool) Definition() model.ToolDefinition {
+	definitions := map[string]model.ToolDefinition{
+		"subagent_send": {
+			Name: "subagent_send", Description: "Append an instruction and restart or resume a local subagent task.",
+			InputSchema: objectSchema(map[string]any{
+				"id":      map[string]any{"type": "string"},
+				"message": map[string]any{"type": "string"},
+			}, []string{"id", "message"}),
+		},
+		"subagent_interrupt": {
+			Name: "subagent_interrupt", Description: "Interrupt a running local subagent task so it can be resumed later.",
+			InputSchema: objectSchema(map[string]any{"id": map[string]any{"type": "string"}}, []string{"id"}),
+		},
+		"subagent_terminate": {
+			Name: "subagent_terminate", Description: "Permanently terminate a running local subagent task.",
+			InputSchema: objectSchema(map[string]any{"id": map[string]any{"type": "string"}}, []string{"id"}),
+		},
+	}
+	return definitions[t.name]
+}
+
+// PermissionRequest 为子代理生命周期操作声明执行风险。
+func (t controlTool) PermissionRequest(args json.RawMessage) (permissions.Request, error) {
+	id, err := controlTarget(t.name, args)
+	if err != nil {
+		return permissions.Request{}, err
+	}
+	return permissions.Request{Action: permissions.ActionRead, Target: id, Risk: permissions.RiskExecute, Reason: t.name}, nil
+}
+
+// Execute 执行对应的子代理生命周期操作。
+func (t controlTool) Execute(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+	if err := ctx.Err(); err != nil {
+		return tools.Result{}, err
+	}
+	var task Task
+	var err error
+	switch t.name {
+	case "subagent_send":
+		parsed, parseErr := parseMessageArgs(args)
+		if parseErr != nil {
+			return tools.Result{}, parseErr
+		}
+		task, err = t.manager.Send(parsed.ID, parsed.Message)
+	case "subagent_interrupt":
+		parsed, parseErr := parseTaskArgs(args)
+		if parseErr != nil {
+			return tools.Result{}, parseErr
+		}
+		task, err = t.manager.Interrupt(parsed.ID)
+	case "subagent_terminate":
+		parsed, parseErr := parseTaskArgs(args)
+		if parseErr != nil {
+			return tools.Result{}, parseErr
+		}
+		task, err = t.manager.Terminate(parsed.ID)
+	default:
+		return tools.Result{}, fmt.Errorf("unknown subagent control %q", t.name)
+	}
+	if err != nil {
+		return tools.Result{}, err
+	}
+	return tools.Result{Content: fmt.Sprintf("subagent %s %s", task.ID, task.Status), Metadata: map[string]any{"id": task.ID, "status": string(task.Status)}}, nil
 }
 
 // Definition 返回工具暴露给模型的名称、描述和参数 schema。
@@ -146,7 +246,11 @@ func (t statusTool) Execute(ctx context.Context, args json.RawMessage) (tools.Re
 
 // FormatTaskLine 输出适合 TUI/REPL 摘要列表展示的一行任务状态。
 func FormatTaskLine(task Task) string {
-	return fmt.Sprintf("%s %s updated=%s prompt=%s", task.ID, task.Status, task.UpdatedAt.Local().Format("2006-01-02 15:04:05"), truncate(task.Prompt, 80))
+	role := ""
+	if task.Role != "" {
+		role = " role=" + task.Role
+	}
+	return fmt.Sprintf("%s %s%s updated=%s prompt=%s", task.ID, task.Status, role, task.UpdatedAt.Local().Format("2006-01-02 15:04:05"), truncate(task.Prompt, 80))
 }
 
 // FormatTask 输出单个任务详情，包含完成结果或错误。
@@ -155,6 +259,12 @@ func FormatTask(task Task) string {
 		"id: " + task.ID,
 		"status: " + string(task.Status),
 		"prompt: " + task.Prompt,
+	}
+	if task.Role != "" {
+		lines = append(lines, "role: "+task.Role)
+	}
+	if len(task.Messages) > 0 {
+		lines = append(lines, "follow-ups:\n- "+strings.Join(task.Messages, "\n- "))
 	}
 	if task.Result != "" {
 		lines = append(lines, "result:\n"+task.Result)
@@ -175,10 +285,49 @@ func parseStartArgs(args json.RawMessage) (startArgs, error) {
 		return startArgs{}, err
 	}
 	parsed.Prompt = strings.TrimSpace(parsed.Prompt)
+	parsed.Role = strings.TrimSpace(parsed.Role)
 	if parsed.Prompt == "" {
 		return startArgs{}, fmt.Errorf("prompt is required")
 	}
 	return parsed, nil
+}
+
+func parseMessageArgs(args json.RawMessage) (messageArgs, error) {
+	var parsed messageArgs
+	if err := json.Unmarshal(args, &parsed); err != nil {
+		return messageArgs{}, err
+	}
+	parsed.ID = strings.TrimSpace(parsed.ID)
+	parsed.Message = strings.TrimSpace(parsed.Message)
+	if parsed.ID == "" || parsed.Message == "" {
+		return messageArgs{}, fmt.Errorf("id and message are required")
+	}
+	return parsed, nil
+}
+
+func parseTaskArgs(args json.RawMessage) (taskArgs, error) {
+	var parsed taskArgs
+	if err := json.Unmarshal(args, &parsed); err != nil {
+		return taskArgs{}, err
+	}
+	parsed.ID = strings.TrimSpace(parsed.ID)
+	if parsed.ID == "" {
+		return taskArgs{}, fmt.Errorf("id is required")
+	}
+	return parsed, nil
+}
+
+func controlTarget(name string, args json.RawMessage) (string, error) {
+	if name == "subagent_send" {
+		parsed, err := parseMessageArgs(args)
+		return parsed.ID, err
+	}
+	parsed, err := parseTaskArgs(args)
+	return parsed.ID, err
+}
+
+func objectSchema(properties map[string]any, required []string) map[string]any {
+	return map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}
 }
 
 // parseStatusArgs 解析查询参数，空对象表示列出任务。

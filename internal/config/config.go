@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -12,26 +13,28 @@ import (
 )
 
 type Config struct {
-	Profile              string
-	Provider             string
-	Model                string
-	MaxSteps             int
-	Workspace            string
-	APIKey               string
-	OpenAIAPIKey         string
-	AnthropicAPIKey      string
-	LocalBaseURL         string
-	PluginsEnabled       bool
-	SummaryMaxMessages   int
-	SummaryMaxTokens     int
-	IndexMaxFileBytes    int
-	MCPOAuthCallbackPort int
-	MCPOAuthCallbackURL  string
-	ApprovalMode         string
-	SandboxMode          string
-	SandboxNetwork       bool
-	ModelCallLogging     bool
-	MCPServers           []MCPServer
+	Profile               string
+	Provider              string
+	Model                 string
+	MaxSteps              int
+	Workspace             string
+	APIKey                string
+	OpenAIAPIKey          string
+	AnthropicAPIKey       string
+	LocalBaseURL          string
+	PluginsEnabled        bool
+	SummaryMaxMessages    int
+	SummaryMaxTokens      int
+	IndexMaxFileBytes     int
+	MCPOAuthCallbackPort  int
+	MCPOAuthCallbackURL   string
+	ApprovalMode          string
+	SandboxMode           string
+	SandboxNetwork        bool
+	SubagentMaxConcurrent int
+	SubagentRoles         []SubagentRole
+	ModelCallLogging      bool
+	MCPServers            []MCPServer
 }
 
 type LoadOptions struct {
@@ -41,27 +44,34 @@ type LoadOptions struct {
 }
 
 type MCPServer struct {
-	Name              string
-	Command           string
-	Args              []string
-	URL               string
-	BearerTokenEnvVar string
-	HTTPHeaders       []string
-	EnabledTools      []string
-	DisabledTools     []string
+	Name              string   `json:"name"`
+	Command           string   `json:"command,omitempty"`
+	Args              []string `json:"args,omitempty"`
+	URL               string   `json:"url,omitempty"`
+	BearerTokenEnvVar string   `json:"bearer_token_env_var,omitempty"`
+	HTTPHeaders       []string `json:"http_headers,omitempty"`
+	EnabledTools      []string `json:"enabled_tools,omitempty"`
+	DisabledTools     []string `json:"disabled_tools,omitempty"`
+}
+
+type SubagentRole struct {
+	Name         string
+	Description  string
+	Instructions string
 }
 
 // Default 提供对外可复用的能力，并隐藏内部实现细节。
 func Default() Config {
 	return Config{
-		Provider:           "deepseek",
-		Model:              "deepseek-v4-pro",
-		MaxSteps:           20,
-		Workspace:          ".",
-		SummaryMaxMessages: 40,
-		SummaryMaxTokens:   64 * 1024,
-		IndexMaxFileBytes:  256 * 1024,
-		SandboxMode:        "workspace-write",
+		Provider:              "deepseek",
+		Model:                 "deepseek-v4-pro",
+		MaxSteps:              20,
+		Workspace:             ".",
+		SummaryMaxMessages:    40,
+		SummaryMaxTokens:      64 * 1024,
+		IndexMaxFileBytes:     256 * 1024,
+		SandboxMode:           "workspace-write",
+		SubagentMaxConcurrent: 4,
 	}
 }
 
@@ -89,6 +99,9 @@ func LoadWithOptions(root string, opts LoadOptions) (Config, error) {
 		if err := loadConfigFile(filepath.Join(home, "config.toml"), &cfg, true, false); err != nil {
 			return Config{}, err
 		}
+		if err := loadConfigFile(filepath.Join(home, "mcp.toml"), &cfg, true, false); err != nil {
+			return Config{}, err
+		}
 	}
 	if err := loadConfigFile(filepath.Join(root, ".codeworld", "config.toml"), &cfg, false, false); err != nil {
 		return Config{}, err
@@ -103,6 +116,7 @@ func LoadWithOptions(root string, opts LoadOptions) (Config, error) {
 		cfg.Profile = profile
 	}
 	cfg.MCPServers = dedupeMCPServers(cfg.MCPServers)
+	cfg.SubagentRoles = dedupeSubagentRoles(cfg.SubagentRoles)
 	loadEnv(&cfg)
 	if err := validate(cfg); err != nil {
 		return Config{}, err
@@ -122,6 +136,7 @@ func loadConfigFile(path string, cfg *Config, allowFullAccess, required bool) er
 
 	scanner := bufio.NewScanner(file)
 	var currentMCP *MCPServer
+	var currentRole *SubagentRole
 	approvalModeSet := false
 	sandboxModeSet := false
 	sandboxNetworkSet := false
@@ -133,6 +148,13 @@ func loadConfigFile(path string, cfg *Config, allowFullAccess, required bool) er
 		if line == "[[mcp_servers]]" {
 			cfg.MCPServers = append(cfg.MCPServers, MCPServer{})
 			currentMCP = &cfg.MCPServers[len(cfg.MCPServers)-1]
+			currentRole = nil
+			continue
+		}
+		if line == "[[subagent_roles]]" {
+			cfg.SubagentRoles = append(cfg.SubagentRoles, SubagentRole{})
+			currentRole = &cfg.SubagentRoles[len(cfg.SubagentRoles)-1]
+			currentMCP = nil
 			continue
 		}
 		key, value, ok := strings.Cut(line, "=")
@@ -140,10 +162,23 @@ func loadConfigFile(path string, cfg *Config, allowFullAccess, required bool) er
 			return fmt.Errorf("%s: invalid config line %q", path, line)
 		}
 		key = strings.TrimSpace(key)
-		value = strings.Trim(strings.TrimSpace(value), "\"")
+		value = strings.TrimSpace(value)
+		if strings.HasPrefix(value, "\"") {
+			unquoted, err := strconv.Unquote(value)
+			if err != nil {
+				return fmt.Errorf("%s: invalid string value %q: %w", path, value, err)
+			}
+			value = unquoted
+		}
 
 		if currentMCP != nil {
 			if err := setMCPServerValue(currentMCP, key, value); err != nil {
+				return fmt.Errorf("%s: %w", path, err)
+			}
+			continue
+		}
+		if currentRole != nil {
+			if err := setSubagentRoleValue(currentRole, key, value); err != nil {
 				return fmt.Errorf("%s: %w", path, err)
 			}
 			continue
@@ -209,6 +244,12 @@ func loadConfigFile(path string, cfg *Config, allowFullAccess, required bool) er
 			}
 			cfg.SandboxNetwork = enabled
 			sandboxNetworkSet = true
+		case "subagent_max_concurrent":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("%s: invalid subagent_max_concurrent %q: %w", path, value, err)
+			}
+			cfg.SubagentMaxConcurrent = n
 		case "model_call_logging":
 			enabled, err := strconv.ParseBool(value)
 			if err != nil {
@@ -247,6 +288,9 @@ func validate(cfg Config) error {
 	if cfg.IndexMaxFileBytes <= 0 {
 		return fmt.Errorf("index_max_file_bytes must be greater than zero")
 	}
+	if cfg.SubagentMaxConcurrent <= 0 {
+		return fmt.Errorf("subagent_max_concurrent must be greater than zero")
+	}
 	if cfg.Provider == "local" {
 		u, err := url.Parse(cfg.LocalBaseURL)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
@@ -268,6 +312,25 @@ func validate(cfg Config) error {
 	default:
 		return fmt.Errorf("invalid sandbox_mode %q", cfg.SandboxMode)
 	}
+	for _, role := range cfg.SubagentRoles {
+		if strings.TrimSpace(role.Name) == "" {
+			return fmt.Errorf("subagent role name is required")
+		}
+	}
+	return nil
+}
+
+func setSubagentRoleValue(role *SubagentRole, key, value string) error {
+	switch key {
+	case "name":
+		role.Name = value
+	case "description":
+		role.Description = value
+	case "instructions":
+		role.Instructions = value
+	default:
+		return fmt.Errorf("unknown subagent_roles key %q", key)
+	}
 	return nil
 }
 
@@ -283,6 +346,11 @@ func configHome(explicit string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".codeworld"), nil
+}
+
+// Home 返回 Codeworld 用户配置目录。
+func Home(explicit string) (string, error) {
+	return configHome(explicit)
 }
 
 func validateProfileName(name string) error {
@@ -304,6 +372,22 @@ func dedupeMCPServers(servers []MCPServer) []MCPServer {
 			indexes[server.Name] = len(result)
 		}
 		result = append(result, server)
+	}
+	return result
+}
+
+func dedupeSubagentRoles(roles []SubagentRole) []SubagentRole {
+	indexes := map[string]int{}
+	result := make([]SubagentRole, 0, len(roles))
+	for _, role := range roles {
+		if index, ok := indexes[role.Name]; ok && role.Name != "" {
+			result[index] = role
+			continue
+		}
+		if role.Name != "" {
+			indexes[role.Name] = len(result)
+		}
+		result = append(result, role)
 	}
 	return result
 }
@@ -352,21 +436,9 @@ func setMCPServerValue(server *MCPServer, key, value string) error {
 // parseStringArray 解析输入数据，并执行必要的格式校验。
 func parseStringArray(value string) ([]string, error) {
 	value = strings.TrimSpace(value)
-	if !strings.HasPrefix(value, "[") || !strings.HasSuffix(value, "]") {
-		return nil, fmt.Errorf("expected string array")
-	}
-	body := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "["), "]"))
-	if body == "" {
-		return nil, nil
-	}
-	parts := strings.Split(body, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if !strings.HasPrefix(part, "\"") || !strings.HasSuffix(part, "\"") {
-			return nil, fmt.Errorf("expected quoted string")
-		}
-		out = append(out, strings.Trim(part, "\""))
+	var out []string
+	if err := json.Unmarshal([]byte(value), &out); err != nil {
+		return nil, fmt.Errorf("expected string array: %w", err)
 	}
 	return out, nil
 }

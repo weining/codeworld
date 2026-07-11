@@ -61,6 +61,12 @@ index_max_file_bytes = 262144
 model_call_logging = false
 sandbox_mode = "workspace-write"
 sandbox_network = false
+subagent_max_concurrent = 4
+
+[[subagent_roles]]
+name = "reviewer"
+description = "检查修改中的回归"
+instructions = "优先检查正确性、安全性和缺失测试。"
 ```
 
 可以通过全局参数或环境变量选择 profile：
@@ -82,6 +88,10 @@ name = "demo"
 command = "node"
 args = ["server.js"]
 ```
+
+通过 `codeworld mcp add` 添加的 server 会原子写入 `$CODEWORLD_HOME/mcp.toml`。
+这一用户级托管层会覆盖用户 `config.toml` 中的同名项；项目配置和显式选择的
+profile 仍可继续覆盖它。
 
 支持的 provider 环境变量：
 
@@ -132,6 +142,10 @@ codeworld exec --approval-mode read-only "inspect without changing files"
 codeworld review
 codeworld review --base main
 codeworld review --commit HEAD
+codeworld mcp add docs --url https://example.com/mcp
+codeworld mcp add local -- node server.js --stdio
+codeworld mcp list --json
+codeworld mcp remove local
 codeworld sessions
 codeworld fork --last
 codeworld archive <session-id>
@@ -159,6 +173,7 @@ codeworld index
 - `codeworld exec -o <path>`：额外把最终消息写入文件；
 - `codeworld review`：以只读模式审查 staged 和 unstaged 修改；
 - `codeworld review --base <branch>`、`--commit <sha>`：审查指定 Git 变更集；
+- `codeworld mcp list|get|add|remove`：管理用户级 stdio 和 HTTP MCP servers；
 - `codeworld sessions [--archived]`：列出活动或归档 session；
 - `codeworld fork <session-id|--last>`：复制会话历史并进入新的交互 session；
 - `codeworld archive`、`unarchive`、`delete`：管理已保存 session 的生命周期；
@@ -191,6 +206,12 @@ TUI 使用响应式终端布局：顶部紧凑双行状态栏、空会话欢迎�
 /context       查看上下文系统状态
 /agents        查看本地子代理任务
 /agents <id>   查看单个子代理任务详情
+/agents send <id> <message>
+               追加指令并恢复或重启任务
+/agents interrupt <id>
+               中断运行中任务，之后可以恢复
+/agents terminate <id>
+               永久终止任务
 /theme <mode>  设置 system、dark 或 light 状态
 /resume        查看最近可恢复 sessions
 /goal <text>   设置或查看当前任务目标
@@ -383,9 +404,9 @@ Context graph 是本地、确定性的，不依赖 embedding。它会提取文�
 
 ## 本地子代理
 
-模型可以通过 `subagent_start` 启动独立的只读调查任务，并通过 `subagent_status` 查看任务状态或结果。TUI 和 REPL 中也可以使用 `/agents` 与 `/agents <id>` 查看同一批任务。
+模型可以通过 `subagent_start` 启动独立的只读调查任务，通过 `subagent_status` 查看状态，并使用 `subagent_send`、`subagent_interrupt` 和 `subagent_terminate` 控制生命周期。启动时可以选择配置角色；manager 会执行 `subagent_max_concurrent` 并发限制。interrupted 任务可以追加消息恢复，terminated 任务不可恢复。
 
-子代理任务以 JSON 文件保存在 `.codeworld/subagents/`。每个任务会记录 prompt、状态、最终结果、时间戳，以及只包含 role/content 文本的精简 transcript。
+子代理任务以 JSON 文件保存在 `.codeworld/subagents/`。每个任务会记录 prompt、角色、follow-up 消息、状态、最终结果、时间戳，以及只包含 role/content 文本的精简 transcript。
 
 ## Web Search
 
