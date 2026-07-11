@@ -45,6 +45,18 @@ func TestReplCommandShowsHelpWithoutAPIKey(t *testing.T) {
 	}
 }
 
+func TestCLIHelpListsAutomationCommands(t *testing.T) {
+	var out bytes.Buffer
+	if err := runWithIO(strings.NewReader(""), &out, &bytes.Buffer{}, []string{"--help"}); err != nil {
+		t.Fatalf("runWithIO: %v", err)
+	}
+	for _, want := range []string{"codeworld exec", "codeworld review", "--output-schema", "--ephemeral"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("help missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestRunUsesRestoredSessionModel(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "")
 	root := t.TempDir()
@@ -101,6 +113,40 @@ func TestRunCommandRequiresPrompt(t *testing.T) {
 	err := runWithIO(strings.NewReader(""), &out, &stderr, []string{"run"})
 	if err == nil || !strings.Contains(err.Error(), "usage: codeworld run") {
 		t.Fatalf("err = %v, want run usage", err)
+	}
+}
+
+func TestParseAutomationArgsReadsPromptFromStdin(t *testing.T) {
+	opts, err := parseAutomationArgs(strings.NewReader("inspect this repo\n"), []string{"--json", "--ephemeral", "-"}, execUsage, true, true)
+	if err != nil {
+		t.Fatalf("parseAutomationArgs: %v", err)
+	}
+	if opts.prompt != "inspect this repo" || !opts.json || !opts.ephemeral {
+		t.Fatalf("options = %#v", opts)
+	}
+}
+
+func TestParseAutomationArgsRequiresExecPrompt(t *testing.T) {
+	_, err := parseAutomationArgs(strings.NewReader(""), []string{"--json"}, execUsage, true, true)
+	if err == nil || !strings.Contains(err.Error(), "usage: codeworld exec") {
+		t.Fatalf("err = %v, want exec usage", err)
+	}
+}
+
+func TestParseReviewArgsAllowsFlagsWithoutInstructions(t *testing.T) {
+	target, opts, err := parseReviewArgs(strings.NewReader(""), []string{"--base", "main", "--json"})
+	if err != nil {
+		t.Fatalf("parseReviewArgs: %v", err)
+	}
+	if target.Base != "main" || !opts.json || opts.prompt != "" {
+		t.Fatalf("target/options = %#v %#v", target, opts)
+	}
+}
+
+func TestParseReviewArgsRejectsMultipleTargets(t *testing.T) {
+	_, _, err := parseReviewArgs(strings.NewReader(""), []string{"--base", "main", "--commit", "HEAD"})
+	if err == nil || !strings.Contains(err.Error(), "only one") {
+		t.Fatalf("err = %v, want target conflict", err)
 	}
 }
 

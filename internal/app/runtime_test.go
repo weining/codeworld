@@ -57,6 +57,24 @@ func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeEphemeralDoesNotCreateCurrentSession(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	defer rt.Close()
+	if _, err := os.Stat(session.NewStore(rt.Workspace.Root).CurrentPath()); !os.IsNotExist(err) {
+		t.Fatalf("current session exists in ephemeral mode: %v", err)
+	}
+	if len(rt.Messages) != 0 {
+		t.Fatalf("ephemeral runtime restored messages: %#v", rt.Messages)
+	}
+}
+
 func TestNewRuntimeUsesConfiguredWorkspaceWithinRoot(t *testing.T) {
 	root := t.TempDir()
 	workspaceRoot := filepath.Join(root, "project")

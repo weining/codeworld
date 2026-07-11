@@ -6,7 +6,7 @@ This file is for agents and developers working in this repository.
 
 Codeworld is a Go coding agent with these main layers:
 
-- `cmd/codeworld`: CLI dispatch for TUI, REPL, one-shot run, and indexing.
+- `cmd/codeworld`: CLI dispatch for TUI, REPL, one-shot run, scriptable exec, review, and indexing.
 - `internal/app`: runtime assembly for config, workspace, session, model client, tools, capabilities, and context.
 - `internal/agent`: turn loop, model calls, tool calls, permission flow, and streaming turn events.
 - `internal/codexauth`: OpenClaw-style Codex OAuth login, token refresh, and credential storage.
@@ -35,6 +35,8 @@ Codeworld is a Go coding agent with these main layers:
   - `codeworld tui`
   - `codeworld repl`
   - `codeworld run <task>`
+  - `codeworld exec <task|->`
+  - `codeworld review [--base <branch>|--commit <sha>]`
   - `codeworld index`
 
 ## Testing

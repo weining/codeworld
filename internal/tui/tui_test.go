@@ -121,7 +121,7 @@ func TestModelViewUsesCodexLikeChrome(t *testing.T) {
 		"Permission required: shell",
 		"Allow? [y/N/a=session]",
 		"↵ send",
-		"shift+↵ newline",
+		"ctrl+j newline",
 		"/ commands",
 	} {
 		if !strings.Contains(view, want) {
@@ -426,6 +426,25 @@ func TestModelPromptHistoryRestoresSubmittedDrafts(t *testing.T) {
 	m = nextModel.(Model)
 	if strings.TrimSpace(m.input.Value()) != "/model" {
 		t.Fatalf("input after Down = %q, want /model", m.input.Value())
+	}
+}
+
+func TestCtrlJInsertsNewlineWithoutSubmitting(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{Workspace: workspace.Workspace{Root: root}, Session: session.New(root, "deepseek", "deepseek-v4-pro")}
+	m := NewModel(&rt)
+	m.input.SetValue("first line")
+
+	nextModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if cmd != nil {
+		t.Fatal("Ctrl+J returned a command, want local newline insertion")
+	}
+	next := nextModel.(Model)
+	if next.input.Value() != "first line\n" {
+		t.Fatalf("input = %q, want trailing newline", next.input.Value())
+	}
+	if next.running || len(next.items) != 0 {
+		t.Fatalf("Ctrl+J submitted input: running=%v items=%#v", next.running, next.items)
 	}
 }
 

@@ -141,6 +141,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down":
 			m.restorePromptHistory(1)
 			return m, nil
+		case "ctrl+j", "alt+enter":
+			if !m.running {
+				m.input.InsertString("\n")
+			}
+			return m, nil
 		case "enter":
 			if m.running {
 				return m, nil
@@ -289,12 +294,12 @@ func (m Model) renderComposer() string {
 		Padding(0, 1).
 		Width(inputWidth).
 		Render(m.input.View())
-	helpText := "↵ send   shift+↵ newline   ↑↓ history   / commands   ctrl+c quit"
+	helpText := "↵ send   ctrl+j newline   ↑↓ history   / commands   ctrl+c quit"
 	if width < 70 {
-		helpText = "↵ send   ↑↓ history   / commands   ctrl+c quit"
+		helpText = "↵ send   ^J newline   / commands   ^C quit"
 	}
 	if width < 46 {
-		helpText = "↵ send   / commands   ctrl+c quit"
+		helpText = "↵ send   ^J newline   ^C quit"
 	}
 	if m.pendingPermission != nil {
 		helpText = "y allow once   a allow for session   n deny"
