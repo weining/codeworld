@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -108,6 +109,37 @@ func TestExecuteJSONEmitsMachineReadableLifecycle(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("event types = %v, missing %s", types, want)
 		}
+	}
+}
+
+func TestJSONEventsClassifyToolItems(t *testing.T) {
+	out := &bytes.Buffer{}
+	writer := newJSONEventWriter(out)
+	for index, event := range []agent.ToolEvent{
+		{CallID: "1", Name: "shell", Status: agent.ToolEventStart, Request: permissions.Request{Target: "go test ./..."}},
+		{CallID: "2", Name: "write_file", Status: agent.ToolEventSuccess, Request: permissions.Request{Target: "main.go"}},
+		{CallID: "3", Name: "mcp.docs.search", Status: agent.ToolEventSuccess},
+		{CallID: "4", Name: "web_search", Status: agent.ToolEventError, Request: permissions.Request{Target: "current docs"}, Error: "offline"},
+	} {
+		event.CallID = fmt.Sprintf("%d", index+1)
+		writer.ReportTool(context.Background(), event)
+	}
+	var got []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+		var envelope map[string]any
+		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, envelope["item"].(map[string]any))
+	}
+	wants := []string{"command_execution", "file_change", "mcp_tool_call", "web_search"}
+	for index, want := range wants {
+		if got[index]["type"] != want {
+			t.Fatalf("item %d = %#v, want type %s", index, got[index], want)
+		}
+	}
+	if got[0]["status"] != "in_progress" || got[1]["status"] != "completed" || got[3]["status"] != "failed" {
+		t.Fatalf("statuses = %#v", got)
 	}
 }
 

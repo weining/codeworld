@@ -8,10 +8,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestStdioClientListsAndCallsTools 验证对应场景的行为，避免后续改动破坏既有约束。
@@ -162,6 +164,126 @@ func TestOAuthTokenStoreRoundTrips(t *testing.T) {
 	}
 	if err := SaveOAuthToken(root, OAuthToken{ServerName: "../escape"}); err == nil {
 		t.Fatalf("SaveOAuthToken accepted traversal server name")
+	}
+}
+
+// TestOAuthLoginAndRefresh 验证发现、动态注册、PKCE 回调和 refresh token 构成完整链路。
+func TestOAuthLoginAndRefresh(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/oauth-protected-resource/mcp":
+			_ = json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{server.URL + "/issuer"}})
+		case "/.well-known/oauth-authorization-server/issuer":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"issuer": server.URL + "/issuer", "authorization_endpoint": server.URL + "/authorize",
+				"token_endpoint": server.URL + "/token", "registration_endpoint": server.URL + "/register",
+			})
+		case "/register":
+			_ = json.NewEncoder(w).Encode(map[string]any{"client_id": "codeworld-client"})
+		case "/token":
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if r.Form.Get("client_id") != "codeworld-client" {
+				t.Errorf("client_id = %q", r.Form.Get("client_id"))
+			}
+			if r.Form.Get("grant_type") == "refresh_token" {
+				_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "refreshed", "expires_in": 3600})
+				return
+			}
+			if r.Form.Get("code") != "auth-code" || r.Form.Get("code_verifier") == "" {
+				t.Errorf("token form = %#v", r.Form)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "initial", "refresh_token": "refresh", "expires_in": 1, "scope": "tools.read"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	token, err := LoginOAuth(context.Background(), OAuthLoginOptions{
+		ServerName: "docs", ServerURL: server.URL + "/mcp", Scopes: []string{"tools.read"},
+		HTTPClient: server.Client(), NotifyURL: func(string) {},
+		OpenURL: func(target string) error {
+			authURL, err := url.Parse(target)
+			if err != nil {
+				return err
+			}
+			callback, err := url.Parse(authURL.Query().Get("redirect_uri"))
+			if err != nil {
+				return err
+			}
+			query := callback.Query()
+			query.Set("code", "auth-code")
+			query.Set("state", authURL.Query().Get("state"))
+			callback.RawQuery = query.Encode()
+			go func() {
+				resp, callbackErr := http.Get(callback.String())
+				if callbackErr == nil {
+					_ = resp.Body.Close()
+				}
+			}()
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("LoginOAuth returned error: %v", err)
+	}
+	if token.AccessToken != "initial" || token.RefreshToken != "refresh" || token.ClientID != "codeworld-client" {
+		t.Fatalf("token = %#v", token)
+	}
+	root := t.TempDir()
+	token.ExpiresAt = time.Now().Add(-time.Minute)
+	if err := SaveOAuthToken(root, token); err != nil {
+		t.Fatal(err)
+	}
+	refreshed, err := RefreshOAuthToken(context.Background(), root, "docs", server.Client())
+	if err != nil {
+		t.Fatalf("RefreshOAuthToken returned error: %v", err)
+	}
+	if refreshed.AccessToken != "refreshed" || refreshed.RefreshToken != "refresh" {
+		t.Fatalf("refreshed token = %#v", refreshed)
+	}
+	if err := DeleteOAuthToken(root, "docs"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadOAuthToken(root, "docs"); !os.IsNotExist(err) {
+		t.Fatalf("LoadOAuthToken after delete = %v", err)
+	}
+}
+
+// TestHTTPClientUsesOAuthTokenAsFallback 验证环境变量 bearer token 未配置时使用 OAuth token。
+func TestHTTPClientUsesOAuthTokenAsFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer oauth-value" {
+			t.Errorf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		var req struct {
+			ID int `json:"id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": map[string]any{}})
+	}))
+	defer server.Close()
+	client := NewHTTPClient(ServerConfig{Name: "docs", URL: server.URL, OAuthAccessToken: "oauth-value"})
+	if err := client.Initialize(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOAuthCallbackRequiresLoopbackHost(t *testing.T) {
+	if _, listener, err := oauthCallback("http://example.com/callback", 0); err == nil {
+		_ = listener.Close()
+		t.Fatal("accepted non-loopback OAuth callback")
+	}
+	callback, listener, err := oauthCallback("http://127.0.0.1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if !strings.HasSuffix(callback, "/") {
+		t.Fatalf("callback = %q", callback)
 	}
 }
 

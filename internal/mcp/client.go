@@ -19,6 +19,7 @@ type ServerConfig struct {
 	Env               []string
 	URL               string
 	BearerTokenEnvVar string
+	OAuthAccessToken  string
 	HTTPHeaders       []string
 }
 

@@ -260,3 +260,15 @@ func (s Store) Save(cred Credentials) error {
 	data = append(bytes.TrimSpace(data), '\n')
 	return os.WriteFile(path, data, 0o600)
 }
+
+// Delete 删除本 workspace 保存的 Codex OAuth 凭据；凭据不存在时保持幂等。
+func (s Store) Delete() (bool, error) {
+	err := os.Remove(s.Path())
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

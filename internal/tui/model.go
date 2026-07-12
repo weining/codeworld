@@ -36,8 +36,20 @@ type Model struct {
 	historyIndex      int
 	pendingImages     []model.ContentPart
 	running           bool
+	turnCancel        context.CancelFunc
+	interrupting      bool
+	lastTurnError     string
+	queuedTurns       []queuedTurn
 	quitting          bool
+	initialTurn       *queuedTurn
 }
+
+type queuedTurn struct {
+	text   string
+	images []model.ContentPart
+}
+
+type initialTurnMsg struct{}
 
 // NewModel 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewModel(rt *app.Runtime) Model {
@@ -63,12 +75,23 @@ func NewModel(rt *app.Runtime) Model {
 
 // Init 返回 TUI 启动时需要并行监听的初始命令。
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, m.waitToolEvent(), m.waitPermissionRequest(), m.waitTurnEvent())
+	commands := []tea.Cmd{textarea.Blink, m.waitToolEvent(), m.waitPermissionRequest(), m.waitTurnEvent()}
+	if m.initialTurn != nil {
+		commands = append(commands, func() tea.Msg { return initialTurnMsg{} })
+	}
+	return tea.Batch(commands...)
 }
 
 // Update 处理 TUI 消息并返回下一版模型状态和后续命令。
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case initialTurnMsg:
+		if m.initialTurn == nil {
+			return m, nil
+		}
+		turn := *m.initialTurn
+		m.initialTurn = nil
+		return m.beginTurn(turn)
 	case turnEventMsg:
 		m.applyTurnEvent(msg.event)
 		m.refreshViewport()
@@ -83,9 +106,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, m.waitToolEvent()
 	case turnDoneMsg:
+		if m.turnCancel != nil {
+			m.turnCancel()
+			m.turnCancel = nil
+		}
 		m.running = false
 		if msg.err != nil {
-			m.items = append(m.items, TranscriptItem{Kind: ItemError, Text: msg.err.Error()})
+			if m.interrupting {
+				m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: "turn interrupted"})
+			} else if m.lastTurnError == "" {
+				m.items = append(m.items, TranscriptItem{Kind: ItemError, Text: msg.err.Error()})
+			}
+		}
+		m.interrupting = false
+		if len(m.queuedTurns) > 0 {
+			next := m.queuedTurns[0]
+			m.queuedTurns = m.queuedTurns[1:]
+			m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: "starting queued follow-up"})
+			m, cmd := m.beginTurn(next)
+			m.refreshViewport()
+			return m, cmd
 		}
 		m.refreshViewport()
 		return m, nil
@@ -100,6 +140,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.pendingPermission != nil {
 			switch msg.String() {
+			case "ctrl+c":
+				if m.turnCancel != nil {
+					m.turnCancel()
+				}
+				m.quitting = true
+				return m, tea.Quit
+			case "ctrl+x":
+				if m.turnCancel != nil && !m.interrupting {
+					m.interrupting = true
+					m.turnCancel()
+					m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: "interrupt requested"})
+				}
+				m.pendingPermission = nil
 			case "y":
 				m.confirmer.Decide(PermissionDecision{Allow: true})
 				m.items = append(m.items, TranscriptItem{Kind: ItemPermission, Text: "allowed once"})
@@ -121,8 +174,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "ctrl+c":
+			if m.turnCancel != nil {
+				m.turnCancel()
+			}
 			m.quitting = true
 			return m, tea.Quit
+		case "ctrl+x":
+			if m.running && m.turnCancel != nil && !m.interrupting {
+				m.interrupting = true
+				m.turnCancel()
+				m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: "interrupt requested"})
+				m.refreshViewport()
+			}
+			return m, nil
 		case "pgup":
 			m.viewport.PageUp()
 			return m, nil
@@ -142,12 +206,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.restorePromptHistory(1)
 			return m, nil
 		case "ctrl+j", "alt+enter":
-			if !m.running {
-				m.input.InsertString("\n")
-			}
+			m.input.InsertString("\n")
 			return m, nil
 		case "enter":
 			if m.running {
+				text := strings.TrimSpace(m.input.Value())
+				if text == "/interrupt" {
+					if m.turnCancel != nil && !m.interrupting {
+						m.interrupting = true
+						m.turnCancel()
+						m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: "interrupt requested"})
+						m.input.Reset()
+						m.refreshViewport()
+					}
+					return m, nil
+				}
+				if text != "" {
+					m.recordPrompt(text)
+					images := append([]model.ContentPart(nil), m.pendingImages...)
+					m.pendingImages = nil
+					m.queuedTurns = append(m.queuedTurns, queuedTurn{text: text, images: images})
+					m.items = append(m.items, TranscriptItem{Kind: ItemNotice, Text: fmt.Sprintf("queued follow-up #%d: %s", len(m.queuedTurns), text)})
+					m.input.Reset()
+					m.refreshViewport()
+				}
 				return m, nil
 			}
 			text := strings.TrimSpace(m.input.Value())
@@ -164,20 +246,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					next.refreshViewport()
 					return next, nil
 				}
-				m.items = append(m.items, TranscriptItem{Kind: ItemUser, Text: text})
 				m.input.Reset()
-				m.refreshViewport()
-				m.running = true
-				prompt := text
 				images := append([]model.ContentPart(nil), m.pendingImages...)
 				m.pendingImages = nil
-				return m, func() tea.Msg {
-					if len(images) > 0 {
-						userMessage := model.Message{Role: model.RoleUser, Content: prompt, Parts: append([]model.ContentPart{model.TextPart(prompt)}, images...)}
-						return m.adapter.RunTurnMessage(m.ctx, userMessage)
-					}
-					return m.adapter.RunTurn(m.ctx, prompt)
-				}
+				m, cmd := m.beginTurn(queuedTurn{text: text, images: images})
+				m.refreshViewport()
+				return m, cmd
 			}
 			return m, nil
 		}
@@ -185,6 +259,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	return m, cmd
+}
+
+func (m Model) beginTurn(turn queuedTurn) (Model, tea.Cmd) {
+	m.items = append(m.items, TranscriptItem{Kind: ItemUser, Text: turn.text})
+	m.running = true
+	m.lastTurnError = ""
+	turnCtx, cancel := context.WithCancel(m.ctx)
+	m.turnCancel = cancel
+	return m, func() tea.Msg {
+		if len(turn.images) > 0 {
+			userMessage := model.Message{Role: model.RoleUser, Content: turn.text, Parts: append([]model.ContentPart{model.TextPart(turn.text)}, turn.images...)}
+			return m.adapter.RunTurnMessage(turnCtx, userMessage)
+		}
+		return m.adapter.RunTurn(turnCtx, turn.text)
+	}
 }
 
 // View 渲染当前 TUI 状态，包括状态栏、对话区和输入框。
@@ -279,6 +368,9 @@ func (m Model) renderComposer() string {
 	if m.running {
 		borderColor = p.secondary
 		status = "working…"
+		if len(m.queuedTurns) > 0 {
+			status += fmt.Sprintf("  ·  %d queued", len(m.queuedTurns))
+		}
 	}
 	if m.pendingPermission != nil {
 		borderColor = p.warning
@@ -304,7 +396,7 @@ func (m Model) renderComposer() string {
 	if m.pendingPermission != nil {
 		helpText = "y allow once   a allow for session   n deny"
 	} else if m.running {
-		helpText = "Working on your request…   ctrl+c cancel and quit"
+		helpText = "Working on your request…   ↵ queue   ctrl+x interrupt   ctrl+c quit"
 	}
 	help := styled(p.muted).
 		Width(width).
@@ -431,6 +523,7 @@ func (m *Model) applyTurnEvent(event agent.TurnEvent) {
 		}
 	case agent.TurnEventError:
 		m.items = append(m.items, TranscriptItem{Kind: ItemError, Text: event.Text})
+		m.lastTurnError = event.Text
 	}
 }
 

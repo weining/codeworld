@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,12 @@ import (
 
 	"codeworld/internal/model"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 // TestStreamSendsCodexHeadersAndParsesTextUsage 验证 Codex OAuth token 会走 ChatGPT backend Responses SSE。
 func TestStreamSendsCodexHeadersAndParsesTextUsage(t *testing.T) {
@@ -99,5 +106,33 @@ func TestGenerateAggregatesStream(t *testing.T) {
 	}
 	if resp.FinalText != "ok" {
 		t.Fatalf("FinalText = %q, want ok", resp.FinalText)
+	}
+}
+
+func TestStreamRetriesOneTransportEOF(t *testing.T) {
+	attempts := 0
+	httpClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, io.EOF
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Body:       io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\n")),
+			Request:    request,
+		}, nil
+	})}
+	client := NewClient(Config{AccessToken: "token", AccountID: "account", Model: "gpt-5", BaseURL: "https://example.test", HTTPClient: httpClient})
+	var text string
+	err := client.Stream(context.Background(), model.GenerateRequest{Messages: []model.Message{{Role: model.RoleUser, Content: "hi"}}}, func(event model.StreamEvent) error {
+		text += event.Delta
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 || text != "ok" {
+		t.Fatalf("attempts=%d text=%q", attempts, text)
 	}
 }

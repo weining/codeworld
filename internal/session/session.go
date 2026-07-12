@@ -56,6 +56,7 @@ type Usage struct {
 
 type Session struct {
 	ID           string      `json:"id"`
+	Name         string      `json:"name,omitempty"`
 	Workspace    string      `json:"workspace"`
 	Provider     string      `json:"provider"`
 	Model        string      `json:"model"`
@@ -69,6 +70,91 @@ type Session struct {
 	Usage        Usage       `json:"usage,omitempty"`
 	CreatedAt    time.Time   `json:"created_at"`
 	UpdatedAt    time.Time   `json:"updated_at"`
+}
+
+// Resolve 按 ID 优先、名称其次解析活动会话引用。
+func (s Store) Resolve(reference string) (Session, error) {
+	return s.resolveIn(reference, false)
+}
+
+// ResolveArchived 按 ID 优先、名称其次解析归档会话引用。
+func (s Store) ResolveArchived(reference string) (Session, error) {
+	return s.resolveIn(reference, true)
+}
+
+func (s Store) resolveIn(reference string, archived bool) (Session, error) {
+	reference = strings.TrimSpace(reference)
+	if reference == "" {
+		return Session{}, fmt.Errorf("session reference is empty")
+	}
+	load := s.Load
+	list := s.List
+	if archived {
+		load = s.LoadArchived
+		list = s.ListArchived
+	}
+	if sess, err := load(reference); err == nil {
+		return sess, nil
+	} else if !os.IsNotExist(err) {
+		return Session{}, err
+	}
+	sessions, err := list()
+	if err != nil {
+		return Session{}, err
+	}
+	var matches []Session
+	for _, sess := range sessions {
+		if sess.Name == reference {
+			matches = append(matches, sess)
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) > 1 {
+		return Session{}, fmt.Errorf("session name %q is ambiguous", reference)
+	}
+	return Session{}, fmt.Errorf("session %q not found", reference)
+}
+
+// Rename 更新活动会话名称，并在它是当前会话时同步 current 文件。
+func (s Store) Rename(reference, name string) (Session, error) {
+	sess, err := s.Resolve(reference)
+	if err != nil {
+		return Session{}, err
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || strings.ContainsAny(name, "\r\n") {
+		return Session{}, fmt.Errorf("session name must be a non-empty single line")
+	}
+	sessions, err := s.List()
+	if err != nil {
+		return Session{}, err
+	}
+	for _, candidate := range sessions {
+		if candidate.ID != sess.ID && candidate.Name == name {
+			return Session{}, fmt.Errorf("session name %q is already in use", name)
+		}
+	}
+	sess.Name = name
+	sess.UpdatedAt = time.Now().UTC()
+	data, err := json.MarshalIndent(sess, "", "  ")
+	if err != nil {
+		return Session{}, err
+	}
+	archivePath, _ := s.archivePath(sess.ID)
+	if err := writeSessionFile(archivePath, append(data, '\n')); err != nil {
+		return Session{}, err
+	}
+	current, currentErr := s.LoadCurrent()
+	if currentErr == nil && current.ID == sess.ID {
+		if err := writeSessionFile(s.CurrentPath(), append(data, '\n')); err != nil {
+			return Session{}, err
+		}
+	} else if currentErr != nil && !os.IsNotExist(currentErr) {
+		return Session{}, currentErr
+	}
+	return sess, nil
 }
 
 type Store struct {

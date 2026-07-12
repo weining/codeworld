@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"codeworld/internal/permissions"
 	"codeworld/internal/session"
 )
 
@@ -51,7 +52,7 @@ func TestCLIHelpListsAutomationCommands(t *testing.T) {
 	if err := runWithIO(strings.NewReader(""), &out, &bytes.Buffer{}, []string{"--help"}); err != nil {
 		t.Fatalf("runWithIO: %v", err)
 	}
-	for _, want := range []string{"codeworld exec", "codeworld review", "codeworld sessions", "codeworld fork", "--output-schema", "--ephemeral", "--approval-mode"} {
+	for _, want := range []string{"codeworld exec", "codeworld review", "codeworld login", "codeworld logout", "codeworld sessions", "codeworld fork", "codeworld doctor", "codeworld completion", "codeworld sandbox", "--version", "--cd", "--model", "--output-schema", "--ephemeral", "--approval-mode"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("help missing %q:\n%s", want, out.String())
 		}
@@ -87,12 +88,116 @@ func TestGlobalProfileSelectsProfileConfig(t *testing.T) {
 }
 
 func TestParseGlobalOptions(t *testing.T) {
-	opts, args, err := parseGlobalOptions([]string{"--profile", "fast", "exec", "inspect"})
-	if err != nil || opts.Profile != "fast" || strings.Join(args, " ") != "exec inspect" {
+	opts, args, err := parseGlobalOptions([]string{"--profile", "fast", "-C", "workspace", "--model", "model-x", "-a", "read-only", "-s", "workspace-write", "--search", "-c", `max_steps=30`, "--config", `model="configured"`, "--strict-config", "exec", "inspect"})
+	if err != nil || opts.Profile != "fast" || opts.WorkingDir != "workspace" || opts.Model != "model-x" || opts.Approval != "read-only" || opts.Sandbox != "workspace-write" || opts.Network == nil || !*opts.Network || len(opts.Config) != 2 || !opts.Strict || strings.Join(args, " ") != "exec inspect" {
 		t.Fatalf("opts=%#v args=%#v err=%v", opts, args, err)
 	}
 	if _, _, err := parseGlobalOptions([]string{"--profile"}); err == nil {
 		t.Fatal("missing profile name accepted")
+	}
+	for _, args := range [][]string{
+		{"--cd"}, {"--model"}, {"--approval-mode"}, {"--sandbox"}, {"--config"},
+		{"-C", "one", "--cd", "two"}, {"-m", "one", "--model", "two"},
+		{"-a", "invalid"}, {"-s", "invalid"}, {"--network", "--search", "exec"},
+		{"--sandbox", "danger-full-access", "--no-network", "exec"},
+		{"--strict-config", "--strict-config", "exec"},
+	} {
+		if _, _, err := parseGlobalOptions(args); err == nil {
+			t.Fatalf("global args %#v accepted", args)
+		}
+	}
+}
+
+func TestCLIConfigOverrideAndExecAlias(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	var out, stderr bytes.Buffer
+	err := runWithIO(strings.NewReader("/status\n/exit\n"), &out, &stderr, []string{"-C", root, "-c", `model="config-model"`, "repl"})
+	if err != nil {
+		t.Fatalf("runWithIO: %v", err)
+	}
+	if !strings.Contains(out.String(), "model=config-model") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	err = runWithIO(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, []string{"e"})
+	if err == nil || !strings.Contains(err.Error(), "codeworld exec") {
+		t.Fatalf("exec alias error = %v", err)
+	}
+	err = runWithIO(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, []string{"-C", t.TempDir(), "exec", "review", "--uncommitted"})
+	if err == nil || !strings.Contains(err.Error(), "review requires a Git repository") {
+		t.Fatalf("exec review error = %v", err)
+	}
+}
+
+func TestGlobalWorkingDirectoryAndModelOverride(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	var out, stderr bytes.Buffer
+	err := runWithIO(strings.NewReader("/status\n/exit\n"), &out, &stderr, []string{"-C", root, "-m", "override-model", "repl"})
+	if err != nil {
+		t.Fatalf("runWithIO: %v\nstderr: %s", err, stderr.String())
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "model=override-model") || !strings.Contains(out.String(), "workspace="+canonicalRoot) {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	current, err := os.ReadFile(filepath.Join(root, ".codeworld", "current-session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(current), `"model": "override-model"`) {
+		t.Fatalf("session = %s", current)
+	}
+}
+
+func TestGlobalRuntimePolicyOverridesAppearInREPL(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	network := true
+	replApp, err := newAppWithGlobal(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, root, globalOptions{
+		Approval: permissions.ModeFullAccess,
+		Sandbox:  "read-only",
+		Network:  &network,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer replApp.Close()
+	policy, ok := replApp.Runner.Policy.(permissions.ModePolicy)
+	if !ok || policy.Mode != permissions.ModeFullAccess || replApp.SandboxMode != "read-only" || !replApp.SandboxNetwork {
+		t.Fatalf("repl = policy=%#v sandbox=%s network=%t", replApp.Runner.Policy, replApp.SandboxMode, replApp.SandboxNetwork)
+	}
+}
+
+func TestResolveGlobalWorkingDirValidatesDirectory(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := resolveGlobalWorkingDir(root, "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(child)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != want {
+		t.Fatalf("resolved = %q, want %q", resolved, want)
+	}
+	file := filepath.Join(root, "file.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := resolveGlobalWorkingDir(root, file); err == nil || !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("file path error = %v", err)
+	}
+	if _, err := resolveGlobalWorkingDir(root, "missing"); err == nil {
+		t.Fatal("missing directory accepted")
 	}
 }
 
@@ -145,6 +250,34 @@ func TestRunUsesRestoredSessionModel(t *testing.T) {
 	}
 }
 
+func TestGlobalModelOverridesRestoredSession(t *testing.T) {
+	root := t.TempDir()
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := session.NewStore(root)
+	sess := session.New(canonicalRoot, "deepseek", "saved-model")
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	var out, stderr bytes.Buffer
+	if err := runWithIO(strings.NewReader("/status\n/exit\n"), &out, &stderr, []string{"-C", root, "--model", "invocation-model", "repl"}); err != nil {
+		t.Fatalf("runWithIO: %v", err)
+	}
+	if !strings.Contains(out.String(), "model=invocation-model") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+	loaded, err := store.Load(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Model != "invocation-model" {
+		t.Fatalf("session model = %q", loaded.Model)
+	}
+}
+
 func TestRunCommandRequiresPrompt(t *testing.T) {
 	var out bytes.Buffer
 	var stderr bytes.Buffer
@@ -156,12 +289,66 @@ func TestRunCommandRequiresPrompt(t *testing.T) {
 }
 
 func TestParseAutomationArgsReadsPromptFromStdin(t *testing.T) {
-	opts, err := parseAutomationArgs(strings.NewReader("inspect this repo\n"), []string{"--json", "--ephemeral", "-"}, execUsage, true, true)
+	opts, err := parseAutomationArgs(strings.NewReader("inspect this repo\n"), []string{"-c", "max_steps=30", "--strict-config", "--json", "--ephemeral", "-"}, execUsage, true, true)
 	if err != nil {
 		t.Fatalf("parseAutomationArgs: %v", err)
 	}
-	if opts.prompt != "inspect this repo" || !opts.json || !opts.ephemeral {
+	if opts.prompt != "inspect this repo" || !opts.json || !opts.ephemeral || len(opts.config) != 1 || !opts.strict {
 		t.Fatalf("options = %#v", opts)
+	}
+}
+
+func TestParseAutomationArgsReadsImplicitAndAppendedStdin(t *testing.T) {
+	opts, err := parseAutomationArgs(strings.NewReader("piped only\n"), nil, execUsage, true, true)
+	if err != nil || opts.prompt != "piped only" {
+		t.Fatalf("implicit stdin options=%#v err=%v", opts, err)
+	}
+	opts, err = parseAutomationArgs(strings.NewReader("extra context\n"), []string{"inspect", "repo"}, execUsage, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.prompt != "inspect repo <stdin>\nextra context\n</stdin>" {
+		t.Fatalf("combined prompt = %q", opts.prompt)
+	}
+}
+
+func TestParseAutomationArgsAcceptsCodexPositionedOptions(t *testing.T) {
+	root := t.TempDir()
+	opts, err := parseAutomationArgs(strings.NewReader(""), []string{
+		"-m", "model-x", "-p", "fast", "-C", root,
+		"-a", "never", "-s", "read-only", "-c", "max_steps=30",
+		"--color", "never", "--ignore-user-config", "--ignore-rules", "--skip-git-repo-check",
+		"inspect",
+	}, execUsage, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.modelName != "model-x" || opts.profile != "fast" || opts.workingDir != root || opts.approvalMode != permissions.ModeFullAccess || opts.sandboxMode != "read-only" || len(opts.config) != 1 || opts.color != "never" || !opts.ignoreUser || !opts.ignoreRules {
+		t.Fatalf("options = %#v", opts)
+	}
+	if _, err := parseApprovalMode("on-request"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseAutomationArgs(strings.NewReader(""), []string{"--color", "rainbow", "inspect"}, execUsage, true, true); err == nil {
+		t.Fatal("invalid color accepted")
+	}
+}
+
+func TestApplyAutomationLocationLetsLocalOptionsWin(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "child")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	resolved, global, err := applyAutomationLocation(root, globalOptions{Profile: "global", Model: "global-model"}, automationOptions{
+		workingDir: "child", profile: "local", modelName: "local-model",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.EvalSymlinks(child)
+	if resolved != want || global.Profile != "local" || global.Model != "local-model" {
+		t.Fatalf("root=%q global=%#v", resolved, global)
 	}
 }
 
@@ -201,6 +388,49 @@ func TestParseAutomationArgsValidatesSandbox(t *testing.T) {
 	}
 }
 
+func TestExecOptionsOverrideGlobalRuntimePolicy(t *testing.T) {
+	globalNetwork := false
+	localNetwork := true
+	runtimeOpts, err := runtimeOptionsForAutomation("/workspace", globalOptions{
+		Approval: permissions.ModeReadOnly,
+		Sandbox:  "read-only",
+		Network:  &globalNetwork,
+		Config:   []string{`model="global"`},
+	}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, automationOptions{
+		approvalMode: permissions.ModeFullAccess,
+		sandboxMode:  "workspace-write",
+		network:      &localNetwork,
+		config:       []string{`model="local"`},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtimeOpts.ApprovalMode != permissions.ModeFullAccess || runtimeOpts.SandboxMode != "workspace-write" || runtimeOpts.SandboxNetwork == nil || !*runtimeOpts.SandboxNetwork || strings.Join(runtimeOpts.ConfigOverrides, ",") != `model="global",model="local"` {
+		t.Fatalf("runtime options = %#v", runtimeOpts)
+	}
+	_, err = runtimeOptionsForAutomation("/workspace", globalOptions{Network: &globalNetwork}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, automationOptions{sandboxMode: "danger-full-access"})
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("danger full access error = %v", err)
+	}
+}
+
+func TestParseExecArgsResume(t *testing.T) {
+	opts, err := parseExecArgs(strings.NewReader(""), []string{"resume", "session-1", "--json", "continue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.sessionID != "session-1" || opts.resumeLast || !opts.json || opts.prompt != "continue" {
+		t.Fatalf("options = %#v", opts)
+	}
+	opts, err = parseExecArgs(strings.NewReader(""), []string{"resume", "--last", "continue"})
+	if err != nil || !opts.resumeLast {
+		t.Fatalf("last options = %#v, err=%v", opts, err)
+	}
+	if _, err := parseExecArgs(strings.NewReader(""), []string{"resume", "--last", "--ephemeral", "continue"}); err == nil {
+		t.Fatal("resume accepted --ephemeral")
+	}
+}
+
 func TestParseReviewArgsAllowsFlagsWithoutInstructions(t *testing.T) {
 	target, opts, err := parseReviewArgs(strings.NewReader(""), []string{"--base", "main", "--json"})
 	if err != nil {
@@ -208,6 +438,16 @@ func TestParseReviewArgsAllowsFlagsWithoutInstructions(t *testing.T) {
 	}
 	if target.Base != "main" || !opts.json || opts.prompt != "" {
 		t.Fatalf("target/options = %#v %#v", target, opts)
+	}
+}
+
+func TestParseReviewArgsSupportsUncommittedAndTitle(t *testing.T) {
+	target, opts, err := parseReviewArgs(strings.NewReader(""), []string{"--uncommitted", "--title", "PR 42", "focus on races"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !target.Uncommitted || target.Title != "PR 42" || opts.prompt != "focus on races" {
+		t.Fatalf("target=%#v opts=%#v", target, opts)
 	}
 }
 
@@ -219,7 +459,7 @@ func TestParseReviewArgsRejectsMultipleTargets(t *testing.T) {
 }
 
 func TestReviewRejectsApprovalModeOverride(t *testing.T) {
-	err := runReviewCommand(context.Background(), strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, t.TempDir(), "", []string{"--approval-mode", "full-access"})
+	err := runReviewCommand(context.Background(), strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}, t.TempDir(), globalOptions{}, []string{"--approval-mode", "full-access"})
 	if err == nil || !strings.Contains(err.Error(), "always runs in read-only") {
 		t.Fatalf("err = %v", err)
 	}

@@ -15,6 +15,7 @@ type HTTPClient struct {
 	name         string
 	url          string
 	bearerEnv    string
+	oauthToken   string
 	headers      []string
 	httpClient   *http.Client
 	mu           sync.Mutex
@@ -28,6 +29,7 @@ func NewHTTPClient(cfg ServerConfig) *HTTPClient {
 		name:       cfg.Name,
 		url:        cfg.URL,
 		bearerEnv:  cfg.BearerTokenEnvVar,
+		oauthToken: cfg.OAuthAccessToken,
 		headers:    append([]string(nil), cfg.HTTPHeaders...),
 		httpClient: http.DefaultClient,
 	}
@@ -108,6 +110,9 @@ func (c *HTTPClient) request(ctx context.Context, method string, params any, out
 		if token := os.Getenv(c.bearerEnv); token != "" {
 			httpReq.Header.Set("Authorization", "Bearer "+token)
 		}
+	}
+	if httpReq.Header.Get("Authorization") == "" && c.oauthToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.oauthToken)
 	}
 	for _, header := range c.headers {
 		name, value, ok := strings.Cut(header, ":")

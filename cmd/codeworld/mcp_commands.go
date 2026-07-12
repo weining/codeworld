@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,34 +10,99 @@ import (
 	"strings"
 
 	"codeworld/internal/config"
+	"codeworld/internal/mcp"
 )
 
-const mcpUsage = "usage: codeworld mcp <list|get|add|remove>"
+const mcpUsage = "usage: codeworld mcp <list|get|add|remove|login|logout>"
 
-func runMCPCommand(out io.Writer, root, profile string, args []string) error {
+func runMCPCommand(out io.Writer, root string, global globalOptions, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("%s", mcpUsage)
 	}
 	switch args[0] {
 	case "list":
-		return listMCPServers(out, root, profile, args[1:])
+		return listMCPServers(out, root, global, args[1:])
 	case "get":
-		return getMCPServer(out, root, profile, args[1:])
+		return getMCPServer(out, root, global, args[1:])
 	case "add":
 		return addMCPServer(out, args[1:])
 	case "remove":
 		return removeMCPServer(out, args[1:])
+	case "login":
+		return loginMCPServer(out, root, global, args[1:])
+	case "logout":
+		return logoutMCPServer(out, root, args[1:])
 	default:
 		return fmt.Errorf("%s", mcpUsage)
 	}
 }
 
-func listMCPServers(out io.Writer, root, profile string, args []string) error {
+func loginMCPServer(out io.Writer, root string, global globalOptions, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: codeworld mcp login <name> [--scopes <scope,scope>]")
+	}
+	name := args[0]
+	var scopes []string
+	for index := 1; index < len(args); index++ {
+		if args[index] != "--scopes" || index+1 >= len(args) {
+			return fmt.Errorf("unknown MCP login option %s", args[index])
+		}
+		for _, scope := range strings.Split(args[index+1], ",") {
+			if scope = strings.TrimSpace(scope); scope != "" {
+				scopes = append(scopes, scope)
+			}
+		}
+		index++
+	}
+	cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: global.Profile, Overrides: global.Config})
+	if err != nil {
+		return err
+	}
+	var server *config.MCPServer
+	for index := range cfg.MCPServers {
+		if cfg.MCPServers[index].Name == name {
+			server = &cfg.MCPServers[index]
+			break
+		}
+	}
+	if server == nil {
+		return fmt.Errorf("MCP server %q not found", name)
+	}
+	if server.URL == "" {
+		return fmt.Errorf("MCP server %q uses stdio and does not support OAuth login", name)
+	}
+	token, err := mcp.LoginOAuth(context.Background(), mcp.OAuthLoginOptions{
+		ServerName: name, ServerURL: server.URL, Scopes: scopes,
+		CallbackURL: cfg.MCPOAuthCallbackURL, CallbackPort: cfg.MCPOAuthCallbackPort,
+		NotifyURL: func(target string) { _, _ = fmt.Fprintf(out, "Open this URL to authorize %s:\n%s\n", name, target) },
+	})
+	if err != nil {
+		return err
+	}
+	if err := mcp.SaveOAuthToken(root, token); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "logged in to MCP server %s\n", name)
+	return err
+}
+
+func logoutMCPServer(out io.Writer, root string, args []string) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: codeworld mcp logout <name>")
+	}
+	if err := mcp.DeleteOAuthToken(root, args[0]); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(out, "logged out of MCP server %s\n", args[0])
+	return err
+}
+
+func listMCPServers(out io.Writer, root string, global globalOptions, args []string) error {
 	jsonOutput, err := parseJSONFlag(args)
 	if err != nil {
 		return err
 	}
-	cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: profile})
+	cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: global.Profile, Overrides: global.Config})
 	if err != nil {
 		return err
 	}
@@ -62,7 +128,7 @@ func listMCPServers(out io.Writer, root, profile string, args []string) error {
 	return nil
 }
 
-func getMCPServer(out io.Writer, root, profile string, args []string) error {
+func getMCPServer(out io.Writer, root string, global globalOptions, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: codeworld mcp get <name> [--json]")
 	}
@@ -71,7 +137,7 @@ func getMCPServer(out io.Writer, root, profile string, args []string) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: profile})
+	cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: global.Profile, Overrides: global.Config})
 	if err != nil {
 		return err
 	}

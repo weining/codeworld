@@ -145,6 +145,22 @@ func TestStoreLoadSaveCredentials(t *testing.T) {
 	}
 }
 
+// TestStoreDeleteCredentials 验证删除操作不会因为凭据已不存在而失败。
+func TestStoreDeleteCredentials(t *testing.T) {
+	store := Store{Root: t.TempDir()}
+	if err := store.Save(Credentials{Access: "a", Refresh: "r", AccountID: "id"}); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := store.Delete()
+	if err != nil || !removed {
+		t.Fatalf("first Delete = %v, %v", removed, err)
+	}
+	removed, err = store.Delete()
+	if err != nil || removed {
+		t.Fatalf("second Delete = %v, %v", removed, err)
+	}
+}
+
 // TestExtractAccountID decodes the ChatGPT account id from a Codex access token.
 func TestExtractAccountID(t *testing.T) {
 	accountID, err := ExtractAccountID(makeJWT("acct-1"))

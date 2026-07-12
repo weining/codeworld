@@ -38,9 +38,10 @@ type Config struct {
 }
 
 type LoadOptions struct {
-	Home     string
-	Profile  string
-	SkipUser bool
+	Home      string
+	Profile   string
+	SkipUser  bool
+	Overrides []string
 }
 
 type MCPServer struct {
@@ -118,10 +119,96 @@ func LoadWithOptions(root string, opts LoadOptions) (Config, error) {
 	cfg.MCPServers = dedupeMCPServers(cfg.MCPServers)
 	cfg.SubagentRoles = dedupeSubagentRoles(cfg.SubagentRoles)
 	loadEnv(&cfg)
+	if err := applyOverrides(&cfg, opts.Overrides); err != nil {
+		return Config{}, err
+	}
 	if err := validate(cfg); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func applyOverrides(cfg *Config, overrides []string) error {
+	for _, override := range overrides {
+		key, value, ok := strings.Cut(override, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return fmt.Errorf("invalid config override %q; expected key=value", override)
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if strings.HasPrefix(value, "\"") {
+			unquoted, err := strconv.Unquote(value)
+			if err != nil {
+				return fmt.Errorf("invalid config override %q: %w", override, err)
+			}
+			value = unquoted
+		}
+		switch key {
+		case "provider":
+			cfg.Provider = value
+		case "model":
+			cfg.Model = value
+		case "workspace":
+			cfg.Workspace = value
+		case "local_base_url":
+			cfg.LocalBaseURL = value
+		case "approval_mode":
+			cfg.ApprovalMode = value
+		case "sandbox_mode":
+			cfg.SandboxMode = value
+		case "max_steps":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("config override %s must be an integer", key)
+			}
+			cfg.MaxSteps = n
+		case "summary_max_messages":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("config override %s must be an integer", key)
+			}
+			cfg.SummaryMaxMessages = n
+		case "summary_max_tokens":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("config override %s must be an integer", key)
+			}
+			cfg.SummaryMaxTokens = n
+		case "index_max_file_bytes":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("config override %s must be an integer", key)
+			}
+			cfg.IndexMaxFileBytes = n
+		case "subagent_max_concurrent":
+			n, err := strconv.Atoi(value)
+			if err != nil {
+				return fmt.Errorf("config override %s must be an integer", key)
+			}
+			cfg.SubagentMaxConcurrent = n
+		case "plugins_enabled", "features.plugins":
+			enabled, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("config override %s must be true or false", key)
+			}
+			cfg.PluginsEnabled = enabled
+		case "model_call_logging", "features.model_call_logging":
+			enabled, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("config override %s must be true or false", key)
+			}
+			cfg.ModelCallLogging = enabled
+		case "sandbox_network":
+			enabled, err := strconv.ParseBool(value)
+			if err != nil {
+				return fmt.Errorf("config override %s must be true or false", key)
+			}
+			cfg.SandboxNetwork = enabled
+		default:
+			return fmt.Errorf("unsupported config override key %q", key)
+		}
+	}
+	return nil
 }
 
 func loadConfigFile(path string, cfg *Config, allowFullAccess, required bool) error {

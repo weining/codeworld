@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -448,6 +449,84 @@ func TestCtrlJInsertsNewlineWithoutSubmitting(t *testing.T) {
 	}
 }
 
+func TestRunningTurnQueuesFollowUpAndStartsItAfterCompletion(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{Workspace: workspace.Workspace{Root: root}, Session: session.New(root, "deepseek", "deepseek-v4-pro")}
+	m := NewModel(&rt)
+	m.running = true
+	m.input.SetValue("check the tests too")
+
+	nextModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatal("queueing follow-up started a concurrent turn")
+	}
+	m = nextModel.(Model)
+	if len(m.queuedTurns) != 1 || m.queuedTurns[0].text != "check the tests too" {
+		t.Fatalf("queued turns = %#v", m.queuedTurns)
+	}
+	if !strings.Contains(m.items[len(m.items)-1].Text, "queued follow-up") {
+		t.Fatalf("items = %#v", m.items)
+	}
+
+	nextModel, cmd = m.Update(turnDoneMsg{})
+	m = nextModel.(Model)
+	if cmd == nil || !m.running || len(m.queuedTurns) != 0 {
+		t.Fatalf("after completion: cmd=%v running=%v queue=%#v", cmd != nil, m.running, m.queuedTurns)
+	}
+	if m.items[len(m.items)-1].Kind != ItemUser || m.items[len(m.items)-1].Text != "check the tests too" {
+		t.Fatalf("last item = %#v", m.items[len(m.items)-1])
+	}
+}
+
+func TestCtrlXInterruptsRunningTurnWithoutQuitting(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{Workspace: workspace.Workspace{Root: root}, Session: session.New(root, "deepseek", "deepseek-v4-pro")}
+	m := NewModel(&rt)
+	turnCtx, cancel := context.WithCancel(context.Background())
+	m.running = true
+	m.turnCancel = cancel
+
+	nextModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlX})
+	if cmd != nil {
+		t.Fatal("Ctrl+X returned a command")
+	}
+	m = nextModel.(Model)
+	select {
+	case <-turnCtx.Done():
+	default:
+		t.Fatal("turn context was not canceled")
+	}
+	if !m.interrupting || m.quitting {
+		t.Fatalf("interrupting=%v quitting=%v", m.interrupting, m.quitting)
+	}
+
+	nextModel, _ = m.Update(turnDoneMsg{err: context.Canceled})
+	m = nextModel.(Model)
+	if m.running || m.interrupting || m.items[len(m.items)-1].Text != "turn interrupted" {
+		t.Fatalf("interrupted model = %#v", m)
+	}
+}
+
+func TestTurnDoneDoesNotDuplicateStreamError(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{Workspace: workspace.Workspace{Root: root}, Session: session.New(root, "deepseek", "deepseek-v4-pro")}
+	m := NewModel(&rt)
+	m.running = true
+	nextModel, _ := m.Update(turnEventMsg{event: agent.TurnEvent{Kind: agent.TurnEventError, Text: "request EOF"}})
+	m = nextModel.(Model)
+	nextModel, _ = m.Update(turnDoneMsg{err: io.EOF})
+	m = nextModel.(Model)
+	errors := 0
+	for _, item := range m.items {
+		if item.Kind == ItemError {
+			errors++
+		}
+	}
+	if errors != 1 {
+		t.Fatalf("error items = %d, want 1: %#v", errors, m.items)
+	}
+}
+
 // TestHandleResumeCommandListsRecentSessions 验证 /resume 展示可恢复 session。
 func TestHandleResumeCommandListsRecentSessions(t *testing.T) {
 	root := t.TempDir()
@@ -474,6 +553,27 @@ func TestHandleResumeCommandListsRecentSessions(t *testing.T) {
 		if !strings.Contains(all, want) {
 			t.Fatalf("transcript missing %q in:\n%s", want, all)
 		}
+	}
+}
+
+func TestInitialTurnMessageStartsConfiguredPrompt(t *testing.T) {
+	root := t.TempDir()
+	rt := app.Runtime{Workspace: workspace.Workspace{Root: root}, Session: session.New(root, "deepseek", "model")}
+	m := NewModel(&rt)
+	m.initialTurn = &queuedTurn{text: "continue the saved task"}
+	next, cmd := m.Update(initialTurnMsg{})
+	updated := next.(Model)
+	if cmd == nil || !updated.running || updated.initialTurn != nil {
+		t.Fatalf("updated = running=%v initial=%#v cmd=%v", updated.running, updated.initialTurn, cmd != nil)
+	}
+	found := false
+	for _, item := range updated.items {
+		if item.Kind == ItemUser && item.Text == "continue the saved task" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("items = %#v", updated.items)
 	}
 }
 
@@ -507,6 +607,24 @@ func TestHandleAdvancedSlashCommands(t *testing.T) {
 	}
 	if m.theme != "dark" {
 		t.Fatalf("theme = %q, want dark", m.theme)
+	}
+}
+
+func TestRenameSlashCommandUpdatesSessionName(t *testing.T) {
+	root := t.TempDir()
+	store := session.NewStore(root)
+	sess := session.New(root, "deepseek", "model")
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatal(err)
+	}
+	rt := app.Runtime{Workspace: workspace.Workspace{Root: root}, Store: store, Session: sess}
+	m, quit := mustHandleCommand(t, NewModel(&rt), "/rename focused work")
+	if quit || m.rt.Session.Name != "focused work" || !strings.Contains(transcriptText(m.items), "session name=focused work") {
+		t.Fatalf("quit=%v session=%#v items=%#v", quit, m.rt.Session, m.items)
+	}
+	resolved, err := store.Resolve("focused work")
+	if err != nil || resolved.ID != sess.ID {
+		t.Fatalf("resolved=%#v err=%v", resolved, err)
 	}
 }
 

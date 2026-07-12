@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"codeworld/internal/codexplugin"
@@ -50,6 +51,15 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 	if err != nil {
 		return Loaded{}, err
 	}
+	home, err := config.Home("")
+	if err != nil {
+		return Loaded{}, err
+	}
+	installedPlugins, err := codexplugin.LoadInstalled(home)
+	if err != nil {
+		return Loaded{}, err
+	}
+	codexPlugins = append(codexPlugins, installedPlugins...)
 	mcpServers := append([]config.MCPServer{}, opts.MCPServers...)
 	for _, plugin := range codexPlugins {
 		loaded.Skills = append(loaded.Skills, plugin.Skills...)
@@ -65,7 +75,7 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 		loaded.Tools = append(loaded.Tools, tools.NewPluginToolWithSandbox(opts.Workspace, spec, opts.Sandbox))
 	}
 
-	mcpTools, clients, err := loadMCPTools(ctx, mcpServers, opts.AuthorizeExternal)
+	mcpTools, clients, err := loadMCPTools(ctx, opts.Root, mcpServers, opts.AuthorizeExternal)
 	if err != nil {
 		_ = CloseClients(loaded.MCPClients)
 		return Loaded{}, err
@@ -87,7 +97,7 @@ func CloseClients(clients []*mcp.Client) error {
 }
 
 // loadMCPTools 加载外部或项目内配置，并把原始数据转换为内部结构。
-func loadMCPTools(ctx context.Context, servers []config.MCPServer, authorize func(context.Context, permissions.Request) error) ([]tools.Tool, []*mcp.Client, error) {
+func loadMCPTools(ctx context.Context, root string, servers []config.MCPServer, authorize func(context.Context, permissions.Request) error) ([]tools.Tool, []*mcp.Client, error) {
 	var out []tools.Tool
 	clients := make([]*mcp.Client, 0, len(servers))
 	for _, server := range servers {
@@ -115,7 +125,16 @@ func loadMCPTools(ctx context.Context, servers []config.MCPServer, authorize fun
 			CallTool(context.Context, string, json.RawMessage) (mcp.CallToolResult, error)
 		}
 		if server.URL != "" {
-			client = mcp.NewHTTPClient(mcp.ServerConfig{Name: server.Name, URL: server.URL, BearerTokenEnvVar: server.BearerTokenEnvVar, HTTPHeaders: server.HTTPHeaders})
+			accessToken := ""
+			if server.BearerTokenEnvVar == "" || os.Getenv(server.BearerTokenEnvVar) == "" {
+				if token, tokenErr := mcp.RefreshOAuthToken(ctx, root, server.Name, nil); tokenErr == nil {
+					accessToken = token.AccessToken
+				} else if !errors.Is(tokenErr, os.ErrNotExist) {
+					_ = CloseClients(clients)
+					return nil, nil, tokenErr
+				}
+			}
+			client = mcp.NewHTTPClient(mcp.ServerConfig{Name: server.Name, URL: server.URL, BearerTokenEnvVar: server.BearerTokenEnvVar, OAuthAccessToken: accessToken, HTTPHeaders: server.HTTPHeaders})
 		} else {
 			stdioClient, err := mcp.StartStdio(ctx, mcp.ServerConfig{Name: server.Name, Command: server.Command, Args: server.Args})
 			if err != nil {

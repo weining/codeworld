@@ -10,14 +10,26 @@ import (
 const maxReviewContext = 512 * 1024
 
 type Target struct {
-	Base   string
-	Commit string
+	Base        string
+	Commit      string
+	Uncommitted bool
+	Title       string
 }
 
 // BuildPrompt 收集指定 Git 变更集，并生成只读审查请求。
 func BuildPrompt(ctx context.Context, root string, target Target, instructions string) (string, error) {
-	if target.Base != "" && target.Commit != "" {
-		return "", fmt.Errorf("review accepts only one of --base or --commit")
+	selected := 0
+	if target.Base != "" {
+		selected++
+	}
+	if target.Commit != "" {
+		selected++
+	}
+	if target.Uncommitted {
+		selected++
+	}
+	if selected > 1 {
+		return "", fmt.Errorf("review accepts only one of --uncommitted, --base, or --commit")
 	}
 	if err := validateRevision(target.Base); err != nil {
 		return "", fmt.Errorf("invalid base: %w", err)
@@ -60,6 +72,9 @@ func BuildPrompt(ctx context.Context, root string, target Target, instructions s
 
 	prompt := "Review " + label + ". Do not modify files. Focus on correctness, regressions, security, races, and missing tests. " +
 		"Report only actionable findings, ordered by severity, with precise file and line references. If there are no findings, say so explicitly."
+	if title := strings.TrimSpace(target.Title); title != "" {
+		prompt += "\n\nReview title: " + title
+	}
 	if instructions = strings.TrimSpace(instructions); instructions != "" {
 		prompt += "\n\nAdditional review instructions:\n" + instructions
 	}

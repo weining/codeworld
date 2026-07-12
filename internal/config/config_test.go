@@ -312,6 +312,34 @@ func TestLoadWithOptionsProjectCannotEnableFullAccess(t *testing.T) {
 	}
 }
 
+func TestLoadWithOptionsAppliesOrderedCLIOverridesLast(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEWORLD_SANDBOX", "read-only")
+	cfg, err := LoadWithOptions(root, LoadOptions{SkipUser: true, Overrides: []string{
+		`model="override-model"`,
+		"max_steps=33",
+		"plugins_enabled=true",
+		"features.model_call_logging=true",
+		"sandbox_mode=workspace-write",
+		"sandbox_network=false",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Model != "override-model" || cfg.MaxSteps != 33 || !cfg.PluginsEnabled || !cfg.ModelCallLogging || cfg.SandboxMode != "workspace-write" || cfg.SandboxNetwork {
+		t.Fatalf("config = %#v", cfg)
+	}
+}
+
+func TestLoadWithOptionsRejectsInvalidCLIOverrides(t *testing.T) {
+	for _, override := range []string{"missing-equals", "unknown=value", "max_steps=nope", "plugins_enabled=maybe", `model="unterminated`} {
+		_, err := LoadWithOptions(t.TempDir(), LoadOptions{SkipUser: true, Overrides: []string{override}})
+		if err == nil {
+			t.Fatalf("override %q accepted", override)
+		}
+	}
+}
+
 // writeFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeFile(t *testing.T, path string, content string) {
 	t.Helper()

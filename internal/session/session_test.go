@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -325,6 +326,39 @@ func TestStoreArchiveNonCurrentPreservesCurrent(t *testing.T) {
 	loaded, err := store.LoadCurrent()
 	if err != nil || loaded.ID != current.ID {
 		t.Fatalf("current = %#v err=%v", loaded, err)
+	}
+}
+
+func TestStoreRenameAndResolveByName(t *testing.T) {
+	root := t.TempDir()
+	store := NewStore(root)
+	sess := New(root, "deepseek", "model")
+	sess.ID = "rename-target"
+	if err := store.SaveCurrent(sess); err != nil {
+		t.Fatal(err)
+	}
+	renamed, err := store.Rename(sess.ID, "bug-fix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := store.Resolve("bug-fix")
+	if err != nil || resolved.ID != sess.ID || renamed.Name != "bug-fix" {
+		t.Fatalf("renamed=%#v resolved=%#v err=%v", renamed, resolved, err)
+	}
+	current, err := store.LoadCurrent()
+	if err != nil || current.Name != "bug-fix" {
+		t.Fatalf("current=%#v err=%v", current, err)
+	}
+	second := New(root, "deepseek", "model")
+	second.ID = "second-session"
+	if err := store.SaveCurrent(second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Rename(second.ID, "bug-fix"); err == nil || !strings.Contains(err.Error(), "already in use") {
+		t.Fatalf("duplicate rename error = %v", err)
+	}
+	if _, err := store.Rename(second.ID, "bad\nname"); err == nil {
+		t.Fatal("multiline name accepted")
 	}
 }
 
