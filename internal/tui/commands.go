@@ -26,7 +26,9 @@ var slashCommands = []string{
 	"/resume",
 	"/compact",
 	"/goal",
+	"/rename",
 	"/plan",
+	"/interrupt",
 	"/image",
 	"/repl",
 	"/clear",
@@ -51,6 +53,8 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		m.saveSession()
 	case line == "/status":
 		m.appendNotice(StatusLine(RuntimeStatus(m.rt)))
+	case line == "/interrupt":
+		m.appendNotice("no active turn")
 	case line == "/diff":
 		if m.rt.Diff == nil {
 			m.appendNotice("diff unavailable")
@@ -145,6 +149,21 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 		}
 		m.rt.RefreshSystemPrompt()
 		m.saveSession()
+	case line == "/rename":
+		if m.rt.Session.Name == "" {
+			m.appendNotice("session name not set")
+		} else {
+			m.appendNotice("session name=" + m.rt.Session.Name)
+		}
+	case strings.HasPrefix(line, "/rename "):
+		name := strings.TrimSpace(strings.TrimPrefix(line, "/rename "))
+		renamed, err := m.rt.Store.Rename(m.rt.Session.ID, name)
+		if err != nil {
+			m.appendError("rename error: " + err.Error())
+			return m, false
+		}
+		m.rt.Session = renamed
+		m.appendNotice("session name=" + renamed.Name)
 	case line == "/plan":
 		m.rt.Session.Mode = "plan"
 		m.rt.RefreshSystemPrompt()

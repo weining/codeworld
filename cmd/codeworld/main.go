@@ -34,16 +34,42 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 	if err != nil {
 		return err
 	}
+	root, err = resolveGlobalWorkingDir(root, global.WorkingDir)
+	if err != nil {
+		return err
+	}
 	if len(args) > 0 {
 		switch args[0] {
 		case "help", "--help", "-h":
 			return printCLIHelp(out)
+		case "version", "--version", "-V":
+			if len(args) != 1 {
+				return fmt.Errorf("usage: codeworld version")
+			}
+			_, err := fmt.Fprintln(out, buildVersionString())
+			return err
+		case "login":
+			return runLoginCommand(in, out, root, args[1:])
+		case "logout":
+			return runLogoutCommand(out, root, args[1:])
 		case "auth":
 			return runAuthCommand(in, out, root, args[1:])
 		case "mcp":
-			return runMCPCommand(out, root, global.Profile, args[1:])
+			return runMCPCommand(out, root, global, args[1:])
+		case "plugin":
+			return runPluginCommand(out, args[1:])
+		case "features":
+			return runFeaturesCommand(out, root, global, args[1:])
+		case "debug":
+			return runDebugCommand(context.Background(), out, root, global, args[1:])
+		case "doctor":
+			return runDoctorCommand(out, root, global, args[1:])
+		case "completion":
+			return runCompletionCommand(out, args[1:])
+		case "sandbox":
+			return runSandboxCommand(context.Background(), in, out, stderr, root, global, args[1:])
 		case "repl":
-			app, err := newAppWithProfile(in, out, stderr, root, global.Profile)
+			app, err := newAppWithGlobal(in, out, stderr, root, global)
 			if err != nil {
 				return err
 			}
@@ -56,7 +82,7 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			if err != nil {
 				return err
 			}
-			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, Profile: global.Profile, In: in, Out: out, Err: stderr})
+			rt, err := app.NewRuntime(context.Background(), runtimeOptionsFromGlobal(root, global, in, out, stderr))
 			if err != nil {
 				return err
 			}
@@ -66,22 +92,25 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 				}
 				return runmode.Once(context.Background(), rt, prompt)
 			})
-		case "exec":
-			return runExecCommand(context.Background(), in, out, stderr, root, global.Profile, args[1:])
+		case "exec", "e":
+			if len(args) > 1 && args[1] == "review" {
+				return runReviewCommand(context.Background(), in, out, stderr, root, global, args[2:])
+			}
+			return runExecCommand(context.Background(), in, out, stderr, root, global, args[1:])
 		case "review":
-			return runReviewCommand(context.Background(), in, out, stderr, root, global.Profile, args[1:])
+			return runReviewCommand(context.Background(), in, out, stderr, root, global, args[1:])
 		case "sessions":
-			return runSessionsCommand(out, root, global.Profile, args[1:])
+			return runSessionsCommand(out, root, global, args[1:])
 		case "fork":
-			return runForkCommand(context.Background(), in, out, stderr, root, global.Profile, args[1:])
+			return runForkCommand(context.Background(), in, out, stderr, root, global, args[1:])
 		case "archive":
-			return runArchiveCommand(out, root, global.Profile, args[1:], false)
+			return runArchiveCommand(out, root, global, args[1:], false)
 		case "unarchive":
-			return runArchiveCommand(out, root, global.Profile, args[1:], true)
+			return runArchiveCommand(out, root, global, args[1:], true)
 		case "delete":
-			return runDeleteCommand(out, root, global.Profile, args[1:])
+			return runDeleteCommand(out, root, global, args[1:])
 		case "index":
-			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, Profile: global.Profile, In: in, Out: out, Err: stderr})
+			rt, err := app.NewRuntime(context.Background(), runtimeOptionsFromGlobal(root, global, in, out, stderr))
 			if err != nil {
 				return err
 			}
@@ -103,21 +132,9 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 				return err
 			})
 		case "resume":
-			opts := app.Options{Root: root, Profile: global.Profile, In: in, Out: out, Err: stderr}
-			if len(args) < 2 || args[1] == "--last" {
-				opts.ResumeLast = true
-			} else {
-				opts.SessionID = args[1]
-			}
-			rt, err := app.NewRuntime(context.Background(), opts)
-			if err != nil {
-				return err
-			}
-			return withRuntime(rt, func(rt *app.Runtime) error {
-				return tui.RunWithOptions(context.Background(), rt, tui.Options{TestMode: !shouldShowTerminalTitle(out)})
-			})
+			return runResumeCommand(context.Background(), in, out, stderr, root, global, args[1:])
 		case "tui":
-			rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, Profile: global.Profile, In: in, Out: out, Err: stderr})
+			rt, err := app.NewRuntime(context.Background(), runtimeOptionsFromGlobal(root, global, in, out, stderr))
 			if err != nil {
 				return err
 			}
@@ -129,13 +146,13 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 		}
 	}
 	if shouldShowTerminalTitle(out) {
-		rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, Profile: global.Profile, In: in, Out: out, Err: stderr})
+		rt, err := app.NewRuntime(context.Background(), runtimeOptionsFromGlobal(root, global, in, out, stderr))
 		if err != nil {
 			return err
 		}
 		return withRuntime(rt, func(rt *app.Runtime) error { return tui.Run(context.Background(), rt) })
 	}
-	app, err := newAppWithProfile(in, out, stderr, root, global.Profile)
+	app, err := newAppWithGlobal(in, out, stderr, root, global)
 	if err != nil {
 		return err
 	}
@@ -148,22 +165,55 @@ func printCLIHelp(out io.Writer) error {
 Usage:
   codeworld                         Start the interactive TUI
   codeworld exec [options] <task|-> Run a script-friendly task
+  codeworld e [options] <task|->    Alias for exec
+  codeworld exec resume <id|--last> <task|->
+                                    Continue a saved session non-interactively
   codeworld review [options]        Review a Git change set in read-only mode
+  codeworld login [status]          Log in with Codex OAuth or inspect status
+  codeworld logout                  Remove workspace-local Codex OAuth credentials
   codeworld mcp <command>           Manage user-level MCP servers
+  codeworld plugin <command>        Manage Codex-compatible plugins and marketplaces
+  codeworld features <command>      Inspect or update supported feature flags
+  codeworld debug <command>         Inspect the effective model selection or prompt input
+  codeworld auth codex <command>    Log in, inspect status, or log out
+  codeworld doctor [--json]         Check local configuration and dependencies
+  codeworld completion <shell>      Generate bash, zsh, fish, or PowerShell completion
+  codeworld sandbox [options] -- cmd
+                                    Run a command in the configured process sandbox
   codeworld sessions [--archived]   List saved sessions
+  codeworld sessions rename <id> <name>
+                                    Assign a reusable session name
   codeworld fork <id|--last>        Fork a session into a new interactive task
   codeworld archive <id|--last>     Archive a saved session
   codeworld unarchive <id|--last>   Restore an archived session
   codeworld delete <id|--last>      Permanently delete a saved session
   codeworld run [--image path] task Run one compatible non-interactive turn
-  codeworld resume [--last|id]      Resume an active saved session
+  codeworld resume [--last|id] [prompt]
+                                    Pick or resume an active saved session
   codeworld index                   Refresh the workspace index
   codeworld repl                    Start the line-oriented REPL
 
 Global options:
   --profile, -p <name>   Load $CODEWORLD_HOME/profiles/<name>.toml
+  --cd, -C <dir>         Use a directory as the workspace root
+  --model, -m <name>     Override the model for this invocation
+  --approval-mode, -a    Set auto, read-only, or full-access permissions
+  --sandbox, -s <mode>   Set read-only, workspace-write, or danger-full-access
+  --network              Enable network access in the process sandbox
+  --no-network           Disable network access in the process sandbox
+  --search               Enable network access and native web search
+  --config, -c <key=val> Override a supported Codeworld config value
+  --enable <feature>     Enable a configurable feature for this invocation
+  --disable <feature>    Disable a configurable feature for this invocation
+  --strict-config        Require strict config parsing (the current default)
+  --version, -V          Print version information
 
 Exec options:
+  --model, -m <name>     Override the model after the exec subcommand
+  --profile, -p <name>   Load a profile after the exec subcommand
+  --cd, -C <dir>         Select the workspace after the exec subcommand
+  --config, -c <key=val> Override a supported Codeworld config value
+  --strict-config        Require strict config parsing (the current default)
   --json                 Emit JSONL events
   --ephemeral            Do not load or save the current session
   --approval-mode <mode> Set auto, read-only, or full-access permissions
@@ -172,12 +222,18 @@ Exec options:
   --no-network          Disable network access inside the process sandbox
                          Full-access is unsandboxed host execution
   --image <path>         Attach an image
+  --color <mode>         Accept auto, always, or never (output is currently plain)
+  --ignore-user-config   Skip the user config while retaining project config
+  --ignore-rules         Compatibility flag; Codeworld has no exec rules yet
+  --skip-git-repo-check  Allow exec outside Git (already the default)
   --output-schema <path> Validate the final JSON response
   -o <path>              Also write the final message to a file
 
 Review options:
+  --uncommitted          Review staged, unstaged, and untracked changes
   --base <branch>        Review changes against a base branch
   --commit <sha>         Review one commit
+  --title <title>        Add a title to the review context
   --json                 Emit JSONL events
   --output-schema <path> Validate the final JSON response
   -o <path>              Also write the final message to a file
@@ -186,15 +242,26 @@ Review options:
 }
 
 func runAuthCommand(in io.Reader, out io.Writer, root string, args []string) error {
-	if len(args) == 2 && args[0] == "codex" && args[1] == "login" {
-		_, err := codexauth.Login(context.Background(), codexauth.LoginOptions{
-			Root: root,
-			In:   in,
-			Out:  out,
-		})
-		return err
+	if len(args) < 2 || args[0] != "codex" {
+		return fmt.Errorf("usage: codeworld auth codex <login|status|logout>")
 	}
-	return fmt.Errorf("usage: codeworld auth codex login")
+	switch args[1] {
+	case "login":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: codeworld auth codex login")
+		}
+		_, err := codexauth.Login(context.Background(), codexauth.LoginOptions{Root: root, In: in, Out: out})
+		return err
+	case "status":
+		return runCodexAuthStatus(out, root, args[2:])
+	case "logout":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: codeworld auth codex logout")
+		}
+		return runCodexAuthLogout(out, root)
+	default:
+		return fmt.Errorf("usage: codeworld auth codex <login|status|logout>")
+	}
 }
 
 func parseRunArgs(args []string) (string, []model.ContentPart, error) {
@@ -223,11 +290,15 @@ func parseRunArgs(args []string) (string, []model.ContentPart, error) {
 }
 
 func newAppWithIO(in io.Reader, out io.Writer, stderr io.Writer, root string) (repl.REPL, error) {
-	return newAppWithProfile(in, out, stderr, root, "")
+	return newAppWithProfile(in, out, stderr, root, "", "")
 }
 
-func newAppWithProfile(in io.Reader, out io.Writer, stderr io.Writer, root, profile string) (repl.REPL, error) {
-	rt, err := app.NewRuntime(context.Background(), app.Options{Root: root, Profile: profile, In: in, Out: out, Err: stderr})
+func newAppWithProfile(in io.Reader, out io.Writer, stderr io.Writer, root, profile, modelName string) (repl.REPL, error) {
+	return newAppWithGlobal(in, out, stderr, root, globalOptions{Profile: profile, Model: modelName})
+}
+
+func newAppWithGlobal(in io.Reader, out io.Writer, stderr io.Writer, root string, global globalOptions) (repl.REPL, error) {
+	rt, err := app.NewRuntime(context.Background(), runtimeOptionsFromGlobal(root, global, in, out, stderr))
 	if err != nil {
 		return repl.REPL{}, err
 	}
@@ -254,6 +325,15 @@ func newAppWithProfile(in io.Reader, out io.Writer, stderr io.Writer, root, prof
 			}
 		},
 	}, nil
+}
+
+func runtimeOptionsFromGlobal(root string, global globalOptions, in io.Reader, out, stderr io.Writer) app.Options {
+	return app.Options{
+		Root: root, Profile: global.Profile, Model: global.Model,
+		ApprovalMode: global.Approval, SandboxMode: global.Sandbox, SandboxNetwork: global.Network,
+		ConfigOverrides: append([]string(nil), global.Config...),
+		In:              in, Out: out, Err: stderr,
+	}
 }
 
 func withRuntime(rt app.Runtime, run func(*app.Runtime) error) (err error) {

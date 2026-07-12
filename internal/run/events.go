@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"sync"
 
 	"codeworld/internal/agent"
@@ -31,12 +32,20 @@ func (w *jsonEventWriter) ReportTool(_ context.Context, event agent.ToolEvent) {
 	}
 	item := map[string]any{
 		"id":     event.CallID,
-		"type":   "tool_call",
+		"type":   toolItemType(event.Name),
 		"name":   event.Name,
-		"status": string(event.Status),
+		"status": toolItemStatus(event.Status),
 	}
 	if event.Request.Target != "" {
 		item["target"] = event.Request.Target
+		switch item["type"] {
+		case "command_execution":
+			item["command"] = event.Request.Target
+		case "file_change":
+			item["path"] = event.Request.Target
+		case "web_search":
+			item["query"] = event.Request.Target
+		}
 	}
 	if event.Request.Risk != "" {
 		item["risk"] = event.Request.Risk
@@ -45,6 +54,32 @@ func (w *jsonEventWriter) ReportTool(_ context.Context, event agent.ToolEvent) {
 		item["error"] = event.Error
 	}
 	_ = w.emit(map[string]any{"type": typeName, "item": item})
+}
+
+func toolItemType(name string) string {
+	switch {
+	case name == "shell" || strings.HasPrefix(name, "shell_"):
+		return "command_execution"
+	case name == "write_file" || name == "apply_patch" || name == "index_workspace":
+		return "file_change"
+	case strings.HasPrefix(name, "mcp."):
+		return "mcp_tool_call"
+	case name == "web_search":
+		return "web_search"
+	default:
+		return "tool_call"
+	}
+}
+
+func toolItemStatus(status agent.ToolEventStatus) string {
+	switch status {
+	case agent.ToolEventStart:
+		return "in_progress"
+	case agent.ToolEventSuccess:
+		return "completed"
+	default:
+		return "failed"
+	}
 }
 
 func (w *jsonEventWriter) turnEvent(event agent.TurnEvent) error {

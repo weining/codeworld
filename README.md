@@ -127,6 +127,11 @@ and stores credentials at `.codeworld/auth/codex.json` with `0600`
 permissions. Runtime calls go to the ChatGPT backend Codex Responses endpoint,
 not the public OpenAI API key endpoint.
 
+The Codex provider honors explicit `HTTPS_PROXY`/`HTTP_PROXY` environment
+settings. On macOS, when those variables are absent, it also reads the active
+system HTTPS proxy from `scutil --proxy`; this keeps terminal requests aligned
+with proxy-enabled desktop traffic.
+
 ## Use
 
 Start the TUI:
@@ -149,14 +154,32 @@ codeworld exec --json "summarize the repository"
 printf 'inspect this repository' | codeworld exec --ephemeral -
 codeworld exec --output-schema schema.json -o result.json "extract project metadata"
 codeworld exec --approval-mode read-only "inspect without changing files"
+codeworld exec resume --last "continue with the next task"
 codeworld review
 codeworld review --base main
 codeworld review --commit HEAD
 codeworld mcp add docs --url https://example.com/mcp
 codeworld mcp add local -- node server.js --stdio
 codeworld mcp list --json
+codeworld mcp login docs --scopes tools.read,tools.write
+codeworld mcp logout docs
 codeworld mcp remove local
 codeworld sessions
+codeworld doctor
+codeworld doctor --json
+codeworld completion zsh > ~/.zfunc/_codeworld
+codeworld auth codex status
+codeworld auth codex logout
+codeworld login status
+codeworld logout
+codeworld --version
+codeworld sandbox -- go test ./...
+codeworld sandbox --sandbox read-only --no-network -- git status
+codeworld -C ../another-project -m gpt-5 exec "inspect this workspace"
+codeworld -s read-only -a read-only --no-network repl
+codeworld --search exec "check the latest upstream documentation"
+codeworld -c 'model="gpt-5"' -c max_steps=30 e "inspect this workspace"
+codeworld exec review --uncommitted --title "Working tree"
 codeworld fork --last
 codeworld archive <session-id>
 codeworld unarchive <session-id>
@@ -175,17 +198,33 @@ Command behavior:
 - `codeworld run <task>` runs one non-interactive turn and exits.
 - `codeworld run --image <path> <task>` attaches an image to a non-interactive turn.
 - `codeworld exec <task|->` runs a script-friendly turn; `-` reads the prompt from stdin.
-- `codeworld exec --json` emits lifecycle, tool, usage, and result events as JSONL.
+- `codeworld exec --json` emits lifecycle, usage, and typed command/file/MCP/web events as JSONL.
 - `codeworld exec --ephemeral` avoids loading or saving the current session.
+- `codeworld exec resume <session-id|--last> <task|->` continues a saved session non-interactively.
 - `codeworld exec --approval-mode <auto|read-only|full-access>` overrides prompt/approval behavior independently of the OS sandbox.
 - `codeworld exec --sandbox <read-only|workspace-write|danger-full-access>` overrides the filesystem sandbox. Use `--network` to enable sandboxed process and `web_search` network access.
 - `codeworld exec --output-schema <path>` requests and validates structured JSON output. The current validator covers `type`, `properties`, `required`, `items`, `enum`, and `additionalProperties`.
 - `codeworld exec -o <path>` also writes the final message to a file.
 - `codeworld review` reviews staged and unstaged changes in read-only mode.
 - `codeworld review --base <branch>` and `--commit <sha>` review a selected Git change set.
-- `codeworld mcp list|get|add|remove` manages user-level stdio and HTTP MCP servers.
+- `codeworld mcp list|get|add|remove|login|logout` manages user-level stdio and HTTP MCP servers, including OAuth 2.0 authorization-code login with PKCE and refresh tokens.
+- `codeworld plugin list|add|remove` installs Codex-compatible plugins from configured local or Git marketplaces; `codeworld plugin marketplace add|list|upgrade|remove` manages their snapshots.
+- `codeworld features list|enable|disable` reports capability stages and persists supported user feature switches; global `--enable/--disable` applies invocation-only overrides.
+- `codeworld debug models|prompt-input` renders the configured model selection or exact model-visible prompt input without starting providers, hooks, or MCP servers.
 - `codeworld sessions [--archived]` lists active or archived sessions.
+- `codeworld doctor [--json]` checks configuration, credentials, the Git workspace, process sandbox backend, MCP declarations, saved sessions, and terminal metadata without contacting the model.
+- `codeworld completion <bash|zsh|fish|powershell>` emits a shell completion script.
+- `codeworld auth codex status [--json]` reports the workspace-local OAuth account and expiry without exposing tokens; `logout` removes those credentials idempotently.
+- Codex-compatible top-level `login`, `login status`, and `logout` commands alias the existing workspace-local OAuth lifecycle; `--version`/`-V` reports build information.
+- `codeworld sandbox [options] -- <command>` runs a command with the same OS sandbox policy used by agent tools; `-C`, `--sandbox`, `--network`, and `--no-network` are supported.
+- Global `-C`/`--cd` selects the workspace without changing the parent shell, while `-m`/`--model` overrides the configured or resumed-session model for one invocation.
+- Global `-s`/`--sandbox`, `-a`/`--approval-mode`, and network flags override runtime policy before TUI, REPL, or automation starts. `--search` enables sandbox network access and the existing native web search tool. Command-local exec flags take precedence; review remains read-only.
+- Repeatable `-c`/`--config key=value` overrides supported Codeworld scalar settings after files, profiles, and environment variables. Unknown keys fail explicitly. `--strict-config` is accepted for Codex CLI compatibility; Codeworld config parsing is already strict by default.
+- `e` aliases `exec`; `exec review` aliases the top-level review flow. Review accepts `--uncommitted` and `--title` in addition to base and commit targets.
+- Exec accepts Codex-positioned `-m/-p/-C/-s/-a/-i/-c` options after the subcommand. With no prompt it reads piped stdin; when both are present, stdin is appended inside a `<stdin>` block. `--ignore-user-config`, `--ignore-rules`, `--skip-git-repo-check`, and `--color` are accepted with explicit Codeworld semantics.
 - `codeworld fork <session-id|--last>` clones a transcript into a new interactive session.
+- Running `codeworld resume` or `codeworld fork` without a session argument opens a numbered session picker. `--last` remains non-interactive, and trailing text is submitted as the first prompt after resume or fork.
+- `codeworld sessions rename <id|--last> <name>` or TUI `/rename <name>` assigns a unique session name; resume, fork, archive, unarchive, and delete accept names as well as IDs.
 - `codeworld archive`, `unarchive`, and `delete` manage saved session lifecycle.
 - `codeworld index` refreshes `.codeworld/index.json`.
 
@@ -228,8 +267,10 @@ Inside the TUI:
 /resume        list recent active sessions
 /goal <text>   set or show the current task goal
 /goal clear    clear the current task goal
+/rename <name> assign a reusable name to the current session
 /plan          enable plan mode for the session
 /plan off      return to the default mode
+/interrupt     interrupt the active turn without exiting
 /compact       summarize older conversation history
 /image <path>  attach an image to the next prompt
 /repl          show how to restart in line REPL mode
@@ -239,7 +280,9 @@ Inside the TUI:
 
 Type `/` to show slash command suggestions. Scroll the transcript with
 `PageUp`, `PageDown`, `Ctrl+U`, and `Ctrl+D`. Use `Up` and `Down` in the
-composer to restore submitted drafts.
+composer to restore submitted drafts. While a turn is running, Enter queues a
+follow-up, `Ctrl+J`/`Alt+Enter` still inserts a newline, and `Ctrl+X` interrupts
+the active turn without exiting; queued follow-ups start automatically.
 
 `/goal` persists a durable objective in the session and injects it into future
 model calls. `/plan` asks the agent to propose a concise plan before edit-heavy
@@ -353,7 +396,7 @@ Enable plugin loading with:
 plugins_enabled = true
 ```
 
-Codeworld also supports a small Codex plugin compatibility shape:
+Codeworld also supports Codex plugin bundles with skills and MCP declarations:
 
 ```text
 .codeworld/codex-plugins/<plugin-name>/.codex-plugin/plugin.json
@@ -361,9 +404,26 @@ Codeworld also supports a small Codex plugin compatibility shape:
 .codeworld/codex-plugins/<plugin-name>/.mcp.json
 ```
 
-The compatibility loader currently supports bundled skills and stdio MCP
-server declarations. It does not yet support Codex marketplace metadata,
-hooks, apps, assets, or plugin lifecycle policy.
+The compatibility loader supports bundled skills and MCP server declarations.
+Plugins can be installed into the user cache through the Codex-compatible
+marketplace lifecycle:
+
+```sh
+codeworld plugin marketplace add ./my-marketplace
+codeworld plugin marketplace add owner/repo --ref main
+codeworld plugin list --available --json
+codeworld plugin add reviewer@my-marketplace
+codeworld features list
+codeworld features enable plugins
+codeworld debug models
+codeworld debug prompt-input "inspect this workspace"
+codeworld plugin remove reviewer@my-marketplace
+codeworld plugin marketplace upgrade
+```
+
+Marketplace plugin directories are discovered under `plugins/<name>` and must
+contain `.codex-plugin/plugin.json`. Hooks, apps, and UI assets are preserved in
+the cache but are not executed or rendered by Codeworld yet.
 
 ## MCP
 
@@ -390,6 +450,12 @@ http_headers = ["X-Test: yes"]
 enabled_tools = ["search"]
 disabled_tools = ["write"]
 ```
+
+For OAuth-capable HTTP servers, `codeworld mcp login <name>` discovers the
+protected-resource and authorization-server metadata, dynamically registers a
+public client, opens a PKCE authorization flow, and stores workspace-local
+tokens with restricted permissions. Runtime requests refresh expiring tokens
+automatically; `codeworld mcp logout <name>` deletes them.
 
 MCP tools are registered as:
 
@@ -544,7 +610,6 @@ Known gaps compared with Codex include:
 - subagents are local read-only investigation tasks, not cloud tasks;
 - PTY sessions are available on Unix platforms; Windows reports PTY as unsupported instead of silently using pipes;
 - Linux sandboxing requires Bubblewrap to be installed; Windows restricted process sandboxing is not implemented;
-- MCP OAuth token refresh and dynamic registration are still partial;
 - no image generation;
 - no cloud task or hosted GitHub PR review integration;
 - no syntax-highlighted TUI diff/code blocks yet.

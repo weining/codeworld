@@ -33,16 +33,20 @@ import (
 )
 
 type Options struct {
-	Root           string
-	Profile        string
-	SessionID      string
-	ResumeLast     bool
-	Ephemeral      bool
-	SandboxMode    sandbox.Mode
-	SandboxNetwork *bool
-	In             io.Reader
-	Out            io.Writer
-	Err            io.Writer
+	Root            string
+	Profile         string
+	Model           string
+	SessionID       string
+	ResumeLast      bool
+	Ephemeral       bool
+	ApprovalMode    permissions.Mode
+	SandboxMode     sandbox.Mode
+	SandboxNetwork  *bool
+	ConfigOverrides []string
+	SkipUserConfig  bool
+	In              io.Reader
+	Out             io.Writer
+	Err             io.Writer
 }
 
 type Runtime struct {
@@ -170,9 +174,20 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return Runtime{}, err
 		}
 	}
-	cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: opts.Profile})
+	cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: opts.Profile, Overrides: opts.ConfigOverrides, SkipUser: opts.SkipUserConfig})
 	if err != nil {
 		return Runtime{}, err
+	}
+	if opts.Model != "" {
+		cfg.Model = opts.Model
+	}
+	if opts.ApprovalMode != "" {
+		switch opts.ApprovalMode {
+		case permissions.ModeAuto, permissions.ModeReadOnly, permissions.ModeFullAccess:
+		default:
+			return Runtime{}, fmt.Errorf("invalid approval mode %q", opts.ApprovalMode)
+		}
+		cfg.ApprovalMode = string(opts.ApprovalMode)
 	}
 	configRoot, err := workspace.New(root)
 	if err != nil {
@@ -196,6 +211,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	if opts.SandboxMode != "" {
 		sandboxMode = opts.SandboxMode
 		cfg.SandboxMode = string(opts.SandboxMode)
+	}
+	if sandboxMode == sandbox.ModeDangerFullAccess && opts.SandboxNetwork != nil {
+		return Runtime{}, fmt.Errorf("network options cannot be combined with danger-full-access")
 	}
 	sandboxNetwork := cfg.SandboxNetwork
 	if opts.SandboxNetwork != nil {
@@ -260,6 +278,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		if err != nil {
 			return Runtime{}, err
 		}
+	}
+	if opts.Model != "" {
+		sess.Model = opts.Model
 	}
 	// Approvals are process-local trust decisions. Do not trust approvals read
 	// from a workspace-controlled session file after a restart.

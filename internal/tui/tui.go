@@ -13,7 +13,9 @@ import (
 )
 
 type Options struct {
-	TestMode bool
+	TestMode      bool
+	InitialPrompt string
+	InitialImages []model.ContentPart
 }
 
 type Status struct {
@@ -94,6 +96,9 @@ func RunWithOptions(ctx context.Context, rt *app.Runtime, opts Options) error {
 	defer cancel()
 	m := NewModel(rt)
 	m.ctx = runCtx
+	if prompt := strings.TrimSpace(opts.InitialPrompt); prompt != "" {
+		m.initialTurn = &queuedTurn{text: prompt, images: append([]model.ContentPart(nil), opts.InitialImages...)}
+	}
 	if opts.TestMode {
 		_, err := fmt.Fprint(rt.Out, m.View())
 		return err

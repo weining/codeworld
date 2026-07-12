@@ -13,9 +13,61 @@ import (
 	"testing"
 
 	"codeworld/internal/context/indexer"
+	"codeworld/internal/permissions"
 	"codeworld/internal/sandbox"
 	"codeworld/internal/session"
 )
+
+func TestNewRuntimeAppliesInvocationPolicyOverrides(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	network := true
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{},
+		ApprovalMode: permissions.ModeFullAccess,
+		SandboxMode:  sandbox.ModeReadOnly, SandboxNetwork: &network,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	policy, ok := rt.Runner.Policy.(permissions.ModePolicy)
+	if !ok || policy.Mode != permissions.ModeFullAccess {
+		t.Fatalf("runner policy = %#v", rt.Runner.Policy)
+	}
+	if rt.Config.ApprovalMode != "full-access" || rt.Config.SandboxMode != "read-only" || !rt.Config.SandboxNetwork {
+		t.Fatalf("config = %#v", rt.Config)
+	}
+}
+
+func TestNewRuntimeRejectsDangerFullAccessNetworkOverride(t *testing.T) {
+	network := false
+	_, err := NewRuntime(context.Background(), Options{
+		Root: t.TempDir(), In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{},
+		SandboxMode: sandbox.ModeDangerFullAccess, SandboxNetwork: &network,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be combined") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestNewRuntimeCanIgnoreUserConfig(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, "config.toml"), `model = "user-model"`)
+	t.Setenv("CODEWORLD_HOME", home)
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, SkipUserConfig: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	if rt.Config.Model == "user-model" {
+		t.Fatalf("user config was loaded: %#v", rt.Config)
+	}
+}
 
 // TestNewRuntimeBuildsREPLDependencies 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {

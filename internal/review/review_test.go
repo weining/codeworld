@@ -14,11 +14,11 @@ func TestBuildPromptForUncommittedChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n\nconst value = 2\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	prompt, err := BuildPrompt(context.Background(), root, Target{}, "check compatibility")
+	prompt, err := BuildPrompt(context.Background(), root, Target{Uncommitted: true, Title: "Working tree review"}, "check compatibility")
 	if err != nil {
 		t.Fatalf("BuildPrompt: %v", err)
 	}
-	for _, want := range []string{"uncommitted changes", "check compatibility", "const value = 2", "Do not modify files"} {
+	for _, want := range []string{"uncommitted changes", "check compatibility", "const value = 2", "Do not modify files", "Review title: Working tree review"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}

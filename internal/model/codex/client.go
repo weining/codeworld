@@ -5,8 +5,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -127,21 +129,7 @@ func (c *Client) Stream(ctx context.Context, req model.GenerateRequest, emit fun
 	var text string
 	var usage model.Usage
 	var toolCalls []model.ToolCall
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint(), bytes.NewReader(data))
-	if err != nil {
-		logEntry.Error = err.Error()
-		c.logCall(ctx, logEntry)
-		return err
-	}
-	httpReq.Header.Set("Authorization", "Bearer "+c.accessToken)
-	httpReq.Header.Set("chatgpt-account-id", c.accountID)
-	httpReq.Header.Set("originator", "codeworld")
-	httpReq.Header.Set("User-Agent", "codeworld")
-	httpReq.Header.Set("OpenAI-Beta", "responses=experimental")
-	httpReq.Header.Set("Accept", "text/event-stream")
-	httpReq.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.doRequest(ctx, data)
 	if err != nil {
 		logEntry.Error = err.Error()
 		c.logCall(ctx, logEntry)
@@ -172,6 +160,51 @@ func (c *Client) Stream(ctx context.Context, req model.GenerateRequest, emit fun
 		}
 		return nil
 	})
+}
+
+// doRequest 对尚未收到 HTTP response 的临时传输错误重试一次。
+func (c *Client) doRequest(ctx context.Context, data []byte) (*http.Response, error) {
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint(), bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Authorization", "Bearer "+c.accessToken)
+		httpReq.Header.Set("chatgpt-account-id", c.accountID)
+		httpReq.Header.Set("originator", "codeworld")
+		httpReq.Header.Set("User-Agent", "codeworld")
+		httpReq.Header.Set("OpenAI-Beta", "responses=experimental")
+		httpReq.Header.Set("Accept", "text/event-stream")
+		httpReq.Header.Set("Content-Type", "application/json")
+		resp, err := c.httpClient.Do(httpReq)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if attempt == 1 || !retryableTransportError(ctx, err) {
+			break
+		}
+		timer := time.NewTimer(200 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, fmt.Errorf("codex request failed after transport retry: %w", lastErr)
+}
+
+func retryableTransportError(ctx context.Context, err error) bool {
+	if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var networkErr net.Error
+	return errors.As(err, &networkErr) && (networkErr.Timeout() || networkErr.Temporary())
 }
 
 // logCall 写入可选模型调用日志。
@@ -355,7 +388,7 @@ func firstHTTPClient(client *http.Client) *http.Client {
 	if client != nil {
 		return client
 	}
-	return http.DefaultClient
+	return platformHTTPClient()
 }
 
 func firstNonEmpty(values ...string) string {

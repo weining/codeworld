@@ -53,6 +53,27 @@ func LoadProject(root string) ([]Plugin, error) {
 	return plugins, nil
 }
 
+// LoadInstalled 加载用户通过 plugin 命令安装且启用的 Codex plugin。
+func LoadInstalled(home string) ([]Plugin, error) {
+	state, err := LoadState(home)
+	if err != nil {
+		return nil, err
+	}
+	var plugins []Plugin
+	for _, installed := range state.Installed {
+		if !installed.Enabled {
+			continue
+		}
+		plugin, err := loadPlugin(installed.Path, installed.Name)
+		if err != nil {
+			return nil, fmt.Errorf("load installed plugin %q: %w", installed.PluginID, err)
+		}
+		plugins = append(plugins, plugin)
+	}
+	sort.Slice(plugins, func(i, j int) bool { return plugins[i].Name < plugins[j].Name })
+	return plugins, nil
+}
+
 // loadPlugin 加载外部或项目内配置，并把原始数据转换为内部结构。
 func loadPlugin(path, dirName string) (Plugin, error) {
 	manifest, err := readManifest(filepath.Join(path, ".codex-plugin", "plugin.json"))
