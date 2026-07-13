@@ -32,7 +32,7 @@ func TestPluginCommandsManageLocalMarketplace(t *testing.T) {
 	if err := runPluginCommand(&out, []string{"add", "sample@sample-market"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := runPluginCommand(&out, []string{"remove", "sample", "--marketplace", "sample-market"}); err != nil {
+	if err := runPluginCommand(&out, []string{"remove", "sample", "--marketplace=sample-market"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := runPluginCommand(&out, []string{"marketplace", "remove", "sample-market"}); err != nil {

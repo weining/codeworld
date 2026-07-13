@@ -59,6 +59,17 @@ func TestSummarizeKeepsRecentMessagesAndStoresSummary(t *testing.T) {
 	}
 }
 
+func TestSummarizeUsesCustomPrompt(t *testing.T) {
+	client := &fakeClient{response: model.GenerateResponse{FinalText: "summary"}}
+	messages := []model.Message{{Role: model.RoleUser, Content: "one"}, {Role: model.RoleAssistant, Content: "two"}}
+	if _, _, err := Summarize(context.Background(), client, "", messages, Options{KeepRecent: 1, Prompt: "Keep API decisions."}); err != nil {
+		t.Fatal(err)
+	}
+	if got := client.requests[0].Messages[1].Content; !strings.HasPrefix(got, "Keep API decisions.\n") {
+		t.Fatalf("prompt = %q", got)
+	}
+}
+
 // TestSummarizeFailurePreservesMessages 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestSummarizeFailurePreservesMessages(t *testing.T) {
 	client := &fakeClient{err: errors.New("boom")}

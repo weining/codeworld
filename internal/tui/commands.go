@@ -95,10 +95,10 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 	case strings.HasPrefix(line, "/permissions "):
 		mode := strings.TrimSpace(strings.TrimPrefix(line, "/permissions "))
 		switch mode {
-		case string(permissions.ModeAuto), string(permissions.ModeReadOnly), string(permissions.ModeFullAccess):
+		case string(permissions.ModeAuto), string(permissions.ModeReadOnly), string(permissions.ModeFullAccess), string(permissions.ModeUntrusted), string(permissions.ModeOnRequest), string(permissions.ModeNever):
 			m.rt.Config.ApprovalMode = mode
 			m.rt.Session.ApprovalMode = mode
-			m.rt.Runner.Policy = permissions.ModePolicy{Mode: permissions.Mode(mode)}
+			m.rt.SetApprovalMode(permissions.Mode(mode))
 			m.saveSession()
 			m.appendNotice("mode=" + mode)
 		default:

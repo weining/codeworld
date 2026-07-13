@@ -19,6 +19,9 @@ func platformCommand(policy Policy, cwd, executable string, args []string) (stri
 	}
 	if policy.Mode == ModeWorkspaceWrite {
 		profile += `(allow file-write* (subpath "` + escapeProfileString(policy.Workspace) + `"))`
+		for _, root := range policy.WritableRoots {
+			profile += `(allow file-write* (subpath "` + escapeProfileString(root) + `"))`
+		}
 	}
 	wrapped := []string{"-p", profile, "--", executable}
 	wrapped = append(wrapped, args...)

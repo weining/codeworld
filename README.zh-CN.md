@@ -40,7 +40,8 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 
 Codeworld 会依次加载用户配置 `$CODEWORLD_HOME/config.toml`（默认
 `~/.codeworld/config.toml`）、项目配置 `.codeworld/config.toml` 和可选的
-`$CODEWORLD_HOME/profiles/<name>.toml`。项目配置覆盖用户配置，显式选择的
+`$CODEWORLD_HOME/<name>.config.toml`；旧的 `$CODEWORLD_HOME/profiles/<name>.toml`
+路径仍可作为回退。项目配置覆盖用户配置，显式选择的
 profile 再覆盖前两者。API-key provider 从环境变量读取 key；Codex OAuth
 使用本地登录文件。
 
@@ -153,6 +154,7 @@ codeworld mcp list --json
 codeworld mcp login docs --scopes tools.read,tools.write
 codeworld mcp logout docs
 codeworld mcp remove local
+codeworld mcp-server
 codeworld plugin marketplace add ./my-marketplace
 codeworld plugin list --available --json
 codeworld plugin add reviewer@my-marketplace
@@ -160,6 +162,7 @@ codeworld features list
 codeworld features enable plugins
 codeworld debug models
 codeworld debug prompt-input "检查这个 workspace"
+codeworld execpolicy check --pretty --rules ~/.codeworld/rules/default.rules -- git status --short
 codeworld sessions
 codeworld doctor
 codeworld doctor --json
@@ -174,6 +177,9 @@ codeworld sandbox --sandbox read-only --no-network -- git status
 codeworld -C ../another-project -m gpt-5 exec "检查这个 workspace"
 codeworld -s read-only -a read-only --no-network repl
 codeworld --search exec "检查最新的上游文档"
+codeworld --oss --local-provider ollama -m qwen3-coder exec "检查这个 workspace"
+codeworld exec --add-dir ../shared "更新共享 schema"
+codeworld exec --dangerously-bypass-hook-trust "运行已审核的自动化 hooks"
 codeworld -c 'model="gpt-5"' -c max_steps=30 e "检查这个 workspace"
 codeworld exec review --uncommitted --title "工作区变更"
 codeworld fork --last
@@ -199,25 +205,37 @@ codeworld index
 - `codeworld exec resume <session-id|--last> <task|->`：以非交互方式继续已保存 session；
 - `codeworld exec --approval-mode <auto|read-only|full-access>`：覆盖本次确认策略，与 OS 沙箱相互独立；
 - `codeworld exec --sandbox <read-only|workspace-write|danger-full-access>`：覆盖文件系统沙箱；`--network` 会开放受限进程和 `web_search` 的网络访问；
+- `--oss --local-provider <ollama|lmstudio>`：选择现有的本地 OpenAI-compatible provider，并使用对应的 loopback 默认 endpoint；
+- 可重复的 `--add-dir <path>`：把规范化后的额外目录同时加入结构化路径校验和 macOS/Linux 进程沙箱；相对工具路径仍基于主 workspace，访问额外根时使用绝对路径；
+- `--dangerously-bypass-approvals-and-sandbox`：映射为 full-access 权限和无进程沙箱；`--dangerously-bypass-hook-trust` 独立跳过已审核自动化中的 workspace hook 信任提示；
 - `codeworld exec --output-schema <path>`：要求并校验结构化 JSON 输出。当前校验器支持 `type`、`properties`、`required`、`items`、`enum` 和 `additionalProperties`；
 - `codeworld exec -o <path>`：额外把最终消息写入文件；
 - `codeworld review`：以只读模式审查 staged 和 unstaged 修改；
 - `codeworld review --base <branch>`、`--commit <sha>`：审查指定 Git 变更集；
 - `codeworld mcp list|get|add|remove|login|logout`：管理用户级 stdio 和 HTTP MCP servers，包括带 PKCE 和 refresh token 的 OAuth 登录；
+- `codeworld mcp-server`：通过 JSONL stdio MCP 暴露 `codex` 和 `codex-reply`，供其他 agent 创建并继续 Codeworld session；
+- MCP thread 运行元数据会以私有文件保存到 `$CODEWORLD_HOME/mcp-threads`，stdio server 重启后 `codex-reply` 仍可继续已持久化的 workspace session；
+- stdio MCP server 会串行处理 session 调用、保持响应顺序，并通过取消匹配的活动请求上下文来响应 `notifications/cancelled`；
 - `codeworld plugin list|add|remove`：从本地或 Git marketplace 安装 Codex-compatible plugins；`plugin marketplace add|list|upgrade|remove` 管理 marketplace 快照；
 - `codeworld features list|enable|disable`：查看能力阶段并持久化受支持的用户 feature；全局 `--enable/--disable` 提供仅当前进程生效的覆盖；
 - `codeworld debug models|prompt-input`：输出当前模型选择，或在不启动 provider、hooks 和 MCP 的前提下渲染模型实际可见的 prompt input；
+- `codeworld execpolicy check --rules <path>... -- <command>...`：读取显式 prefix-rule 文件并输出 Codex-compatible JSON，不会执行待检查命令；`--resolve-host-executables` 可通过可选的 `host_executable(name=..., paths=[...])` 白名单启用绝对路径回退；
 - `codeworld sessions [--archived]`：列出活动或归档 session；
 - `codeworld doctor [--json]`：以只读方式检查配置、凭据、Git workspace、进程沙箱后端、MCP 声明、sessions 和终端信息，不会连接模型；
-- `codeworld completion <bash|zsh|fish|powershell>`：输出对应 shell 的补全脚本；
-- `codeworld auth codex status [--json]`：查看 workspace 本地 OAuth 账号和过期时间且不暴露 token；`logout` 会幂等删除凭据；
-- 与 Codex 兼容的顶层 `login`、`login status`、`logout` 会复用现有 workspace OAuth 生命周期；`--version`/`-V` 输出构建版本信息；
+- `codeworld completion [bash|elvish|fish|powershell|zsh]`：输出能感知子命令上下文的补全脚本（默认 bash）；
+- `codeworld auth codex status [--json]`：查看用户级 OAuth 账号和过期时间且不暴露 token；`logout` 会幂等删除凭据。新登录写入 `$CODEWORLD_HOME/auth/codex.json`，已有 workspace 凭据仍可作为兼容回退读取；
+- 与 Codex 兼容的顶层 `login`、`login status`、`logout` 会复用用户级 OAuth 生命周期；`--version`/`-V` 输出构建版本信息；
 - `codeworld sandbox [options] -- <command>`：使用 agent 工具相同的 OS 沙箱策略运行命令，支持 `-C`、`--sandbox`、`--network` 和 `--no-network`；
 - 全局 `-C`/`--cd` 可在不改变父 shell 目录的情况下选择 workspace；`-m`/`--model` 会为本次调用覆盖配置或已恢复 session 的模型；
+- 带值的长选项同时支持 `--flag value` 和 Codex 风格的 `--flag=value`；字面量 `--` 后的命令参数保持原样；
+- 顶层命令末尾的 prompt 会启动交互 TUI 并作为首轮输入提交；可重复的全局 `-i`/`--image` 会为首轮附加图片，`--no-alt-screen` 则保留终端滚屏历史；
 - 全局 `-s`/`--sandbox`、`-a`/`--approval-mode` 和网络参数会在 TUI、REPL 或自动化启动前覆盖策略；`--search` 会开启沙箱网络和现有原生 web search。exec 的子命令参数优先，review 始终保持只读；
 - 可重复的 `-c`/`--config key=value` 会在配置文件、profile 和环境变量之后覆盖 Codeworld 已支持的标量设置；未知键会明确报错。`--strict-config` 用于兼容 Codex CLI，而 Codeworld 默认已经严格解析配置；
+- `--enable` 和 `--disable` 可在全局或 `exec`、`review` 子命令之后用于受支持的 Codeworld feature；同时支持 `codeworld exec --version` 和子命令局部帮助；
 - `e` 是 `exec` 的别名，`exec review` 复用顶层 review；review 除 base/commit 外也支持 `--uncommitted` 和 `--title`；
 - exec 支持在子命令后使用 Codex 风格的 `-m/-p/-C/-s/-a/-i/-c`；未提供 prompt 时读取管道 stdin，同时存在时会把 stdin 追加为 `<stdin>` 块。`--ignore-user-config`、`--ignore-rules`、`--skip-git-repo-check` 和 `--color` 也会按明确的 Codeworld 语义接受；
+- `exec --color <auto|always|never>` 控制 stderr 上人类可读工具进度的 ANSI 样式；auto 仅在终端启用，并遵守 `NO_COLOR` 与 `TERM=dumb`，JSONL 和最终消息始终不着色；
+- Shell 审批规则从 `$CODEWORLD_HOME/rules/*.rules` 和 `<workspace>/.codeworld/rules/*.rules` 加载，支持 Codex-compatible 的 `prefix_rule(...)` 与 `host_executable(...)`；优先级依次为 `forbid`、`prompt`、`allow`，带动态 Shell 语法的命令不会被自动放行。可通过 `codeworld exec --ignore-rules ...` 跳过两处规则；
 - `codeworld fork <session-id|--last>`：复制会话历史并进入新的交互 session；
 - `codeworld resume` 或 `codeworld fork` 不带 session 参数时会显示编号选择器；`--last` 保持非交互，后续文本会作为恢复或 fork 后的首条 prompt 自动提交；
 - `codeworld sessions rename <id|--last> <name>` 或 TUI `/rename <name>` 可设置唯一 session 名称；resume、fork、archive、unarchive 和 delete 同时接受名称或 ID；
@@ -244,7 +262,7 @@ TUI 使用响应式终端布局：顶部紧凑双行状态栏、空会话欢迎�
 /model <name>  修改当前 session 的模型名
 /diff          查看 git diff
 /permissions   查看当前 session 已批准权限
-/permissions <auto|read-only|full-access>
+/permissions <untrusted|on-request|never|auto|read-only|full-access>
                切换当前权限模式
 /mcp           查看已配置 MCP servers
 /skills        查看已加载 skills
@@ -445,7 +463,15 @@ enabled_tools = ["search"]
 disabled_tools = ["write"]
 ```
 
-对于支持 OAuth 的 HTTP server，`codeworld mcp login <name>` 会发现 protected-resource 与 authorization-server metadata，动态注册 public client，打开 PKCE 授权流程并以受限权限保存 workspace-local token。运行时会自动刷新即将过期的 token；`codeworld mcp logout <name>` 删除凭据。
+对于支持 OAuth 的 HTTP server，`codeworld mcp login <name>` 会发现 protected-resource 与 authorization-server metadata，动态注册 public client，打开 PKCE 授权流程并以受限权限把用户级 token 保存到 `$CODEWORLD_HOME/mcp-oauth/`。运行时会自动刷新即将过期的 token，并兼容读取旧 workspace token；`codeworld mcp logout <name>` 会清理两处凭据。
+
+Codeworld 也可以作为 MCP server 运行：
+
+```sh
+codeworld mcp-server
+```
+
+`codex` tool 支持 `prompt`、`cwd`、`model`、`approval-policy`、`sandbox`、config overrides 和 instructions overrides，并返回 `threadId` 与 `content`；把 thread id 传给 `codex-reply` 可继续会话。stdio transport 使用当前 MCP JSONL framing，client 仍兼容旧的 `Content-Length` 响应帧。
 
 MCP tools 会注册为：
 
@@ -475,7 +501,7 @@ Context graph 是本地、确定性的，不依赖 embedding。它会提取文�
 
 原生 `web_search` 工具通过 DuckDuckGo Lite 搜索网页，不需要额外的搜索 API key。参数包括必填的 `query` 和可选的 `limit`，返回带标题、URL 和摘要的编号结果。
 
-因为它会访问网络，`web_search` 的权限声明是 read action + network risk。TUI 和 REPL 的权限流程会在请求发出前要求确认。
+因为它会访问网络，`web_search` 的权限声明是 read action + network risk。显式全局 `--search` 会同时开启沙箱网络和无需逐次审批的原生搜索；仅通过配置或 `--network` 开启网络时仍保留常规权限流程。
 
 ## 图片输入
 
@@ -499,6 +525,9 @@ TUI 会内联展示权限请求，并支持：
 
 权限模式：
 
+- `untrusted`：可信的只读 shell 命令自动执行，其他命令询问；
+- `on-request`：普通沙箱内操作自动执行，破坏性或网络操作询问；
+- `never`：不发起审批；workspace 外操作仍会拒绝，配置的 OS 沙箱仍然生效；
 - `auto`：普通 workspace 操作自动允许，高风险操作询问；
 - `read-only`：读操作自动允许，写入、patch、命令执行前询问；
 - `full-access`：仅在当前进程内允许 workspace 和网络操作。
@@ -509,7 +538,7 @@ TUI 会内联展示权限请求，并支持：
 approval_mode = "auto"
 ```
 
-项目配置只接受 `auto` 和 `read-only`；确实需要时请在交互界面临时选择 `full-access`。
+项目配置接受保留沙箱的模式，但拒绝 `full-access`；确实需要该兼容模式时请在交互界面临时选择。
 
 ## 进程沙箱
 

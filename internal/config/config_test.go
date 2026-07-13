@@ -240,6 +240,17 @@ func TestLoadRejectsUnsafeOrInvalidLimits(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsCodexApprovalModes(t *testing.T) {
+	for _, mode := range []string{"untrusted", "on-request", "never"} {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), "approval_mode = \""+mode+"\"\n")
+		cfg, err := Load(dir)
+		if err != nil || cfg.ApprovalMode != mode {
+			t.Fatalf("mode=%s config=%#v err=%v", mode, cfg, err)
+		}
+	}
+}
+
 func TestLoadRejectsRemoteLocalProviderURL(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, ".codeworld", "config.toml"), "provider = \"local\"\nlocal_base_url = \"https://example.com/v1\"\n")
@@ -288,6 +299,19 @@ func TestLoadWithOptionsLayersUserProjectAndProfile(t *testing.T) {
 	}
 	if len(cfg.MCPServers) != 1 || cfg.MCPServers[0].Command != "project-docs" {
 		t.Fatalf("MCP servers = %#v", cfg.MCPServers)
+	}
+}
+
+func TestLoadWithOptionsPrefersCodexStyleProfilePath(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(home, "profiles", "fast.toml"), `model = "legacy-model"`)
+	writeFile(t, filepath.Join(home, "fast.config.toml"), `model = "codex-style-model"`)
+	cfg, err := LoadWithOptions(root, LoadOptions{Home: home, Profile: "fast"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Model != "codex-style-model" || cfg.Profile != "fast" {
+		t.Fatalf("config = %#v", cfg)
 	}
 }
 

@@ -53,19 +53,38 @@ type authorizationServerMetadata struct {
 	RegistrationEndpoint  string `json:"registration_endpoint"`
 }
 
-// OAuthTokenPath 返回 server 对应的本地 token 文件路径。
+// OAuthTokenPath 返回旧 workspace 布局中 server 对应的 token 文件路径。
 func OAuthTokenPath(root, serverName string) (string, error) {
+	return oauthTokenPath(filepath.Join(root, ".codeworld", "mcp-oauth"), serverName)
+}
+
+// UserOAuthTokenPath 返回 CODEWORLD_HOME 中 server 对应的 token 文件路径。
+func UserOAuthTokenPath(home, serverName string) (string, error) {
+	return oauthTokenPath(filepath.Join(home, "mcp-oauth"), serverName)
+}
+
+func oauthTokenPath(dir, serverName string) (string, error) {
 	if serverName == "" || serverName == "." || serverName == ".." || filepath.Base(serverName) != serverName || strings.Contains(serverName, "\\") {
 		return "", fmt.Errorf("invalid mcp server name %q", serverName)
 	}
-	return filepath.Join(root, ".codeworld", "mcp-oauth", serverName+".json"), nil
+	return filepath.Join(dir, serverName+".json"), nil
 }
 
 // SaveOAuthToken 保存 OAuth token，后续完整 login flow 会复用该持久化格式。
 func SaveOAuthToken(root string, token OAuthToken) error {
 	path, err := OAuthTokenPath(root, token.ServerName)
-	if err != nil {
-		return err
+	return saveOAuthToken(path, token, err)
+}
+
+// SaveUserOAuthToken 保存用户级 MCP OAuth token。
+func SaveUserOAuthToken(home string, token OAuthToken) error {
+	path, err := UserOAuthTokenPath(home, token.ServerName)
+	return saveOAuthToken(path, token, err)
+}
+
+func saveOAuthToken(path string, token OAuthToken, pathErr error) error {
+	if pathErr != nil {
+		return pathErr
 	}
 	data, err := json.MarshalIndent(token, "", "  ")
 	if err != nil {
@@ -81,8 +100,18 @@ func SaveOAuthToken(root string, token OAuthToken) error {
 // LoadOAuthToken 读取已保存的 OAuth token。
 func LoadOAuthToken(root, serverName string) (OAuthToken, error) {
 	path, err := OAuthTokenPath(root, serverName)
-	if err != nil {
-		return OAuthToken{}, err
+	return loadOAuthToken(path, err)
+}
+
+// LoadUserOAuthToken 读取用户级 MCP OAuth token。
+func LoadUserOAuthToken(home, serverName string) (OAuthToken, error) {
+	path, err := UserOAuthTokenPath(home, serverName)
+	return loadOAuthToken(path, err)
+}
+
+func loadOAuthToken(path string, pathErr error) (OAuthToken, error) {
+	if pathErr != nil {
+		return OAuthToken{}, pathErr
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -98,10 +127,20 @@ func LoadOAuthToken(root, serverName string) (OAuthToken, error) {
 // DeleteOAuthToken 删除 server 对应的 OAuth 凭据；文件不存在时仍视为成功。
 func DeleteOAuthToken(root, serverName string) error {
 	path, err := OAuthTokenPath(root, serverName)
-	if err != nil {
-		return err
+	return deleteOAuthToken(path, err)
+}
+
+// DeleteUserOAuthToken 删除用户级 MCP OAuth token。
+func DeleteUserOAuthToken(home, serverName string) error {
+	path, err := UserOAuthTokenPath(home, serverName)
+	return deleteOAuthToken(path, err)
+}
+
+func deleteOAuthToken(path string, pathErr error) error {
+	if pathErr != nil {
+		return pathErr
 	}
-	err = os.Remove(path)
+	err := os.Remove(path)
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -114,6 +153,26 @@ func RefreshOAuthToken(ctx context.Context, root, serverName string, client *htt
 	if err != nil {
 		return OAuthToken{}, err
 	}
+	return refreshOAuthToken(ctx, serverName, token, client, func(updated OAuthToken) error { return SaveOAuthToken(root, updated) })
+}
+
+// RefreshOAuthTokenWithFallback refreshes a user token first, then falls back to the legacy workspace store.
+func RefreshOAuthTokenWithFallback(ctx context.Context, home, root, serverName string, client *http.Client) (OAuthToken, error) {
+	token, err := LoadUserOAuthToken(home, serverName)
+	if err == nil {
+		return refreshOAuthToken(ctx, serverName, token, client, func(updated OAuthToken) error { return SaveUserOAuthToken(home, updated) })
+	}
+	if !os.IsNotExist(err) {
+		return OAuthToken{}, err
+	}
+	token, err = LoadOAuthToken(root, serverName)
+	if err != nil {
+		return OAuthToken{}, err
+	}
+	return refreshOAuthToken(ctx, serverName, token, client, func(updated OAuthToken) error { return SaveOAuthToken(root, updated) })
+}
+
+func refreshOAuthToken(ctx context.Context, serverName string, token OAuthToken, client *http.Client, save func(OAuthToken) error) (OAuthToken, error) {
 	if token.ExpiresAt.IsZero() || time.Until(token.ExpiresAt) > time.Minute {
 		return token, nil
 	}
@@ -139,7 +198,7 @@ func RefreshOAuthToken(ctx context.Context, root, serverName string, client *htt
 	if updated.Scope == "" {
 		updated.Scope = token.Scope
 	}
-	if err := SaveOAuthToken(root, updated); err != nil {
+	if err := save(updated); err != nil {
 		return OAuthToken{}, err
 	}
 	return updated, nil

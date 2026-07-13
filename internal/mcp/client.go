@@ -238,34 +238,45 @@ func (c *Client) request(ctx context.Context, method string, params any, out any
 
 // writeMessage 写入输出数据，并保证必要的目录或权限约束。
 func writeMessage(w io.Writer, data []byte) error {
-	var buf bytes.Buffer
-	// MCP stdio 使用 LSP 风格的 Content-Length 帧，而不是按行分隔 JSON。
-	fmt.Fprintf(&buf, "Content-Length: %d\r\n\r\n", len(data))
-	buf.Write(data)
-	_, err := w.Write(buf.Bytes())
+	// 当前 MCP stdio transport 是一行一个 JSON-RPC 消息。
+	data = append(append([]byte(nil), data...), '\n')
+	_, err := w.Write(data)
 	return err
 }
 
-// readMessage 读取外部输入，并保持调用方可处理的错误语义。
+// readMessage 优先读取 JSONL，同时兼容旧 server 的 Content-Length 响应帧。
 func readMessage(reader *bufio.Reader) ([]byte, error) {
-	var length int
 	for {
-		line, err := reader.ReadString('\n')
+		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			return nil, err
 		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
+		trimmed := bytesTrimLine(line)
+		if len(trimmed) == 0 {
+			continue
 		}
-		if _, err := fmt.Sscanf(line, "Content-Length: %d", &length); err != nil {
-			return nil, err
+		if json.Valid(trimmed) {
+			return trimmed, nil
 		}
+		var length int
+		if _, err := fmt.Sscanf(string(trimmed), "Content-Length: %d", &length); err != nil || length <= 0 {
+			return nil, fmt.Errorf("invalid MCP stdio message header %q", trimmed)
+		}
+		for {
+			header, err := reader.ReadString('\n')
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimRight(header, "\r\n") == "" {
+				break
+			}
+		}
+		data := make([]byte, length)
+		_, err = io.ReadFull(reader, data)
+		return data, err
 	}
-	if length <= 0 {
-		return nil, fmt.Errorf("missing content length")
-	}
-	data := make([]byte, length)
-	_, err := io.ReadFull(reader, data)
-	return data, err
+}
+
+func bytesTrimLine(data []byte) []byte {
+	return bytes.TrimRight(data, "\r\n")
 }

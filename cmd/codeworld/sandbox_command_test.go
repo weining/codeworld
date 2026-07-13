@@ -25,6 +25,16 @@ func TestParseSandboxCommandArgs(t *testing.T) {
 	}
 }
 
+func TestParseSandboxCommandArgsAcceptsEqualsSyntax(t *testing.T) {
+	opts, err := parseSandboxCommandArgs([]string{"--sandbox=workspace-write", "--cd=subdir", "--", "echo", "--sandbox=tool-value"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.mode != "workspace-write" || opts.workingDir != "subdir" || strings.Join(opts.command, " ") != "echo --sandbox=tool-value" {
+		t.Fatalf("options=%#v", opts)
+	}
+}
+
 func TestSandboxCommandPassesStreamsAndWorkingDirectory(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

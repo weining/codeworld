@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"codeworld/internal/codexauth"
 )
 
 // TestNewClientCreatesDeepSeekByDefault 验证对应场景的行为，避免后续改动破坏既有约束。
@@ -58,6 +60,7 @@ func TestNewClientCreatesLocalClientWithoutAPIKey(t *testing.T) {
 
 // TestNewClientCreatesCodexClientFromStoredOAuth 验证 provider=codex 使用 workspace 中的 OAuth 凭据。
 func TestNewClientCreatesCodexClientFromStoredOAuth(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	root := t.TempDir()
 	authDir := filepath.Join(root, ".codeworld", "auth")
 	if err := os.MkdirAll(authDir, 0o755); err != nil {
@@ -83,6 +86,20 @@ func TestNewClientCreatesCodexClientFromStoredOAuth(t *testing.T) {
 	}
 	if client == nil {
 		t.Fatalf("client nil")
+	}
+}
+
+func TestNewClientCreatesCodexClientFromUserOAuth(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEWORLD_HOME", home)
+	if err := codexauth.UserStore(home).Save(codexauth.Credentials{
+		Access: makeProviderJWT("acct-user"), Refresh: "refresh-token", Expires: 4102444800000, AccountID: "acct-user",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	client, err := NewClient(Config{Provider: "codex", Model: "gpt-5", Root: t.TempDir()})
+	if err != nil || client == nil {
+		t.Fatalf("client=%#v err=%v", client, err)
 	}
 }
 
@@ -120,6 +137,7 @@ func TestNewClientRejectsMissingOpenAIAPIKey(t *testing.T) {
 
 // TestNewClientRejectsMissingCodexOAuth 验证缺少 Codex OAuth 凭据时给出可执行提示。
 func TestNewClientRejectsMissingCodexOAuth(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	_, err := NewClient(Config{Provider: "codex", Model: "gpt-5", Root: t.TempDir()})
 	if err == nil || !strings.Contains(err.Error(), "codeworld auth codex login") {
 		t.Fatalf("err = %v, want codex login hint", err)

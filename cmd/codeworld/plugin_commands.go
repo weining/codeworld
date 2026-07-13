@@ -13,6 +13,7 @@ import (
 const pluginUsage = "usage: codeworld plugin <add|list|remove|marketplace>"
 
 func runPluginCommand(out io.Writer, args []string) error {
+	args = expandLongOptionValues(args)
 	if len(args) == 0 {
 		return fmt.Errorf("%s", pluginUsage)
 	}

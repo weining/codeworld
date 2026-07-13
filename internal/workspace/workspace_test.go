@@ -379,6 +379,56 @@ func TestSummaryAppendsTruncatedMarkerWhenFilesExceedLimit(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAllowsExplicitAdditionalRoot(t *testing.T) {
+	root := t.TempDir()
+	extra := t.TempDir()
+	ws, err := NewWithAdditional(root, []string{extra, extra})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ws.AdditionalRoots) != 1 {
+		t.Fatalf("additional roots = %#v", ws.AdditionalRoots)
+	}
+	target := filepath.Join(extra, "new", "file.txt")
+	target, err = canonicalizeExistingPrefix(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := ws.Resolve(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != target {
+		t.Fatalf("resolved = %q, want %q", resolved, target)
+	}
+	rel, err := ws.Rel(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel != filepath.ToSlash(target) {
+		t.Fatalf("display path = %q", rel)
+	}
+	if _, err := ws.Resolve(filepath.Join(t.TempDir(), "outside.txt")); err == nil {
+		t.Fatal("workspace accepted path outside all allowed roots")
+	}
+}
+
+func TestWorkspaceAdditionalRootRejectsSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	extra := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(extra, "escape")); err != nil {
+		t.Skip(err)
+	}
+	ws, err := NewWithAdditional(root, []string{extra})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ws.Resolve(filepath.Join(extra, "escape", "file.txt")); err == nil {
+		t.Fatal("additional root accepted symlink escape")
+	}
+}
+
 // requireGit 是测试辅助函数，用于复用测试准备或断言逻辑。
 func requireGit(t *testing.T) string {
 	t.Helper()

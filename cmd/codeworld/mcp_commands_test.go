@@ -39,14 +39,19 @@ func TestMCPCommandsManageUserServers(t *testing.T) {
 
 func TestMCPAddHTTPValidatesURL(t *testing.T) {
 	t.Setenv("CODEWORLD_HOME", t.TempDir())
-	if err := runMCPCommand(&bytes.Buffer{}, t.TempDir(), globalOptions{}, []string{"add", "remote", "--url", "file:///tmp/mcp"}); err == nil {
+	if err := runMCPCommand(&bytes.Buffer{}, t.TempDir(), globalOptions{}, []string{"add", "remote", "--url=file:///tmp/mcp"}); err == nil {
 		t.Fatal("invalid URL accepted")
 	}
 }
 
 func TestMCPLogoutIsIdempotent(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("CODEWORLD_HOME", home)
 	root := t.TempDir()
 	if err := mcp.SaveOAuthToken(root, mcp.OAuthToken{ServerName: "remote", AccessToken: "secret"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mcp.SaveUserOAuthToken(home, mcp.OAuthToken{ServerName: "remote", AccessToken: "user-secret"}); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
@@ -58,5 +63,8 @@ func TestMCPLogoutIsIdempotent(t *testing.T) {
 	}
 	if _, err := mcp.LoadOAuthToken(root, "remote"); !os.IsNotExist(err) {
 		t.Fatalf("token remains after logout: %v", err)
+	}
+	if _, err := mcp.LoadUserOAuthToken(home, "remote"); !os.IsNotExist(err) {
+		t.Fatalf("user token remains after logout: %v", err)
 	}
 }

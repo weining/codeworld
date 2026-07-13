@@ -112,6 +112,20 @@ func TestExecuteJSONEmitsMachineReadableLifecycle(t *testing.T) {
 	}
 }
 
+func TestReporterColorizesOnlyWhenEnabled(t *testing.T) {
+	event := agent.ToolEvent{Status: agent.ToolEventError, Name: "shell", Error: "failed"}
+	var plain bytes.Buffer
+	(reporter{out: &plain}).ReportTool(context.Background(), event)
+	if strings.Contains(plain.String(), "\x1b[") || plain.String() != "tool< shell error: failed\n" {
+		t.Fatalf("plain output = %q", plain.String())
+	}
+	var colored bytes.Buffer
+	(reporter{out: &colored, color: true}).ReportTool(context.Background(), event)
+	if !strings.HasPrefix(colored.String(), "\x1b[31m") || !strings.HasSuffix(colored.String(), "\x1b[0m") {
+		t.Fatalf("colored output = %q", colored.String())
+	}
+}
+
 func TestJSONEventsClassifyToolItems(t *testing.T) {
 	out := &bytes.Buffer{}
 	writer := newJSONEventWriter(out)

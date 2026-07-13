@@ -21,6 +21,9 @@ func platformCommand(policy Policy, cwd, executable string, args []string) (stri
 	}
 	if policy.Mode == ModeWorkspaceWrite {
 		wrapped = append(wrapped, "--bind", policy.Workspace, policy.Workspace)
+		for _, root := range policy.WritableRoots {
+			wrapped = append(wrapped, "--bind", root, root)
+		}
 	}
 	if !policy.Network {
 		wrapped = append(wrapped, "--unshare-net")

@@ -21,6 +21,7 @@ type LoginOptions struct {
 	OAuth      OAuthClient
 	OpenURL    func(string) error
 	Originator string
+	Store      Store
 }
 
 // Login 执行 OpenClaw 风格 Codex OAuth browser flow，并保存凭据。
@@ -66,7 +67,11 @@ func Login(ctx context.Context, opts LoginOptions) (Credentials, error) {
 	if err != nil {
 		return Credentials{}, err
 	}
-	if err := (Store{Root: opts.Root}).Save(cred); err != nil {
+	store := opts.Store
+	if store.Root == "" && store.BaseDir == "" {
+		store.Root = opts.Root
+	}
+	if err := store.Save(cred); err != nil {
 		return Credentials{}, err
 	}
 	fmt.Fprintf(out, "Codex OAuth saved for account %s\n", cred.AccountID)

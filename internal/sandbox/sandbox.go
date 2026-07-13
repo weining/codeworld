@@ -19,9 +19,10 @@ const (
 
 // Policy 是所有模型触发本地进程共用的 OS 沙箱策略。
 type Policy struct {
-	Mode      Mode
-	Workspace string
-	Network   bool
+	Mode          Mode
+	Workspace     string
+	WritableRoots []string
+	Network       bool
 }
 
 // Default 返回适合交互式编码的最小权限策略。
@@ -46,6 +47,11 @@ func (p Policy) Validate() error {
 	}
 	if !filepath.IsAbs(p.Workspace) {
 		return fmt.Errorf("sandbox workspace must be absolute")
+	}
+	for _, root := range p.WritableRoots {
+		if strings.TrimSpace(root) == "" || !filepath.IsAbs(root) {
+			return fmt.Errorf("sandbox writable root must be an absolute path")
+		}
 	}
 	return nil
 }

@@ -19,6 +19,7 @@ type Options struct {
 	JSON         bool
 	Ephemeral    bool
 	OutputSchema []byte
+	Color        bool
 }
 
 type Result struct {
@@ -85,7 +86,7 @@ func Execute(ctx context.Context, rt *app.Runtime, input string, opts Options) (
 			return Result{}, err
 		}
 	} else {
-		rt.Runner.Reporter = reporter{out: writerOrDiscard(rt.Err)}
+		rt.Runner.Reporter = reporter{out: writerOrDiscard(rt.Err), color: opts.Color}
 	}
 	rt.Runner.Confirmer = nonInteractiveConfirmer{approvals: rt.Session.Approvals}
 
@@ -151,6 +152,7 @@ type reporter struct {
 	out interface {
 		Write([]byte) (int, error)
 	}
+	color bool
 }
 
 // ReportTool 把工具执行状态转换为用户可见的进度事件。
@@ -160,13 +162,23 @@ func (r reporter) ReportTool(ctx context.Context, event agent.ToolEvent) {
 	}
 	switch event.Status {
 	case agent.ToolEventStart:
-		_, _ = fmt.Fprintf(r.out, "tool> %s target=%s risk=%s\n", event.Name, event.Request.Target, event.Request.Risk)
+		r.write("\x1b[36m", "tool> %s target=%s risk=%s\n", event.Name, event.Request.Target, event.Request.Risk)
 	case agent.ToolEventSuccess:
-		_, _ = fmt.Fprintf(r.out, "tool< %s ok\n", event.Name)
+		r.write("\x1b[32m", "tool< %s ok\n", event.Name)
 	case agent.ToolEventDenied:
-		_, _ = fmt.Fprintf(r.out, "tool< %s denied: %s\n", event.Name, event.Error)
+		r.write("\x1b[33m", "tool< %s denied: %s\n", event.Name, event.Error)
 	case agent.ToolEventError:
-		_, _ = fmt.Fprintf(r.out, "tool< %s error: %s\n", event.Name, event.Error)
+		r.write("\x1b[31m", "tool< %s error: %s\n", event.Name, event.Error)
+	}
+}
+
+func (r reporter) write(color, format string, args ...any) {
+	if r.color {
+		_, _ = fmt.Fprint(r.out, color)
+	}
+	_, _ = fmt.Fprintf(r.out, format, args...)
+	if r.color {
+		_, _ = fmt.Fprint(r.out, "\x1b[0m")
 	}
 }
 

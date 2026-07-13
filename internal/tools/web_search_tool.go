@@ -52,7 +52,7 @@ func NewWebSearchTool() Tool {
 func (t webSearchTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{
 		Name:        "web_search",
-		Description: "Search the web for current external information. Requires network permission.",
+		Description: "Search the web for current external information. The --search flag enables it without per-call approval.",
 		InputSchema: objectSchema(map[string]any{
 			"query": map[string]any{"type": "string"},
 			"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maxWebSearchLimit},

@@ -10,6 +10,7 @@ import (
 )
 
 func runDebugCommand(ctx context.Context, out io.Writer, root string, global globalOptions, args []string) error {
+	args = expandLongOptionValues(args)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -24,6 +25,9 @@ func runDebugCommand(ctx context.Context, out io.Writer, root string, global glo
 		cfg, err := config.LoadWithOptions(root, config.LoadOptions{Profile: global.Profile, Overrides: global.Config})
 		if err != nil {
 			return err
+		}
+		if global.Model != "" {
+			cfg.Model = global.Model
 		}
 		return writeJSON(out, map[string]any{
 			"provider": cfg.Provider,

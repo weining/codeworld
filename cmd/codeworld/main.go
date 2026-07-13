@@ -11,6 +11,7 @@ import (
 
 	"codeworld/internal/app"
 	"codeworld/internal/codexauth"
+	"codeworld/internal/config"
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/model"
 	"codeworld/internal/repl"
@@ -56,12 +57,16 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			return runAuthCommand(in, out, root, args[1:])
 		case "mcp":
 			return runMCPCommand(out, root, global, args[1:])
+		case "mcp-server":
+			return runMCPServerCommand(context.Background(), in, out, root, global, args[1:])
 		case "plugin":
 			return runPluginCommand(out, args[1:])
 		case "features":
 			return runFeaturesCommand(out, root, global, args[1:])
 		case "debug":
 			return runDebugCommand(context.Background(), out, root, global, args[1:])
+		case "execpolicy":
+			return runExecPolicyCommand(out, root, args[1:])
 		case "doctor":
 			return runDoctorCommand(out, root, global, args[1:])
 		case "completion":
@@ -82,6 +87,7 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			if err != nil {
 				return err
 			}
+			images = append(append([]model.ContentPart(nil), global.Images...), images...)
 			rt, err := app.NewRuntime(context.Background(), runtimeOptionsFromGlobal(root, global, in, out, stderr))
 			if err != nil {
 				return err
@@ -134,15 +140,28 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 		case "resume":
 			return runResumeCommand(context.Background(), in, out, stderr, root, global, args[1:])
 		case "tui":
+			if len(args) != 1 {
+				return fmt.Errorf("usage: codeworld tui")
+			}
 			rt, err := app.NewRuntime(context.Background(), runtimeOptionsFromGlobal(root, global, in, out, stderr))
 			if err != nil {
 				return err
 			}
 			return withRuntime(rt, func(rt *app.Runtime) error {
-				return tui.RunWithOptions(context.Background(), rt, tui.Options{TestMode: !shouldShowTerminalTitle(out)})
+				return tui.RunWithOptions(context.Background(), rt, tui.Options{TestMode: !shouldShowTerminalTitle(out), InitialImages: global.Images, NoAltScreen: global.NoAltScreen})
 			})
 		default:
-			return fmt.Errorf("unknown command: %s", args[0])
+			prompt := strings.TrimSpace(strings.Join(args, " "))
+			if prompt == "" {
+				return fmt.Errorf("interactive prompt is empty")
+			}
+			rt, err := app.NewRuntime(context.Background(), runtimeOptionsFromGlobal(root, global, in, out, stderr))
+			if err != nil {
+				return err
+			}
+			return withRuntime(rt, func(rt *app.Runtime) error {
+				return tui.RunWithOptions(context.Background(), rt, tui.Options{TestMode: !shouldShowTerminalTitle(out), InitialPrompt: prompt, InitialImages: global.Images, NoAltScreen: global.NoAltScreen})
+			})
 		}
 	}
 	if shouldShowTerminalTitle(out) {
@@ -150,7 +169,9 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 		if err != nil {
 			return err
 		}
-		return withRuntime(rt, func(rt *app.Runtime) error { return tui.Run(context.Background(), rt) })
+		return withRuntime(rt, func(rt *app.Runtime) error {
+			return tui.RunWithOptions(context.Background(), rt, tui.Options{InitialImages: global.Images, NoAltScreen: global.NoAltScreen})
+		})
 	}
 	app, err := newAppWithGlobal(in, out, stderr, root, global)
 	if err != nil {
@@ -163,21 +184,23 @@ func printCLIHelp(out io.Writer) error {
 	_, err := fmt.Fprint(out, `Codeworld local coding agent
 
 Usage:
-  codeworld                         Start the interactive TUI
+  codeworld [options] [prompt]      Start the interactive TUI
   codeworld exec [options] <task|-> Run a script-friendly task
   codeworld e [options] <task|->    Alias for exec
   codeworld exec resume <id|--last> <task|->
                                     Continue a saved session non-interactively
   codeworld review [options]        Review a Git change set in read-only mode
   codeworld login [status]          Log in with Codex OAuth or inspect status
-  codeworld logout                  Remove workspace-local Codex OAuth credentials
+  codeworld logout                  Remove user-level Codex OAuth credentials
   codeworld mcp <command>           Manage user-level MCP servers
+  codeworld mcp-server              Start Codeworld as a stdio MCP server
   codeworld plugin <command>        Manage Codex-compatible plugins and marketplaces
   codeworld features <command>      Inspect or update supported feature flags
   codeworld debug <command>         Inspect the effective model selection or prompt input
+  codeworld execpolicy check ...    Check rule files against a command without executing it
   codeworld auth codex <command>    Log in, inspect status, or log out
   codeworld doctor [--json]         Check local configuration and dependencies
-  codeworld completion <shell>      Generate bash, zsh, fish, or PowerShell completion
+  codeworld completion [shell]      Generate bash, elvish, fish, PowerShell, or zsh completion
   codeworld sandbox [options] -- cmd
                                     Run a command in the configured process sandbox
   codeworld sessions [--archived]   List saved sessions
@@ -194,38 +217,56 @@ Usage:
   codeworld repl                    Start the line-oriented REPL
 
 Global options:
-  --profile, -p <name>   Load $CODEWORLD_HOME/profiles/<name>.toml
+  --profile, -p <name>   Load $CODEWORLD_HOME/<name>.config.toml
   --cd, -C <dir>         Use a directory as the workspace root
+  --add-dir <dir>        Add an extra readable and writable workspace root (repeatable)
+  --image, -i <file>     Attach an image to the initial prompt (repeatable)
   --model, -m <name>     Override the model for this invocation
-  --approval-mode, -a    Set auto, read-only, or full-access permissions
+  --oss                  Use the local OpenAI-compatible provider
+  --local-provider <p>   Use ollama or lmstudio and its default local endpoint
+  --approval-mode, -a    Set untrusted, on-request, never, or a legacy mode
   --sandbox, -s <mode>   Set read-only, workspace-write, or danger-full-access
   --network              Enable network access in the process sandbox
   --no-network           Disable network access in the process sandbox
   --search               Enable network access and native web search
+  --no-alt-screen        Preserve terminal scrollback in interactive mode
   --config, -c <key=val> Override a supported Codeworld config value
   --enable <feature>     Enable a configurable feature for this invocation
   --disable <feature>    Disable a configurable feature for this invocation
+  --dangerously-bypass-approvals-and-sandbox
+                         Disable approvals and process sandboxing
+  --dangerously-bypass-hook-trust
+                         Run configured hooks without trust prompts
   --strict-config        Require strict config parsing (the current default)
   --version, -V          Print version information
 
 Exec options:
   --model, -m <name>     Override the model after the exec subcommand
   --profile, -p <name>   Load a profile after the exec subcommand
+  --oss                  Use the local OpenAI-compatible provider
+  --local-provider <p>   Use ollama or lmstudio
   --cd, -C <dir>         Select the workspace after the exec subcommand
+  --add-dir <dir>        Add an extra workspace root (repeatable)
   --config, -c <key=val> Override a supported Codeworld config value
+  --enable <feature>     Enable a supported feature for this exec
+  --disable <feature>    Disable a supported feature for this exec
   --strict-config        Require strict config parsing (the current default)
   --json                 Emit JSONL events
   --ephemeral            Do not load or save the current session
-  --approval-mode <mode> Set auto, read-only, or full-access permissions
+  --approval-mode <mode> Set untrusted, on-request, never, or a legacy mode
   --sandbox <mode>      Set read-only, workspace-write, or danger-full-access
   --network             Allow network access inside the process sandbox
   --no-network          Disable network access inside the process sandbox
                          Full-access is unsandboxed host execution
   --image <path>         Attach an image
-  --color <mode>         Accept auto, always, or never (output is currently plain)
+  --color <mode>         Color progress automatically, always, or never
   --ignore-user-config   Skip the user config while retaining project config
-  --ignore-rules         Compatibility flag; Codeworld has no exec rules yet
+  --ignore-rules         Skip user and project exec policy rules
   --skip-git-repo-check  Allow exec outside Git (already the default)
+  --dangerously-bypass-approvals-and-sandbox
+                         Disable approvals and process sandboxing
+  --dangerously-bypass-hook-trust
+                         Run configured hooks without trust prompts
   --output-schema <path> Validate the final JSON response
   -o <path>              Also write the final message to a file
 
@@ -234,6 +275,8 @@ Review options:
   --base <branch>        Review changes against a base branch
   --commit <sha>         Review one commit
   --title <title>        Add a title to the review context
+  --enable <feature>     Enable a supported feature for this review
+  --disable <feature>    Disable a supported feature for this review
   --json                 Emit JSONL events
   --output-schema <path> Validate the final JSON response
   -o <path>              Also write the final message to a file
@@ -250,7 +293,11 @@ func runAuthCommand(in io.Reader, out io.Writer, root string, args []string) err
 		if len(args) != 2 {
 			return fmt.Errorf("usage: codeworld auth codex login")
 		}
-		_, err := codexauth.Login(context.Background(), codexauth.LoginOptions{Root: root, In: in, Out: out})
+		home, err := config.Home("")
+		if err != nil {
+			return err
+		}
+		_, err = codexauth.Login(context.Background(), codexauth.LoginOptions{In: in, Out: out, Store: codexauth.UserStore(home)})
 		return err
 	case "status":
 		return runCodexAuthStatus(out, root, args[2:])
@@ -331,7 +378,10 @@ func runtimeOptionsFromGlobal(root string, global globalOptions, in io.Reader, o
 	return app.Options{
 		Root: root, Profile: global.Profile, Model: global.Model,
 		ApprovalMode: global.Approval, SandboxMode: global.Sandbox, SandboxNetwork: global.Network,
+		NativeSearch:    global.Search,
 		ConfigOverrides: append([]string(nil), global.Config...),
+		BypassHookTrust: global.BypassHooks,
+		AdditionalDirs:  append([]string(nil), global.AddDirs...),
 		In:              in, Out: out, Err: stderr,
 	}
 }

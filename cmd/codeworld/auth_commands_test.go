@@ -12,6 +12,7 @@ import (
 )
 
 func TestCodexAuthStatusDoesNotExposeTokens(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	root := t.TempDir()
 	store := codexauth.Store{Root: root}
 	cred := codexauth.Credentials{
@@ -40,6 +41,7 @@ func TestCodexAuthStatusDoesNotExposeTokens(t *testing.T) {
 }
 
 func TestCodexAuthStatusReportsMissingCredentials(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	var out bytes.Buffer
 	err := runCodexAuthStatus(&out, t.TempDir(), []string{"--json"})
 	if err == nil || !strings.Contains(err.Error(), "auth codex login") {
@@ -51,6 +53,7 @@ func TestCodexAuthStatusReportsMissingCredentials(t *testing.T) {
 }
 
 func TestInspectCodexAuthMarksExpiredCredentials(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	root := t.TempDir()
 	store := codexauth.Store{Root: root}
 	if err := store.Save(codexauth.Credentials{Access: "a", Refresh: "r", Expires: 1000, AccountID: "id"}); err != nil {
@@ -66,6 +69,7 @@ func TestInspectCodexAuthMarksExpiredCredentials(t *testing.T) {
 }
 
 func TestCodexAuthLogoutIsIdempotent(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	root := t.TempDir()
 	store := codexauth.Store{Root: root}
 	if err := store.Save(codexauth.Credentials{Access: "a", Refresh: "r", AccountID: "id"}); err != nil {
@@ -87,6 +91,7 @@ func TestCodexAuthLogoutIsIdempotent(t *testing.T) {
 }
 
 func TestCodexAuthCommandValidatesUsage(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	for _, args := range [][]string{{}, {"codex"}, {"codex", "status", "--bad"}, {"codex", "logout", "extra"}} {
 		if err := runAuthCommand(strings.NewReader(""), &bytes.Buffer{}, t.TempDir(), args); err == nil {
 			t.Fatalf("args %#v accepted", args)
@@ -95,6 +100,7 @@ func TestCodexAuthCommandValidatesUsage(t *testing.T) {
 }
 
 func TestTopLevelLoginStatusAndLogoutAliases(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	root := t.TempDir()
 	store := codexauth.Store{Root: root}
 	if err := store.Save(codexauth.Credentials{Access: "a", Refresh: "r", Expires: time.Now().Add(time.Hour).UnixMilli(), AccountID: "account-1"}); err != nil {
@@ -120,6 +126,7 @@ func TestTopLevelLoginStatusAndLogoutAliases(t *testing.T) {
 }
 
 func TestTopLevelLoginLogoutHelpAndUsage(t *testing.T) {
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
 	for _, args := range [][]string{{"login", "--help"}, {"login", "status", "--help"}, {"logout", "--help"}} {
 		var out bytes.Buffer
 		if err := runWithIO(strings.NewReader(""), &out, &bytes.Buffer{}, args); err != nil {
@@ -131,5 +138,30 @@ func TestTopLevelLoginLogoutHelpAndUsage(t *testing.T) {
 	}
 	if err := runLogoutCommand(&bytes.Buffer{}, t.TempDir(), []string{"extra"}); err == nil {
 		t.Fatal("logout argument accepted")
+	}
+}
+
+func TestCodexAuthPrefersUserStoreAndLogoutRemovesLegacy(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	t.Setenv("CODEWORLD_HOME", home)
+	userStore := codexauth.UserStore(home)
+	legacyStore := codexauth.Store{Root: root}
+	if err := userStore.Save(codexauth.Credentials{Access: "user-a", Refresh: "user-r", Expires: 2000, AccountID: "user"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacyStore.Save(codexauth.Credentials{Access: "old-a", Refresh: "old-r", Expires: 3000, AccountID: "workspace"}); err != nil {
+		t.Fatal(err)
+	}
+	status, err := inspectCodexAuth(root, time.UnixMilli(1000))
+	if err != nil || status.AccountID != "user" {
+		t.Fatalf("status=%#v err=%v", status, err)
+	}
+	if err := runCodexAuthLogout(&bytes.Buffer{}, root); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{userStore.Path(), legacyStore.Path()} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("credential remains at %s: %v", path, err)
+		}
 	}
 }

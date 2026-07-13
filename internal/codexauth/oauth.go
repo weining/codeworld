@@ -57,7 +57,13 @@ type OAuthClient struct {
 }
 
 type Store struct {
-	Root string
+	Root    string
+	BaseDir string
+}
+
+// UserStore returns the user-level credential store rooted at CODEWORLD_HOME.
+func UserStore(home string) Store {
+	return Store{BaseDir: home}
 }
 
 // NewFlow 构造 OpenClaw/Codex OAuth 使用的 PKCE verifier、challenge 和 state。
@@ -226,8 +232,11 @@ func ExtractAccountID(accessToken string) (string, error) {
 	return accountID, nil
 }
 
-// Path 返回 workspace 私有 Codex OAuth 凭据路径。
+// Path 返回 Codex OAuth 凭据路径；BaseDir 用于用户级存储，Root 保留旧 workspace 布局。
 func (s Store) Path() string {
+	if s.BaseDir != "" {
+		return filepath.Join(s.BaseDir, "auth", "codex.json")
+	}
 	return filepath.Join(s.Root, ".codeworld", "auth", "codex.json")
 }
 
@@ -261,7 +270,7 @@ func (s Store) Save(cred Credentials) error {
 	return os.WriteFile(path, data, 0o600)
 }
 
-// Delete 删除本 workspace 保存的 Codex OAuth 凭据；凭据不存在时保持幂等。
+// Delete 删除保存的 Codex OAuth 凭据；凭据不存在时保持幂等。
 func (s Store) Delete() (bool, error) {
 	err := os.Remove(s.Path())
 	if os.IsNotExist(err) {

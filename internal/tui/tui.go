@@ -16,6 +16,7 @@ type Options struct {
 	TestMode      bool
 	InitialPrompt string
 	InitialImages []model.ContentPart
+	NoAltScreen   bool
 }
 
 type Status struct {
@@ -98,12 +99,17 @@ func RunWithOptions(ctx context.Context, rt *app.Runtime, opts Options) error {
 	m.ctx = runCtx
 	if prompt := strings.TrimSpace(opts.InitialPrompt); prompt != "" {
 		m.initialTurn = &queuedTurn{text: prompt, images: append([]model.ContentPart(nil), opts.InitialImages...)}
+	} else if len(opts.InitialImages) > 0 {
+		m.pendingImages = append([]model.ContentPart(nil), opts.InitialImages...)
 	}
 	if opts.TestMode {
 		_, err := fmt.Fprint(rt.Out, m.View())
 		return err
 	}
-	programOpts := []tea.ProgramOption{tea.WithContext(ctx), tea.WithAltScreen()}
+	programOpts := []tea.ProgramOption{tea.WithContext(ctx)}
+	if !opts.NoAltScreen {
+		programOpts = append(programOpts, tea.WithAltScreen())
+	}
 	_, err := tea.NewProgram(m, programOpts...).Run()
 	return err
 }
