@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 const mcpUsage = "usage: codeworld mcp <list|get|add|remove|login|logout>"
 
 func runMCPCommand(out io.Writer, root string, global globalOptions, args []string) error {
+	args = expandLongOptionValues(args)
 	if len(args) == 0 {
 		return fmt.Errorf("%s", mcpUsage)
 	}
@@ -79,7 +81,11 @@ func loginMCPServer(out io.Writer, root string, global globalOptions, args []str
 	if err != nil {
 		return err
 	}
-	if err := mcp.SaveOAuthToken(root, token); err != nil {
+	home, err := config.Home("")
+	if err != nil {
+		return err
+	}
+	if err := mcp.SaveUserOAuthToken(home, token); err != nil {
 		return err
 	}
 	_, err = fmt.Fprintf(out, "logged in to MCP server %s\n", name)
@@ -90,10 +96,14 @@ func logoutMCPServer(out io.Writer, root string, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("usage: codeworld mcp logout <name>")
 	}
-	if err := mcp.DeleteOAuthToken(root, args[0]); err != nil {
+	home, err := config.Home("")
+	if err != nil {
 		return err
 	}
-	_, err := fmt.Fprintf(out, "logged out of MCP server %s\n", args[0])
+	if err := errors.Join(mcp.DeleteUserOAuthToken(home, args[0]), mcp.DeleteOAuthToken(root, args[0])); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "logged out of MCP server %s\n", args[0])
 	return err
 }
 

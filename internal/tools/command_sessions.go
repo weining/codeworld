@@ -387,11 +387,12 @@ type commandSessionTerminateTool struct{ manager *CommandSessionManager }
 type commandSessionResizeTool struct{ manager *CommandSessionManager }
 
 type commandSessionStartArgs struct {
-	Command string `json:"command"`
-	CWD     string `json:"cwd"`
-	PTY     bool   `json:"pty"`
-	Rows    uint16 `json:"rows"`
-	Cols    uint16 `json:"cols"`
+	Command         string `json:"command"`
+	CWD             string `json:"cwd"`
+	PTY             bool   `json:"pty"`
+	Rows            uint16 `json:"rows"`
+	Cols            uint16 `json:"cols"`
+	RequestApproval bool   `json:"request_approval"`
 }
 
 // NewCommandSessionTools 返回共享同一后台进程管理器的命令会话工具。
@@ -406,7 +407,8 @@ func (t commandSessionStartTool) Definition() model.ToolDefinition {
 	return model.ToolDefinition{Name: "shell_start", Description: "Start a long-running shell command and return a session ID without waiting for completion.", InputSchema: objectSchema(map[string]any{
 		"command": map[string]any{"type": "string"}, "cwd": map[string]any{"type": "string"},
 		"pty": map[string]any{"type": "boolean"}, "rows": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000},
-		"cols": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000},
+		"cols":             map[string]any{"type": "integer", "minimum": 1, "maximum": 1000},
+		"request_approval": map[string]any{"type": "boolean", "description": "Request user confirmation before starting this command in on-request mode."},
 	}, []string{"command"})}
 }
 
@@ -418,7 +420,7 @@ func (t commandSessionStartTool) PermissionRequest(args json.RawMessage) (permis
 	if strings.TrimSpace(parsed.Command) == "" {
 		return permissions.Request{}, fmt.Errorf("command is required")
 	}
-	return permissions.Request{Action: permissions.ActionShell, Target: parsed.Command, Risk: classifyShellRisk(parsed.Command), Reason: "start background shell command"}, nil
+	return permissions.Request{Action: permissions.ActionShell, Target: parsed.Command, Risk: classifyShellRisk(parsed.Command), Reason: "start background shell command", ApprovalRequested: parsed.RequestApproval}, nil
 }
 
 func (t commandSessionStartTool) Execute(ctx context.Context, args json.RawMessage) (Result, error) {

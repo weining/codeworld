@@ -45,7 +45,8 @@ export PATH="$(go env GOPATH)/bin:$PATH"
 Codeworld layers user configuration from `$CODEWORLD_HOME/config.toml`
 (default `~/.codeworld/config.toml`), project configuration from
 `.codeworld/config.toml`, and an optional profile from
-`$CODEWORLD_HOME/profiles/<name>.toml`. Project values override user values;
+`$CODEWORLD_HOME/<name>.config.toml`. The legacy
+`$CODEWORLD_HOME/profiles/<name>.toml` path remains a fallback. Project values override user values;
 an explicitly selected profile overrides both. API-key providers read keys
 from the environment; Codex OAuth uses a local login file.
 
@@ -164,6 +165,8 @@ codeworld mcp list --json
 codeworld mcp login docs --scopes tools.read,tools.write
 codeworld mcp logout docs
 codeworld mcp remove local
+codeworld mcp-server
+codeworld execpolicy check --pretty --rules ~/.codeworld/rules/default.rules -- git status --short
 codeworld sessions
 codeworld doctor
 codeworld doctor --json
@@ -178,6 +181,9 @@ codeworld sandbox --sandbox read-only --no-network -- git status
 codeworld -C ../another-project -m gpt-5 exec "inspect this workspace"
 codeworld -s read-only -a read-only --no-network repl
 codeworld --search exec "check the latest upstream documentation"
+codeworld --oss --local-provider ollama -m qwen3-coder exec "inspect this workspace"
+codeworld exec --add-dir ../shared "update the shared schema"
+codeworld exec --dangerously-bypass-hook-trust "run trusted automation hooks"
 codeworld -c 'model="gpt-5"' -c max_steps=30 e "inspect this workspace"
 codeworld exec review --uncommitted --title "Working tree"
 codeworld fork --last
@@ -203,25 +209,37 @@ Command behavior:
 - `codeworld exec resume <session-id|--last> <task|->` continues a saved session non-interactively.
 - `codeworld exec --approval-mode <auto|read-only|full-access>` overrides prompt/approval behavior independently of the OS sandbox.
 - `codeworld exec --sandbox <read-only|workspace-write|danger-full-access>` overrides the filesystem sandbox. Use `--network` to enable sandboxed process and `web_search` network access.
+- `--oss --local-provider <ollama|lmstudio>` selects the local OpenAI-compatible provider with its conventional loopback endpoint.
+- Repeatable `--add-dir <path>` adds canonical extra workspace roots to structured path validation and the macOS/Linux process sandbox. Relative tool paths still resolve under the primary workspace; use absolute paths for extra roots.
+- `--dangerously-bypass-approvals-and-sandbox` selects full-access permissions and an unsandboxed process; `--dangerously-bypass-hook-trust` separately skips hook trust prompts for vetted automation.
 - `codeworld exec --output-schema <path>` requests and validates structured JSON output. The current validator covers `type`, `properties`, `required`, `items`, `enum`, and `additionalProperties`.
 - `codeworld exec -o <path>` also writes the final message to a file.
 - `codeworld review` reviews staged and unstaged changes in read-only mode.
 - `codeworld review --base <branch>` and `--commit <sha>` review a selected Git change set.
 - `codeworld mcp list|get|add|remove|login|logout` manages user-level stdio and HTTP MCP servers, including OAuth 2.0 authorization-code login with PKCE and refresh tokens.
+- `codeworld mcp-server` exposes `codex` and `codex-reply` over JSONL stdio MCP so other agents can start and continue Codeworld sessions.
+- MCP thread runtime metadata is saved privately under `$CODEWORLD_HOME/mcp-threads`, allowing `codex-reply` to continue a persisted workspace session after the stdio server restarts.
+- The stdio MCP server processes session calls serially, preserves response order, and honors `notifications/cancelled` by cancelling the matching active request context.
 - `codeworld plugin list|add|remove` installs Codex-compatible plugins from configured local or Git marketplaces; `codeworld plugin marketplace add|list|upgrade|remove` manages their snapshots.
 - `codeworld features list|enable|disable` reports capability stages and persists supported user feature switches; global `--enable/--disable` applies invocation-only overrides.
 - `codeworld debug models|prompt-input` renders the configured model selection or exact model-visible prompt input without starting providers, hooks, or MCP servers.
+- `codeworld execpolicy check --rules <path>... -- <command>...` evaluates explicit prefix-rule files and emits Codex-compatible JSON without executing the command; `--resolve-host-executables` enables absolute-path fallback through optional `host_executable(name=..., paths=[...])` allowlists.
 - `codeworld sessions [--archived]` lists active or archived sessions.
 - `codeworld doctor [--json]` checks configuration, credentials, the Git workspace, process sandbox backend, MCP declarations, saved sessions, and terminal metadata without contacting the model.
-- `codeworld completion <bash|zsh|fish|powershell>` emits a shell completion script.
-- `codeworld auth codex status [--json]` reports the workspace-local OAuth account and expiry without exposing tokens; `logout` removes those credentials idempotently.
-- Codex-compatible top-level `login`, `login status`, and `logout` commands alias the existing workspace-local OAuth lifecycle; `--version`/`-V` reports build information.
+- `codeworld completion [bash|elvish|fish|powershell|zsh]` emits context-aware shell completion (bash by default).
+- `codeworld auth codex status [--json]` reports the user-level OAuth account and expiry without exposing tokens; `logout` removes those credentials idempotently. New logins use `$CODEWORLD_HOME/auth/codex.json`, while existing workspace credentials remain readable as a compatibility fallback.
+- Codex-compatible top-level `login`, `login status`, and `logout` commands alias the user-level OAuth lifecycle; `--version`/`-V` reports build information.
 - `codeworld sandbox [options] -- <command>` runs a command with the same OS sandbox policy used by agent tools; `-C`, `--sandbox`, `--network`, and `--no-network` are supported.
 - Global `-C`/`--cd` selects the workspace without changing the parent shell, while `-m`/`--model` overrides the configured or resumed-session model for one invocation.
+- Long options that take values accept both `--flag value` and Codex-style `--flag=value` forms; arguments after a literal `--` are preserved unchanged.
+- A trailing top-level prompt starts the interactive TUI and submits it as the initial turn. Repeatable global `-i`/`--image` attaches images to that turn, while `--no-alt-screen` keeps terminal scrollback visible.
 - Global `-s`/`--sandbox`, `-a`/`--approval-mode`, and network flags override runtime policy before TUI, REPL, or automation starts. `--search` enables sandbox network access and the existing native web search tool. Command-local exec flags take precedence; review remains read-only.
 - Repeatable `-c`/`--config key=value` overrides supported Codeworld scalar settings after files, profiles, and environment variables. Unknown keys fail explicitly. `--strict-config` is accepted for Codex CLI compatibility; Codeworld config parsing is already strict by default.
+- `--enable` and `--disable` are accepted both globally and after `exec` or `review` for supported Codeworld feature flags; `codeworld exec --version` and subcommand-local help are also available.
 - `e` aliases `exec`; `exec review` aliases the top-level review flow. Review accepts `--uncommitted` and `--title` in addition to base and commit targets.
 - Exec accepts Codex-positioned `-m/-p/-C/-s/-a/-i/-c` options after the subcommand. With no prompt it reads piped stdin; when both are present, stdin is appended inside a `<stdin>` block. `--ignore-user-config`, `--ignore-rules`, `--skip-git-repo-check`, and `--color` are accepted with explicit Codeworld semantics.
+- `exec --color <auto|always|never>` controls ANSI styling for human-readable tool progress on stderr. Auto mode requires a terminal and respects `NO_COLOR` and `TERM=dumb`; JSONL and final-message output remain uncolored.
+- Shell approval rules are loaded from `$CODEWORLD_HOME/rules/*.rules` and `<workspace>/.codeworld/rules/*.rules`. Rules use Codex-compatible `prefix_rule(...)` and `host_executable(...)` syntax; `forbid` takes precedence over `prompt`, then `allow`, and dynamic shell syntax is never auto-allowed. Use `codeworld exec --ignore-rules ...` to skip both rule locations.
 - `codeworld fork <session-id|--last>` clones a transcript into a new interactive session.
 - Running `codeworld resume` or `codeworld fork` without a session argument opens a numbered session picker. `--last` remains non-interactive, and trailing text is submitted as the first prompt after resume or fork.
 - `codeworld sessions rename <id|--last> <name>` or TUI `/rename <name>` assigns a unique session name; resume, fork, archive, unarchive, and delete accept names as well as IDs.
@@ -250,7 +268,7 @@ Inside the TUI:
 /model <name>  change the session model name
 /diff          show git diff
 /permissions   list session approvals
-/permissions <auto|read-only|full-access>
+/permissions <untrusted|on-request|never|auto|read-only|full-access>
                switch the current approval mode
 /mcp           list configured MCP servers
 /skills        list loaded project skills
@@ -453,9 +471,22 @@ disabled_tools = ["write"]
 
 For OAuth-capable HTTP servers, `codeworld mcp login <name>` discovers the
 protected-resource and authorization-server metadata, dynamically registers a
-public client, opens a PKCE authorization flow, and stores workspace-local
-tokens with restricted permissions. Runtime requests refresh expiring tokens
-automatically; `codeworld mcp logout <name>` deletes them.
+public client, opens a PKCE authorization flow, and stores user-level tokens
+under `$CODEWORLD_HOME/mcp-oauth/` with restricted permissions. Runtime requests
+refresh expiring tokens automatically and can still read legacy workspace
+tokens; `codeworld mcp logout <name>` deletes both locations.
+
+Codeworld can also run as an MCP server:
+
+```sh
+codeworld mcp-server
+```
+
+Its `codex` tool accepts `prompt`, `cwd`, `model`, `approval-policy`, `sandbox`,
+config overrides, and instruction overrides. It returns `threadId` and
+`content`; pass that thread id to `codex-reply` to continue the session. The
+stdio transport follows current MCP JSONL framing while the client continues to
+accept legacy `Content-Length` response frames.
 
 MCP tools are registered as:
 
@@ -495,8 +526,9 @@ separate search API key. It accepts a `query` and optional `limit` and returns
 numbered results with title, URL, and snippet.
 
 Because it performs network access, `web_search` is registered as a read action
-with network risk. The TUI and REPL permission flow can ask before the request
-is made.
+with network risk. Explicit global `--search` enables both sandbox network and
+native search without per-call approval; enabling network through config or
+`--network` alone retains the normal permission flow.
 
 ## Image Input
 
@@ -523,6 +555,12 @@ current session.
 
 Approval modes:
 
+- `untrusted`: automatically run trusted read-only shell commands and ask for
+  other commands.
+- `on-request`: allow ordinary sandboxed actions and ask for destructive or
+  network actions.
+- `never`: never request approval; actions outside the workspace remain denied
+  and the configured OS sandbox remains active.
 - `auto`: allow ordinary workspace actions and ask for high-risk actions.
 - `read-only`: allow reads and ask before writes, patches, or commands.
 - `full-access`: allow in-workspace and network actions without prompting for
@@ -534,8 +572,8 @@ Set the default in `.codeworld/config.toml`:
 approval_mode = "auto"
 ```
 
-Project config accepts only `auto` and `read-only`; select `full-access`
-interactively when it is intentionally needed.
+Project config accepts the sandbox-preserving modes but rejects `full-access`;
+select that legacy mode interactively when it is intentionally needed.
 
 ## Process sandbox
 

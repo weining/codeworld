@@ -10,11 +10,17 @@ import (
 )
 
 type Workspace struct {
-	Root string
+	Root            string
+	AdditionalRoots []string
 }
 
 // New 创建并返回对应组件，集中设置默认依赖和初始状态。
 func New(root string) (Workspace, error) {
+	return NewWithAdditional(root, nil)
+}
+
+// NewWithAdditional 创建包含额外允许目录的 workspace；相对目录基于主 workspace。
+func NewWithAdditional(root string, additional []string) (Workspace, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return Workspace{}, err
@@ -23,7 +29,38 @@ func New(root string) (Workspace, error) {
 	if err != nil {
 		return Workspace{}, err
 	}
-	return Workspace{Root: filepath.Clean(canonicalRoot)}, nil
+	w := Workspace{Root: filepath.Clean(canonicalRoot)}
+	seen := map[string]bool{w.Root: true}
+	for _, item := range additional {
+		if strings.TrimSpace(item) == "" {
+			return Workspace{}, fmt.Errorf("additional workspace directory is empty")
+		}
+		path := item
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(w.Root, path)
+		}
+		path, err = filepath.Abs(path)
+		if err != nil {
+			return Workspace{}, err
+		}
+		path, err = filepath.EvalSymlinks(path)
+		if err != nil {
+			return Workspace{}, fmt.Errorf("resolve additional workspace directory %q: %w", item, err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return Workspace{}, err
+		}
+		if !info.IsDir() {
+			return Workspace{}, fmt.Errorf("additional workspace path %q is not a directory", item)
+		}
+		path = filepath.Clean(path)
+		if !seen[path] {
+			seen[path] = true
+			w.AdditionalRoots = append(w.AdditionalRoots, path)
+		}
+	}
+	return w, nil
 }
 
 // Resolve 提供对外可复用的能力，并隐藏内部实现细节。
@@ -35,14 +72,36 @@ func (w Workspace) Resolve(path string) (string, error) {
 		resolved = filepath.Clean(filepath.Join(w.Root, path))
 	}
 
-	canonical, err := w.canonicalizeForSafety(resolved)
-	if err != nil {
-		return "", err
+	roots := append([]string{w.Root}, w.AdditionalRoots...)
+	candidate := resolved
+	matched := false
+	for _, root := range roots {
+		if containsRoot(root, candidate) {
+			matched = true
+			break
+		}
 	}
-	if !w.contains(canonical) {
-		return "", fmt.Errorf("path %q escapes workspace %q", path, w.Root)
+	if !matched {
+		canonicalCandidate, err := canonicalizeExistingPrefix(resolved)
+		if err != nil {
+			return "", err
+		}
+		candidate = canonicalCandidate
 	}
-	return canonical, nil
+	for _, root := range roots {
+		if !containsRoot(root, candidate) {
+			continue
+		}
+		canonical, err := w.canonicalizeForRoot(root, candidate)
+		if err != nil {
+			return "", err
+		}
+		if !w.contains(canonical) {
+			return "", fmt.Errorf("path %q escapes workspace %q", path, w.Root)
+		}
+		return canonical, nil
+	}
+	return "", fmt.Errorf("path %q escapes workspace %q", path, w.Root)
 }
 
 // Rel 提供对外可复用的能力，并隐藏内部实现细节。
@@ -54,6 +113,9 @@ func (w Workspace) Rel(path string) (string, error) {
 	rel, err := filepath.Rel(w.Root, resolved)
 	if err != nil {
 		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return filepath.ToSlash(resolved), nil
 	}
 	return filepath.ToSlash(rel), nil
 }
@@ -122,36 +184,35 @@ func (w Workspace) Summary(limit int) (string, error) {
 
 // contains 判断输入是否满足特定条件，并用于后续分支决策。
 func (w Workspace) contains(path string) bool {
-	rel, err := filepath.Rel(w.Root, path)
+	if containsRoot(w.Root, path) {
+		return true
+	}
+	for _, root := range w.AdditionalRoots {
+		if containsRoot(root, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsRoot(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
 	}
 	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel))
 }
 
-// canonicalizeForSafety 封装局部逻辑，保持调用方流程清晰。
-func (w Workspace) canonicalizeForSafety(path string) (string, error) {
+func (w Workspace) canonicalizeForRoot(root, path string) (string, error) {
 	clean := filepath.Clean(path)
-	rel, err := filepath.Rel(w.Root, clean)
+	rel, err := filepath.Rel(root, clean)
 	if err != nil {
 		return "", err
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		clean, err = canonicalizeExistingPrefix(clean)
-		if err != nil {
-			return "", err
-		}
-		rel, err = filepath.Rel(w.Root, clean)
-		if err != nil {
-			return "", err
-		}
-	}
 	if rel == "." {
-		return w.Root, nil
+		return root, nil
 	}
-
-	// 逐段解析路径并在遇到符号链接时重新校验边界，防止通过 symlink 跳出工作区。
-	current := w.Root
+	current := root
 	components := strings.Split(rel, string(filepath.Separator))
 	for i, component := range components {
 		if component == "" || component == "." {
@@ -160,7 +221,6 @@ func (w Workspace) canonicalizeForSafety(path string) (string, error) {
 		if component == ".." {
 			return "", fmt.Errorf("path %q escapes workspace %q", path, w.Root)
 		}
-
 		next := filepath.Join(current, component)
 		info, err := os.Lstat(next)
 		if err != nil {

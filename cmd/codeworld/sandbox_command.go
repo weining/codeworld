@@ -86,6 +86,7 @@ func runSandboxCommand(ctx context.Context, in io.Reader, out, stderr io.Writer,
 }
 
 func parseSandboxCommandArgs(args []string) (sandboxCommandOptions, error) {
+	args = expandLongOptionValues(args)
 	var opts sandboxCommandOptions
 	for i := 0; i < len(args); i++ {
 		arg := args[i]

@@ -17,6 +17,7 @@ import (
 	contextgraph "codeworld/internal/context/graph"
 	"codeworld/internal/context/indexer"
 	"codeworld/internal/context/summarizer"
+	"codeworld/internal/execpolicy"
 	"codeworld/internal/hooks"
 	"codeworld/internal/instructions"
 	"codeworld/internal/mcp"
@@ -38,12 +39,18 @@ type Options struct {
 	Model           string
 	SessionID       string
 	ResumeLast      bool
+	NewSession      bool
 	Ephemeral       bool
+	CompactPrompt   string
+	AdditionalDirs  []string
 	ApprovalMode    permissions.Mode
 	SandboxMode     sandbox.Mode
 	SandboxNetwork  *bool
 	ConfigOverrides []string
 	SkipUserConfig  bool
+	IgnoreRules     bool
+	NativeSearch    bool
+	BypassHookTrust bool
 	In              io.Reader
 	Out             io.Writer
 	Err             io.Writer
@@ -64,6 +71,8 @@ type Runtime struct {
 	ChildRunner      *agent.Runner
 	Hooks            *hooks.Runner
 	BaseSystemPrompt string
+	CompactPrompt    string
+	NativeSearch     bool
 	Diff             func(context.Context) (string, error)
 	In               io.Reader
 	Out              io.Writer
@@ -150,6 +159,7 @@ func (r *Runtime) MaybeSummarize(ctx context.Context) error {
 		MaxMessages: r.Config.SummaryMaxMessages,
 		MaxTokens:   r.Config.SummaryMaxTokens,
 		KeepRecent:  20,
+		Prompt:      r.CompactPrompt,
 	})
 	if err != nil {
 		return err
@@ -183,7 +193,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}
 	if opts.ApprovalMode != "" {
 		switch opts.ApprovalMode {
-		case permissions.ModeAuto, permissions.ModeReadOnly, permissions.ModeFullAccess:
+		case permissions.ModeAuto, permissions.ModeReadOnly, permissions.ModeFullAccess, permissions.ModeUntrusted, permissions.ModeOnRequest, permissions.ModeNever:
 		default:
 			return Runtime{}, fmt.Errorf("invalid approval mode %q", opts.ApprovalMode)
 		}
@@ -200,12 +210,23 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return Runtime{}, fmt.Errorf("resolve configured workspace: %w", err)
 		}
 	}
-	ws, err := workspace.New(workspaceRoot)
+	ws, err := workspace.NewWithAdditional(workspaceRoot, opts.AdditionalDirs)
 	if err != nil {
 		return Runtime{}, err
 	}
 	if opts.Err != nil && !ws.IsGitRepo() {
 		fmt.Fprintln(opts.Err, "warning: current workspace is not a git repository; patch workflows are safer in git repositories")
+	}
+	var execRules execpolicy.Set
+	if !opts.IgnoreRules {
+		home, err := config.Home("")
+		if err != nil {
+			return Runtime{}, err
+		}
+		execRules, err = execpolicy.Load(ws.Root, home)
+		if err != nil {
+			return Runtime{}, fmt.Errorf("load exec rules: %w", err)
+		}
 	}
 	sandboxMode := sandbox.Mode(cfg.SandboxMode)
 	if opts.SandboxMode != "" {
@@ -227,7 +248,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			fmt.Fprintln(opts.Err, "warning: danger-full-access disables OS filesystem and network sandboxing")
 		}
 	}
-	sandboxPolicy := sandbox.Policy{Mode: sandboxMode, Workspace: ws.Root, Network: sandboxNetwork}
+	sandboxPolicy := sandbox.Policy{Mode: sandboxMode, Workspace: ws.Root, WritableRoots: append([]string(nil), ws.AdditionalRoots...), Network: sandboxNetwork}
 	if err := sandboxPolicy.Validate(); err != nil {
 		return Runtime{}, err
 	}
@@ -271,7 +292,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		}
 	}
 	var sess session.Session
-	if opts.Ephemeral {
+	if opts.Ephemeral || opts.NewSession {
 		sess = session.New(ws.Root, cfg.Provider, cfg.Model)
 	} else {
 		sess, err = loadOrCreateSession(store, ws.Root, cfg.Provider, cfg.Model)
@@ -310,6 +331,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		return Runtime{}, err
 	}
 	for _, command := range hookRunner.Commands() {
+		if opts.BypassHookTrust {
+			continue
+		}
 		if err := authorizeExternal(ctx, permissions.Request{Action: permissions.ActionShell, Target: command, Risk: permissions.RiskExecute, Reason: "run workspace hook"}); err != nil {
 			return Runtime{}, err
 		}
@@ -415,10 +439,16 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return Runtime{}, err
 		}
 	}
+	childPolicy := permissions.Policy(permissions.ModePolicy{Mode: permissions.ModeReadOnly, AllowSearch: opts.NativeSearch})
+	runnerPolicy := permissions.Policy(permissions.ModePolicy{Mode: approvalMode, AllowSearch: opts.NativeSearch})
+	if len(execRules.Rules) > 0 {
+		childPolicy = execpolicy.Policy{Base: childPolicy, Set: execRules}
+		runnerPolicy = execpolicy.Policy{Base: runnerPolicy, Set: execRules}
+	}
 	*childRunner = agent.Runner{
 		Model:        client,
 		Tools:        childRegistry,
-		Policy:       permissions.ModePolicy{Mode: permissions.ModeReadOnly},
+		Policy:       childPolicy,
 		Hooks:        hookRunner,
 		MaxSteps:     cfg.MaxSteps,
 		ModelName:    modelName,
@@ -427,7 +457,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	runner := agent.Runner{
 		Model:        client,
 		Tools:        registry,
-		Policy:       permissions.ModePolicy{Mode: approvalMode},
+		Policy:       runnerPolicy,
 		Confirmer:    confirmer,
 		Hooks:        hookRunner,
 		MaxSteps:     cfg.MaxSteps,
@@ -468,6 +498,8 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		ChildRunner:      childRunner,
 		Hooks:            hookRunner,
 		BaseSystemPrompt: systemPrompt,
+		CompactPrompt:    opts.CompactPrompt,
+		NativeSearch:     opts.NativeSearch,
 		In:               opts.In,
 		Out:              opts.Out,
 		Err:              opts.Err,
@@ -477,6 +509,20 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return result.Content, err
 		},
 	}, nil
+}
+
+// SetApprovalMode updates the parent policy while preserving loaded exec rules.
+func (r *Runtime) SetApprovalMode(mode permissions.Mode) {
+	base := permissions.ModePolicy{Mode: mode, AllowSearch: r.NativeSearch}
+	switch current := r.Runner.Policy.(type) {
+	case execpolicy.Policy:
+		current.Base = base
+		r.Runner.Policy = current
+	case *execpolicy.Policy:
+		current.Base = base
+	default:
+		r.Runner.Policy = base
+	}
 }
 
 // Compact 手动压缩当前会话历史，并返回面向用户的结果文案。
@@ -496,6 +542,7 @@ func (r *Runtime) Compact(ctx context.Context) (string, error) {
 		MaxMessages: r.Config.SummaryMaxMessages,
 		MaxTokens:   r.Config.SummaryMaxTokens,
 		KeepRecent:  20,
+		Prompt:      r.CompactPrompt,
 	})
 	if err != nil {
 		return "", err

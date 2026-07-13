@@ -28,10 +28,11 @@ type shellTool struct {
 }
 
 type shellArgs struct {
-	Command   string `json:"command"`
-	Cwd       string `json:"cwd"`
-	TimeoutMS int64  `json:"timeout_ms"`
-	Reason    string `json:"reason"`
+	Command         string `json:"command"`
+	Cwd             string `json:"cwd"`
+	TimeoutMS       int64  `json:"timeout_ms"`
+	Reason          string `json:"reason"`
+	RequestApproval bool   `json:"request_approval"`
 }
 
 // NewShellTool 创建并返回对应组件，集中设置默认依赖和初始状态。
@@ -54,6 +55,9 @@ func (t shellTool) Definition() model.ToolDefinition {
 			"cwd":        map[string]any{"type": "string"},
 			"timeout_ms": map[string]any{"type": "integer", "minimum": 1},
 			"reason":     map[string]any{"type": "string"},
+			"request_approval": map[string]any{
+				"type": "boolean", "description": "Request user confirmation before running this command in on-request mode.",
+			},
 		}, []string{"command"}),
 	}
 }
@@ -72,10 +76,11 @@ func (t shellTool) PermissionRequest(args json.RawMessage) (permissions.Request,
 		reason = "shell"
 	}
 	return permissions.Request{
-		Action: permissions.ActionShell,
-		Target: parsed.Command,
-		Risk:   classifyShellRisk(parsed.Command),
-		Reason: reason,
+		Action:            permissions.ActionShell,
+		Target:            parsed.Command,
+		Risk:              classifyShellRisk(parsed.Command),
+		Reason:            reason,
+		ApprovalRequested: parsed.RequestApproval,
 	}, nil
 }
 

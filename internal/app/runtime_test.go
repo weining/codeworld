@@ -69,6 +69,51 @@ func TestNewRuntimeCanIgnoreUserConfig(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeLoadsAndCanIgnoreExecRules(t *testing.T) {
+	root, home := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(home, "rules", "default.rules"), "prefix_rule(pattern=[\"git\", \"status\"], decision=\"allow\")\n"+
+		"prefix_rule(pattern=[\"git\", \"push\"], decision=\"prompt\")")
+	t.Setenv("CODEWORLD_HOME", home)
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+
+	newRuntime := func(ignore bool) Runtime {
+		rt, err := NewRuntime(context.Background(), Options{
+			Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, Ephemeral: true, IgnoreRules: ignore,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rt
+	}
+	request := permissions.Request{Action: permissions.ActionShell, Risk: permissions.RiskExecute, Target: "git status"}
+
+	rt := newRuntime(false)
+	decision, err := rt.Runner.Policy.Check(context.Background(), request)
+	if err != nil || decision.Kind != permissions.DecisionAllow {
+		t.Fatalf("rules decision=%#v err=%v", decision, err)
+	}
+	if err := rt.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	rt = newRuntime(false)
+	rt.SetApprovalMode(permissions.ModeNever)
+	decision, err = rt.Runner.Policy.Check(context.Background(), permissions.Request{Action: permissions.ActionShell, Risk: permissions.RiskNetwork, Target: "git push"})
+	if err != nil || decision.Kind != permissions.DecisionAsk {
+		t.Fatalf("preserved rules decision=%#v err=%v", decision, err)
+	}
+	if err := rt.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ignored := newRuntime(true)
+	defer ignored.Close()
+	decision, err = ignored.Runner.Policy.Check(context.Background(), request)
+	if err != nil || decision.Kind != permissions.DecisionAsk {
+		t.Fatalf("ignored rules decision=%#v err=%v", decision, err)
+	}
+}
+
 // TestNewRuntimeBuildsREPLDependencies 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewRuntimeBuildsREPLDependencies(t *testing.T) {
 	root := t.TempDir()
@@ -209,6 +254,28 @@ func TestRuntimeRunsLifecycleHooks(t *testing.T) {
 	}
 	if _, err := NewRuntime(context.Background(), Options{Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}}); err == nil {
 		t.Fatal("NewRuntime trusted approvals loaded from workspace session")
+	}
+}
+
+func TestRuntimeCanExplicitlyBypassHookTrust(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, ".codeworld", "hooks.json"), `{
+		"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "printf bypassed > bypass.out"}]}]}
+	}`)
+	t.Setenv("DEEPSEEK_API_KEY", "test-key")
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root, In: strings.NewReader(""), Out: io.Discard, Err: io.Discard,
+		SandboxMode: sandbox.ModeDangerFullAccess, BypassHookTrust: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "bypass.out"))
+	if err != nil || string(data) != "bypassed" {
+		t.Fatalf("hook output=%q err=%v", data, err)
 	}
 }
 
@@ -619,6 +686,42 @@ Always check tests before completion.
 	}
 }
 
+func TestRuntimeNewSessionDoesNotReuseCurrentThread(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
+	store := session.NewStore(root)
+	existing := session.New(root, "deepseek", "deepseek-v4-pro")
+	if err := store.SaveCurrent(existing); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := NewRuntime(context.Background(), Options{Root: root, NewSession: true, In: strings.NewReader(""), Out: io.Discard, Err: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	if rt.Session.ID == existing.ID {
+		t.Fatalf("new session reused current id %s", existing.ID)
+	}
+}
+
+func TestRuntimePropagatesAdditionalWritableRoots(t *testing.T) {
+	root := t.TempDir()
+	extra := t.TempDir()
+	t.Setenv("CODEWORLD_HOME", t.TempDir())
+	rt, err := NewRuntime(context.Background(), Options{Root: root, AdditionalDirs: []string{extra}, In: strings.NewReader(""), Out: io.Discard, Err: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Close()
+	canonicalExtra, err := filepath.EvalSymlinks(extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rt.Workspace.AdditionalRoots) != 1 || rt.Workspace.AdditionalRoots[0] != canonicalExtra {
+		t.Fatalf("workspace = %#v", rt.Workspace)
+	}
+}
+
 // writeFile 是测试辅助函数，用于复用测试准备或断言逻辑。
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
@@ -658,27 +761,12 @@ func runAppFakeMCPServer() {
 			result = map[string]any{}
 		}
 		data, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
-		_, _ = fmt.Fprintf(os.Stdout, "Content-Length: %d\r\n\r\n%s", len(data), data)
+		_, _ = fmt.Fprintln(os.Stdout, string(data))
 	}
 }
 
 // readAppMCPMessage 是测试辅助函数，用于复用测试准备或断言逻辑。
 func readAppMCPMessage(reader *bufio.Reader) ([]byte, error) {
-	var length int
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		if _, err := fmt.Sscanf(line, "Content-Length: %d", &length); err != nil {
-			return nil, err
-		}
-	}
-	data := make([]byte, length)
-	_, err := io.ReadFull(reader, data)
-	return data, err
+	line, err := reader.ReadBytes('\n')
+	return []byte(strings.TrimRight(string(line), "\r\n")), err
 }

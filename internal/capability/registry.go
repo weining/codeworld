@@ -75,7 +75,7 @@ func Load(ctx context.Context, opts Options) (Loaded, error) {
 		loaded.Tools = append(loaded.Tools, tools.NewPluginToolWithSandbox(opts.Workspace, spec, opts.Sandbox))
 	}
 
-	mcpTools, clients, err := loadMCPTools(ctx, opts.Root, mcpServers, opts.AuthorizeExternal)
+	mcpTools, clients, err := loadMCPTools(ctx, opts.Root, home, mcpServers, opts.AuthorizeExternal)
 	if err != nil {
 		_ = CloseClients(loaded.MCPClients)
 		return Loaded{}, err
@@ -97,7 +97,7 @@ func CloseClients(clients []*mcp.Client) error {
 }
 
 // loadMCPTools 加载外部或项目内配置，并把原始数据转换为内部结构。
-func loadMCPTools(ctx context.Context, root string, servers []config.MCPServer, authorize func(context.Context, permissions.Request) error) ([]tools.Tool, []*mcp.Client, error) {
+func loadMCPTools(ctx context.Context, root, home string, servers []config.MCPServer, authorize func(context.Context, permissions.Request) error) ([]tools.Tool, []*mcp.Client, error) {
 	var out []tools.Tool
 	clients := make([]*mcp.Client, 0, len(servers))
 	for _, server := range servers {
@@ -127,7 +127,7 @@ func loadMCPTools(ctx context.Context, root string, servers []config.MCPServer, 
 		if server.URL != "" {
 			accessToken := ""
 			if server.BearerTokenEnvVar == "" || os.Getenv(server.BearerTokenEnvVar) == "" {
-				if token, tokenErr := mcp.RefreshOAuthToken(ctx, root, server.Name, nil); tokenErr == nil {
+				if token, tokenErr := mcp.RefreshOAuthTokenWithFallback(ctx, home, root, server.Name, nil); tokenErr == nil {
 					accessToken = token.AccessToken
 				} else if !errors.Is(tokenErr, os.ErrNotExist) {
 					_ = CloseClients(clients)

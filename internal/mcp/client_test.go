@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -167,6 +168,31 @@ func TestOAuthTokenStoreRoundTrips(t *testing.T) {
 	}
 }
 
+func TestOAuthTokenUserStorePrecedesWorkspaceFallback(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	if err := SaveOAuthToken(root, OAuthToken{ServerName: "docs", AccessToken: "workspace"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveUserOAuthToken(home, OAuthToken{ServerName: "docs", AccessToken: "user"}); err != nil {
+		t.Fatal(err)
+	}
+	token, err := RefreshOAuthTokenWithFallback(context.Background(), home, root, "docs", nil)
+	if err != nil || token.AccessToken != "user" {
+		t.Fatalf("user token=%#v err=%v", token, err)
+	}
+	if err := DeleteUserOAuthToken(home, "docs"); err != nil {
+		t.Fatal(err)
+	}
+	token, err = RefreshOAuthTokenWithFallback(context.Background(), home, root, "docs", nil)
+	if err != nil || token.AccessToken != "workspace" {
+		t.Fatalf("fallback token=%#v err=%v", token, err)
+	}
+	path, err := UserOAuthTokenPath(home, "docs")
+	if err != nil || path != filepath.Join(home, "mcp-oauth", "docs.json") {
+		t.Fatalf("user path=%q err=%v", path, err)
+	}
+}
+
 // TestOAuthLoginAndRefresh 验证发现、动态注册、PKCE 回调和 refresh token 构成完整链路。
 func TestOAuthLoginAndRefresh(t *testing.T) {
 	var server *httptest.Server
@@ -291,7 +317,7 @@ func TestOAuthCallbackRequiresLoopbackHost(t *testing.T) {
 func runFakeServer() {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		msg, err := readFramed(reader)
+		msg, err := readJSONLine(reader)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Fprintln(os.Stderr, err)
@@ -328,30 +354,24 @@ func runFakeServer() {
 			result = map[string]any{}
 		}
 		data, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": result})
-		_, _ = fmt.Fprintf(os.Stdout, "Content-Length: %d\r\n\r\n%s", len(data), data)
+		_, _ = fmt.Fprintln(os.Stdout, string(data))
 	}
 }
 
-// readFramed 是测试辅助函数，用于复用测试准备或断言逻辑。
-func readFramed(reader *bufio.Reader) ([]byte, error) {
-	var length int
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		if _, err := fmt.Sscanf(line, "Content-Length: %d", &length); err != nil {
-			return nil, err
-		}
+// readJSONLine 是测试辅助函数，用于模拟当前 MCP stdio transport。
+func readJSONLine(reader *bufio.Reader) ([]byte, error) {
+	line, err := reader.ReadBytes('\n')
+	return bytesTrimLine(line), err
+}
+
+func TestReadMessageAcceptsLegacyContentLength(t *testing.T) {
+	payload := []byte(`{"jsonrpc":"2.0","id":1,"result":{}}`)
+	input := fmt.Sprintf("Content-Length: %d\r\nContent-Type: application/json\r\n\r\n%s", len(payload), payload)
+	got, err := readMessage(bufio.NewReader(strings.NewReader(input)))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if length <= 0 {
-		return nil, fmt.Errorf("missing content length")
+	if string(got) != string(payload) {
+		t.Fatalf("message = %s", got)
 	}
-	data := make([]byte, length)
-	_, err := io.ReadFull(reader, data)
-	return data, err
 }

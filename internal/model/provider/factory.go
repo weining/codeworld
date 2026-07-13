@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"codeworld/internal/codexauth"
+	"codeworld/internal/config"
 	"codeworld/internal/model"
 	"codeworld/internal/model/anthropic"
 	"codeworld/internal/model/codex"
@@ -81,8 +82,16 @@ func NewClient(cfg Config) (model.Client, error) {
 
 // resolveCodexCredentials 读取并按需刷新 OpenClaw 风格 Codex OAuth 凭据。
 func resolveCodexCredentials(root string) (codexauth.Credentials, error) {
-	store := codexauth.Store{Root: root}
+	home, err := config.Home("")
+	if err != nil {
+		return codexauth.Credentials{}, err
+	}
+	store := codexauth.UserStore(home)
 	cred, err := store.Load()
+	if err != nil {
+		store = codexauth.Store{Root: root}
+		cred, err = store.Load()
+	}
 	if err != nil {
 		return codexauth.Credentials{}, fmt.Errorf("codex OAuth credentials not found; run codeworld auth codex login: %w", err)
 	}

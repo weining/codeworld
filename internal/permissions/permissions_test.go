@@ -104,3 +104,44 @@ func TestModePolicySupportsReadOnlyAndFullAccess(t *testing.T) {
 		t.Fatalf("full access network decision = %#v, want allow", decision)
 	}
 }
+
+func TestModePolicySupportsCodexApprovalModes(t *testing.T) {
+	requests := map[string]Request{
+		"read shell":    {Action: ActionShell, Risk: RiskRead, Target: "git status"},
+		"write shell":   {Action: ActionShell, Risk: RiskWrite, Target: "go fmt ./..."},
+		"network shell": {Action: ActionShell, Risk: RiskNetwork, Target: "git push"},
+		"outside":       {Action: ActionRead, Risk: RiskOutsideWorkspace, Target: "../secret"},
+		"requested":     {Action: ActionShell, Risk: RiskExecute, Target: "go test ./...", ApprovalRequested: true},
+	}
+	cases := []struct {
+		mode Mode
+		name string
+		want DecisionKind
+	}{
+		{ModeUntrusted, "read shell", DecisionAllow},
+		{ModeUntrusted, "write shell", DecisionAsk},
+		{ModeOnRequest, "write shell", DecisionAllow},
+		{ModeOnRequest, "network shell", DecisionAsk},
+		{ModeOnRequest, "requested", DecisionAsk},
+		{ModeNever, "network shell", DecisionAllow},
+		{ModeNever, "outside", DecisionDeny},
+	}
+	for _, tc := range cases {
+		decision, err := (ModePolicy{Mode: tc.mode}).Check(context.Background(), requests[tc.name])
+		if err != nil || decision.Kind != tc.want {
+			t.Fatalf("mode=%s request=%s decision=%#v err=%v, want %s", tc.mode, tc.name, decision, err, tc.want)
+		}
+	}
+}
+
+func TestModePolicyCanAllowOnlyExplicitNativeSearch(t *testing.T) {
+	policy := ModePolicy{Mode: ModeReadOnly, AllowSearch: true}
+	search, err := policy.Check(context.Background(), Request{Action: ActionRead, Risk: RiskNetwork, Target: "current news", Reason: "web_search"})
+	if err != nil || search.Kind != DecisionAllow {
+		t.Fatalf("search=%#v err=%v", search, err)
+	}
+	other, err := policy.Check(context.Background(), Request{Action: ActionShell, Risk: RiskNetwork, Target: "curl example.com", Reason: "shell"})
+	if err != nil || other.Kind != DecisionAsk {
+		t.Fatalf("other network=%#v err=%v", other, err)
+	}
+}

@@ -12,6 +12,7 @@ type Options struct {
 	MaxMessages int
 	MaxTokens   int
 	KeepRecent  int
+	Prompt      string
 }
 
 // ShouldSummarize 提供对外可复用的能力，并隐藏内部实现细节。
@@ -54,7 +55,7 @@ func Summarize(ctx context.Context, client model.Client, summary string, message
 	recent := append([]model.Message(nil), messages[len(messages)-keepRecent:]...)
 	older := messages[:len(messages)-keepRecent]
 
-	prompt := buildPrompt(summary, older)
+	prompt := buildPrompt(summary, older, opts.Prompt)
 	resp, err := client.Generate(ctx, model.GenerateRequest{
 		Messages: []model.Message{
 			{Role: model.RoleSystem, Content: "You summarize coding-agent conversations accurately and concisely."},
@@ -68,9 +69,13 @@ func Summarize(ctx context.Context, client model.Client, summary string, message
 }
 
 // buildPrompt 构建运行所需的数据结构，并在过程中收集必要的上下文。
-func buildPrompt(summary string, messages []model.Message) string {
+func buildPrompt(summary string, messages []model.Message, custom string) string {
 	var b strings.Builder
-	b.WriteString("Summarize the older conversation for a coding agent. Preserve user goals, files changed, commands run, decisions, and unresolved tasks.\n")
+	if strings.TrimSpace(custom) == "" {
+		custom = "Summarize the older conversation for a coding agent. Preserve user goals, files changed, commands run, decisions, and unresolved tasks."
+	}
+	b.WriteString(strings.TrimSpace(custom))
+	b.WriteByte('\n')
 	if summary != "" {
 		b.WriteString("\nPrevious summary:\n")
 		b.WriteString(summary)

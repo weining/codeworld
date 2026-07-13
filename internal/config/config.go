@@ -111,7 +111,11 @@ func LoadWithOptions(root string, opts LoadOptions) (Config, error) {
 		if err := validateProfileName(profile); err != nil {
 			return Config{}, err
 		}
-		if err := loadConfigFile(filepath.Join(home, "profiles", profile+".toml"), &cfg, true, true); err != nil {
+		profilePath, err := resolveProfilePath(home, profile)
+		if err != nil {
+			return Config{}, err
+		}
+		if err := loadConfigFile(profilePath, &cfg, true, true); err != nil {
 			return Config{}, err
 		}
 		cfg.Profile = profile
@@ -126,6 +130,22 @@ func LoadWithOptions(root string, opts LoadOptions) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func resolveProfilePath(home, profile string) (string, error) {
+	primary := filepath.Join(home, profile+".config.toml")
+	if _, err := os.Stat(primary); err == nil {
+		return primary, nil
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	legacy := filepath.Join(home, "profiles", profile+".toml")
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy, nil
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	return primary, nil
 }
 
 func applyOverrides(cfg *Config, overrides []string) error {
@@ -390,7 +410,7 @@ func validate(cfg Config) error {
 		}
 	}
 	switch cfg.ApprovalMode {
-	case "", "auto", "read-only", "full-access":
+	case "", "auto", "read-only", "full-access", "untrusted", "on-request", "never":
 	default:
 		return fmt.Errorf("invalid approval_mode %q", cfg.ApprovalMode)
 	}

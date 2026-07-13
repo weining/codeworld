@@ -15,8 +15,8 @@ import (
 	"codeworld/internal/sandbox"
 )
 
-const execUsage = "usage: codeworld exec [resume <session-id|--last>] [-c <key=value>] [--strict-config] [--json] [--ephemeral] [--approval-mode <auto|read-only|full-access>] [--sandbox <read-only|workspace-write|danger-full-access>] [--network|--no-network] [--image <path>] [--output-schema <path>] [-o <path>] <task|->"
-const reviewUsage = "usage: codeworld review [--uncommitted|--base <branch>|--commit <sha>] [--title <title>] [-c <key=value>] [--strict-config] [--json] [--output-schema <path>] [-o <path>] [instructions]"
+const execUsage = "usage: codeworld exec [resume <session-id|--last>] [-c <key=value>] [--enable <feature>] [--disable <feature>] [--strict-config] [--json] [--ephemeral] [--approval-mode <untrusted|on-request|never|auto|read-only|full-access>] [--sandbox <read-only|workspace-write|danger-full-access>] [--network|--no-network] [--image <path>] [--output-schema <path>] [-o <path>] <task|->"
+const reviewUsage = "usage: codeworld review [--uncommitted|--base <branch>|--commit <sha>] [--title <title>] [-c <key=value>] [--enable <feature>] [--disable <feature>] [--strict-config] [--json] [--output-schema <path>] [-o <path>] [instructions]"
 
 type automationOptions struct {
 	prompt       string
@@ -39,13 +39,28 @@ type automationOptions struct {
 	ignoreRules  bool
 	color        string
 	stdinRead    bool
+	oss          bool
+	local        string
+	bypass       bool
+	bypassHooks  bool
+	addDirs      []string
 }
 
 func runExecCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, root string, global globalOptions, args []string) error {
+	if len(args) == 1 {
+		switch args[0] {
+		case "--version", "-V":
+			_, err := fmt.Fprintln(out, buildVersionString())
+			return err
+		case "--help", "-h", "help":
+			return printExecHelp(out)
+		}
+	}
 	opts, err := parseExecArgs(in, args)
 	if err != nil {
 		return err
 	}
+	opts.images = append(append([]model.ContentPart(nil), global.Images...), opts.images...)
 	root, global, err = applyAutomationLocation(root, global, opts)
 	if err != nil {
 		return err
@@ -61,6 +76,7 @@ func runExecCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, ro
 	return withRuntime(rt, func(rt *app.Runtime) error {
 		result, err := runmode.Execute(ctx, rt, opts.prompt, runmode.Options{
 			Images: opts.images, JSON: opts.json, Ephemeral: opts.ephemeral, OutputSchema: opts.outputSchema,
+			Color: !opts.json && shouldUseExecColor(opts.color, stderr),
 		})
 		if err != nil {
 			return err
@@ -85,6 +101,23 @@ func runtimeOptionsForAutomation(root string, global globalOptions, in io.Reader
 	}
 	runtimeOpts.ConfigOverrides = append(runtimeOpts.ConfigOverrides, opts.config...)
 	runtimeOpts.SkipUserConfig = opts.ignoreUser
+	runtimeOpts.IgnoreRules = opts.ignoreRules
+	runtimeOpts.BypassHookTrust = runtimeOpts.BypassHookTrust || opts.bypassHooks
+	if len(opts.addDirs) > 0 {
+		runtimeOpts.AdditionalDirs = append(runtimeOpts.AdditionalDirs, opts.addDirs...)
+	}
+	if opts.bypass {
+		runtimeOpts.ApprovalMode = permissions.ModeFullAccess
+		runtimeOpts.SandboxMode = sandbox.ModeDangerFullAccess
+		runtimeOpts.SandboxNetwork = nil
+	}
+	if opts.oss {
+		runtimeOpts.ConfigOverrides = append(runtimeOpts.ConfigOverrides, "provider=local")
+		if opts.local != "" {
+			baseURL, _ := localProviderURL(opts.local)
+			runtimeOpts.ConfigOverrides = append(runtimeOpts.ConfigOverrides, "local_base_url="+baseURL)
+		}
+	}
 	if runtimeOpts.SandboxMode == sandbox.ModeDangerFullAccess && runtimeOpts.SandboxNetwork != nil {
 		return app.Options{}, fmt.Errorf("network options cannot be combined with danger-full-access")
 	}
@@ -121,11 +154,14 @@ func parseExecArgs(in io.Reader, args []string) (automationOptions, error) {
 }
 
 func runReviewCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, root string, global globalOptions, args []string) error {
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-h" || args[0] == "help") {
+		return printReviewHelp(out)
+	}
 	target, automation, err := parseReviewArgs(in, args)
 	if err != nil {
 		return err
 	}
-	if automation.approvalMode != "" || automation.sandboxMode != "" || automation.network != nil {
+	if automation.approvalMode != "" || automation.sandboxMode != "" || automation.network != nil || automation.bypass || global.Bypass {
 		return fmt.Errorf("review always runs in read-only permissions and sandboxing")
 	}
 	root, global, err = applyAutomationLocation(root, global, automation)
@@ -136,20 +172,30 @@ func runReviewCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, 
 	if err != nil {
 		return err
 	}
-	network := false
-	runtimeOpts := runtimeOptionsFromGlobal(root, globalOptions{Profile: global.Profile, Model: global.Model}, in, out, stderr)
+	network := global.Search
+	runtimeOpts := runtimeOptionsFromGlobal(root, globalOptions{Profile: global.Profile, Model: global.Model, Config: global.Config, BypassHooks: global.BypassHooks, AddDirs: global.AddDirs}, in, out, stderr)
 	runtimeOpts.Ephemeral = true
 	runtimeOpts.ApprovalMode = permissions.ModeReadOnly
 	runtimeOpts.SandboxMode = sandbox.ModeReadOnly
 	runtimeOpts.SandboxNetwork = &network
+	runtimeOpts.NativeSearch = global.Search
 	runtimeOpts.ConfigOverrides = append(runtimeOpts.ConfigOverrides, automation.config...)
+	if automation.oss {
+		runtimeOpts.ConfigOverrides = append(runtimeOpts.ConfigOverrides, "provider=local")
+		if automation.local != "" {
+			baseURL, _ := localProviderURL(automation.local)
+			runtimeOpts.ConfigOverrides = append(runtimeOpts.ConfigOverrides, "local_base_url="+baseURL)
+		}
+	}
 	runtimeOpts.SkipUserConfig = automation.ignoreUser
+	runtimeOpts.IgnoreRules = automation.ignoreRules
+	runtimeOpts.BypassHookTrust = runtimeOpts.BypassHookTrust || automation.bypassHooks
+	runtimeOpts.AdditionalDirs = append(runtimeOpts.AdditionalDirs, automation.addDirs...)
 	rt, err := app.NewRuntime(ctx, runtimeOpts)
 	if err != nil {
 		return err
 	}
 	return withRuntime(rt, func(rt *app.Runtime) error {
-		rt.Runner.Policy = permissions.ModePolicy{Mode: permissions.ModeReadOnly}
 		rt.Runner.SystemPrompt += "\n\nReview mode: inspect and report only. Do not modify files."
 		result, err := runmode.Execute(ctx, rt, prompt, runmode.Options{
 			JSON: automation.json, Ephemeral: true, OutputSchema: automation.outputSchema,
@@ -162,6 +208,7 @@ func runReviewCommand(ctx context.Context, in io.Reader, out, stderr io.Writer, 
 }
 
 func parseAutomationArgs(in io.Reader, args []string, usage string, allowImages, requirePrompt bool) (automationOptions, error) {
+	args = expandLongOptionValues(args)
 	var opts automationOptions
 	var promptParts []string
 	for i := 0; i < len(args); i++ {
@@ -174,6 +221,16 @@ func parseAutomationArgs(in io.Reader, args []string, usage string, allowImages,
 			}
 			opts.config = append(opts.config, args[i+1])
 			i++
+		case "--enable", "--disable":
+			if i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
+				return automationOptions{}, fmt.Errorf("%s requires a feature name", args[i])
+			}
+			key, err := configurableFeatureKey(args[i+1])
+			if err != nil {
+				return automationOptions{}, err
+			}
+			opts.config = append(opts.config, fmt.Sprintf("%s=%t", key, args[i] == "--enable"))
+			i++
 		case "--strict-config":
 			if opts.strict {
 				return automationOptions{}, fmt.Errorf("--strict-config may be specified only once")
@@ -184,6 +241,20 @@ func parseAutomationArgs(in io.Reader, args []string, usage string, allowImages,
 				return automationOptions{}, fmt.Errorf("%s", usage)
 			}
 			opts.modelName = args[i+1]
+			i++
+		case "--oss":
+			if opts.oss {
+				return automationOptions{}, fmt.Errorf("--oss may be specified only once")
+			}
+			opts.oss = true
+		case "--local-provider":
+			if i+1 >= len(args) || opts.local != "" {
+				return automationOptions{}, fmt.Errorf("--local-provider requires one of ollama or lmstudio")
+			}
+			if _, err := localProviderURL(args[i+1]); err != nil {
+				return automationOptions{}, err
+			}
+			opts.local, opts.oss = args[i+1], true
 			i++
 		case "--profile", "-p":
 			if i+1 >= len(args) || args[i+1] == "" || opts.profile != "" {
@@ -197,10 +268,18 @@ func parseAutomationArgs(in io.Reader, args []string, usage string, allowImages,
 			}
 			opts.workingDir = args[i+1]
 			i++
+		case "--add-dir":
+			if i+1 >= len(args) || strings.TrimSpace(args[i+1]) == "" {
+				return automationOptions{}, fmt.Errorf("--add-dir requires a directory")
+			}
+			opts.addDirs = append(opts.addDirs, args[i+1])
+			i++
 		case "--ignore-user-config":
 			opts.ignoreUser = true
-		case "--ignore-rules", "--skip-git-repo-check":
+		case "--ignore-rules":
 			opts.ignoreRules = true
+		case "--skip-git-repo-check":
+			// Codeworld already allows exec outside a Git repository.
 		case "--color":
 			if i+1 >= len(args) || opts.color != "" {
 				return automationOptions{}, fmt.Errorf("%s", usage)
@@ -241,6 +320,16 @@ func parseAutomationArgs(in io.Reader, args []string, usage string, allowImages,
 			}
 			enabled := args[i] == "--network"
 			opts.network = &enabled
+		case "--dangerously-bypass-approvals-and-sandbox":
+			if opts.bypass {
+				return automationOptions{}, fmt.Errorf("--dangerously-bypass-approvals-and-sandbox may be specified only once")
+			}
+			opts.bypass = true
+		case "--dangerously-bypass-hook-trust":
+			if opts.bypassHooks {
+				return automationOptions{}, fmt.Errorf("--dangerously-bypass-hook-trust may be specified only once")
+			}
+			opts.bypassHooks = true
 		case "--image", "-i":
 			if !allowImages || i+1 >= len(args) {
 				return automationOptions{}, fmt.Errorf("%s", usage)
@@ -298,10 +387,41 @@ func parseAutomationArgs(in io.Reader, args []string, usage string, allowImages,
 	if opts.sandboxMode == sandbox.ModeDangerFullAccess && opts.network != nil {
 		return automationOptions{}, fmt.Errorf("--network and --no-network cannot be combined with danger-full-access")
 	}
+	if opts.bypass && (opts.approvalMode != "" || opts.sandboxMode != "" || opts.network != nil) {
+		return automationOptions{}, fmt.Errorf("dangerous bypass cannot be combined with approval, sandbox, or network options")
+	}
 	if requirePrompt && opts.prompt == "" {
 		return automationOptions{}, fmt.Errorf("%s", usage)
 	}
 	return opts, nil
+}
+
+func printExecHelp(out io.Writer) error {
+	_, err := fmt.Fprintln(out, execUsage)
+	return err
+}
+
+func printReviewHelp(out io.Writer) error {
+	_, err := fmt.Fprintln(out, reviewUsage)
+	return err
+}
+
+func shouldUseExecColor(mode string, writer io.Writer) bool {
+	switch mode {
+	case "always":
+		return true
+	case "never":
+		return false
+	}
+	if _, disabled := os.LookupEnv("NO_COLOR"); disabled || os.Getenv("TERM") == "dumb" {
+		return false
+	}
+	file, ok := writer.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func applyAutomationLocation(root string, global globalOptions, opts automationOptions) (string, globalOptions, error) {
@@ -342,6 +462,7 @@ func readAutomationStdin(in io.Reader) (string, error) {
 }
 
 func parseReviewArgs(in io.Reader, args []string) (review.Target, automationOptions, error) {
+	args = expandLongOptionValues(args)
 	var target review.Target
 	var remaining []string
 	for i := 0; i < len(args); i++ {

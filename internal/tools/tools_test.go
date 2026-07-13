@@ -821,6 +821,21 @@ func TestShellPermissionRequestUsesReason(t *testing.T) {
 	}
 }
 
+func TestShellPermissionRequestCanAskInOnRequestMode(t *testing.T) {
+	ws := newTestWorkspace(t)
+	req, err := NewShellTool(ws).PermissionRequest(json.RawMessage(`{"command":"go test ./...","request_approval":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !req.ApprovalRequested {
+		t.Fatalf("request = %#v, want explicit approval request", req)
+	}
+	decision, err := (permissions.ModePolicy{Mode: permissions.ModeOnRequest}).Check(context.Background(), req)
+	if err != nil || decision.Kind != permissions.DecisionAsk {
+		t.Fatalf("decision=%#v err=%v", decision, err)
+	}
+}
+
 // TestShellPermissionRequestClassifiesCommonRisks 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestShellPermissionRequestClassifiesCommonRisks(t *testing.T) {
 	ws := newTestWorkspace(t)

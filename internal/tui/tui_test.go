@@ -54,12 +54,15 @@ func TestRunReturnsWithoutTerminalRendererInTestMode(t *testing.T) {
 		Out:       &out,
 	}
 
-	err := RunWithOptions(context.Background(), &rt, Options{TestMode: true})
+	err := RunWithOptions(context.Background(), &rt, Options{TestMode: true, InitialImages: []model.ContentPart{{Type: model.ContentPartImage, MediaType: "image/png"}}})
 	if err != nil {
 		t.Fatalf("RunWithOptions returned error: %v", err)
 	}
 	if !strings.Contains(out.String(), "deepseek-v4-pro") {
 		t.Fatalf("output = %q, want model status", out.String())
+	}
+	if !strings.Contains(out.String(), "1 image") {
+		t.Fatalf("output = %q, want pending image status", out.String())
 	}
 }
 
@@ -674,7 +677,7 @@ func TestHandleGoalPlanAndCompactCommands(t *testing.T) {
 func TestHandlePermissionsPersistsSessionMode(t *testing.T) {
 	root := t.TempDir()
 	rt := app.Runtime{Store: session.NewStore(root), Session: session.New(root, "deepseek", "deepseek-v4-pro")}
-	m, quit := mustHandleCommand(t, NewModel(&rt), "/permissions read-only")
+	m, quit := mustHandleCommand(t, NewModel(&rt), "/permissions never")
 	if quit {
 		t.Fatal("permissions command requested quit")
 	}
@@ -682,8 +685,8 @@ func TestHandlePermissionsPersistsSessionMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCurrent: %v", err)
 	}
-	if saved.ApprovalMode != "read-only" {
-		t.Fatalf("approval mode = %q, want read-only", saved.ApprovalMode)
+	if saved.ApprovalMode != "never" {
+		t.Fatalf("approval mode = %q, want never", saved.ApprovalMode)
 	}
 }
 

@@ -21,6 +21,9 @@ func TestPolicyValidate(t *testing.T) {
 	if err := (Policy{Mode: ModeReadOnly, Workspace: "relative"}).Validate(); err == nil {
 		t.Fatal("expected relative workspace error")
 	}
+	if err := (Policy{Mode: ModeWorkspaceWrite, Workspace: root, WritableRoots: []string{"relative"}}).Validate(); err == nil {
+		t.Fatal("relative writable root accepted")
+	}
 }
 
 func TestFullAccessDoesNotWrapCommand(t *testing.T) {

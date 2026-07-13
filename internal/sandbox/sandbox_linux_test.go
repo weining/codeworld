@@ -20,3 +20,15 @@ func TestLinuxWorkspaceAndNetworkIsolationArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestLinuxBindsAdditionalWritableRoot(t *testing.T) {
+	root := t.TempDir()
+	extra := t.TempDir()
+	_, args, err := platformCommand(Policy{Mode: ModeWorkspaceWrite, Workspace: root, WritableRoots: []string{extra}}, root, "sh", nil)
+	if err != nil {
+		t.Skip(err)
+	}
+	if joined := strings.Join(args, " "); !strings.Contains(joined, "--bind "+extra+" "+extra) {
+		t.Fatalf("sandbox arguments %q do not bind additional root", joined)
+	}
+}

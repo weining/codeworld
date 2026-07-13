@@ -145,6 +145,14 @@ func TestStoreLoadSaveCredentials(t *testing.T) {
 	}
 }
 
+func TestUserStoreUsesCodeworldHomeLayout(t *testing.T) {
+	home := t.TempDir()
+	store := UserStore(home)
+	if want := filepath.Join(home, "auth", "codex.json"); store.Path() != want {
+		t.Fatalf("path = %q, want %q", store.Path(), want)
+	}
+}
+
 // TestStoreDeleteCredentials 验证删除操作不会因为凭据已不存在而失败。
 func TestStoreDeleteCredentials(t *testing.T) {
 	store := Store{Root: t.TempDir()}

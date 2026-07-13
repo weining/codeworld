@@ -18,10 +18,10 @@ func TestDebugModelsAndPromptInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	if err := runDebugCommand(context.Background(), &out, root, globalOptions{}, []string{"models", "--bundled"}); err != nil {
+	if err := runDebugCommand(context.Background(), &out, root, globalOptions{Model: "override-model"}, []string{"models", "--bundled"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "demo-model") {
+	if !strings.Contains(out.String(), "override-model") || strings.Contains(out.String(), "demo-model") {
 		t.Fatalf("models = %s", out.String())
 	}
 	out.Reset()

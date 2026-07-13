@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
 
 	"codeworld/internal/codexauth"
+	"codeworld/internal/config"
 )
 
 type codexAuthStatus struct {
@@ -64,7 +66,14 @@ func runCodexAuthStatus(out io.Writer, root string, args []string) error {
 }
 
 func inspectCodexAuth(root string, now time.Time) (codexAuthStatus, error) {
-	cred, err := (codexauth.Store{Root: root}).Load()
+	home, err := config.Home("")
+	if err != nil {
+		return codexAuthStatus{}, err
+	}
+	cred, err := codexauth.UserStore(home).Load()
+	if err != nil {
+		cred, err = (codexauth.Store{Root: root}).Load()
+	}
 	if err != nil {
 		return codexAuthStatus{}, err
 	}
@@ -94,10 +103,16 @@ func writeCodexAuthStatus(out io.Writer, status codexAuthStatus, jsonOutput bool
 }
 
 func runCodexAuthLogout(out io.Writer, root string) error {
-	removed, err := (codexauth.Store{Root: root}).Delete()
+	home, err := config.Home("")
 	if err != nil {
 		return err
 	}
+	removedUser, userErr := codexauth.UserStore(home).Delete()
+	removedWorkspace, workspaceErr := (codexauth.Store{Root: root}).Delete()
+	if err := errors.Join(userErr, workspaceErr); err != nil {
+		return err
+	}
+	removed := removedUser || removedWorkspace
 	if !removed {
 		_, err = fmt.Fprintln(out, "Codex OAuth: already logged out")
 		return err

@@ -23,11 +23,12 @@ const (
 )
 
 type Request struct {
-	Action  Action
-	Target  string
-	Risk    Risk
-	Reason  string
-	Preview string
+	Action            Action
+	Target            string
+	Risk              Risk
+	Reason            string
+	Preview           string
+	ApprovalRequested bool
 }
 
 type DecisionKind string
@@ -53,10 +54,14 @@ const (
 	ModeAuto       Mode = "auto"
 	ModeReadOnly   Mode = "read-only"
 	ModeFullAccess Mode = "full-access"
+	ModeUntrusted  Mode = "untrusted"
+	ModeOnRequest  Mode = "on-request"
+	ModeNever      Mode = "never"
 )
 
 type ModePolicy struct {
-	Mode Mode
+	Mode        Mode
+	AllowSearch bool
 }
 
 // Check 根据当前 approval mode 执行权限判定。
@@ -64,7 +69,34 @@ func (p ModePolicy) Check(ctx context.Context, req Request) (Decision, error) {
 	if err := ctx.Err(); err != nil {
 		return Decision{}, err
 	}
+	if p.AllowSearch && req.Action == ActionRead && req.Risk == RiskNetwork && req.Reason == "web_search" {
+		return Decision{Kind: DecisionAllow, Reason: "native web search was enabled for this invocation"}, nil
+	}
 	switch p.Mode {
+	case ModeUntrusted:
+		if req.Risk == RiskOutsideWorkspace {
+			return Decision{Kind: DecisionDeny, Reason: "path is outside the workspace"}, nil
+		}
+		if req.Action == ActionShell && req.Risk == RiskRead {
+			return Decision{Kind: DecisionAllow, Reason: "untrusted mode allows trusted read commands"}, nil
+		}
+		return AutoPolicy{}.Check(ctx, req)
+	case ModeOnRequest:
+		if req.Risk == RiskOutsideWorkspace {
+			return Decision{Kind: DecisionDeny, Reason: "path is outside the workspace"}, nil
+		}
+		if req.ApprovalRequested {
+			return Decision{Kind: DecisionAsk, Reason: "the model requested confirmation"}, nil
+		}
+		if req.Risk == RiskDestructive || req.Risk == RiskNetwork {
+			return Decision{Kind: DecisionAsk, Reason: "on-request mode requires confirmation for high-risk actions"}, nil
+		}
+		return Decision{Kind: DecisionAllow, Reason: "on-request mode allows sandboxed actions"}, nil
+	case ModeNever:
+		if req.Risk == RiskOutsideWorkspace {
+			return Decision{Kind: DecisionDeny, Reason: "path is outside the workspace"}, nil
+		}
+		return Decision{Kind: DecisionAllow, Reason: "never mode does not request confirmation"}, nil
 	case ModeReadOnly:
 		if req.Action == ActionRead && req.Risk == RiskRead {
 			return Decision{Kind: DecisionAllow, Reason: "read-only mode allows reads"}, nil
