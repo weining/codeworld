@@ -59,6 +59,8 @@ func runWithIO(in io.Reader, out io.Writer, stderr io.Writer, args []string) err
 			return runMCPCommand(out, root, global, args[1:])
 		case "mcp-server":
 			return runMCPServerCommand(context.Background(), in, out, root, global, args[1:])
+		case "app-server":
+			return runAppServerCommand(context.Background(), in, out, stderr, root, global, args[1:])
 		case "plugin":
 			return runPluginCommand(out, args[1:])
 		case "features":
@@ -194,6 +196,7 @@ Usage:
   codeworld logout                  Remove user-level Codex OAuth credentials
   codeworld mcp <command>           Manage user-level MCP servers
   codeworld mcp-server              Start Codeworld as a stdio MCP server
+  codeworld app-server [options]    Start the Codex-compatible app server (stdio)
   codeworld plugin <command>        Manage Codex-compatible plugins and marketplaces
   codeworld features <command>      Inspect or update supported feature flags
   codeworld debug <command>         Inspect the effective model selection or prompt input

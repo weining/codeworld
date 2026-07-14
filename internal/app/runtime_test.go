@@ -69,6 +69,66 @@ func TestNewRuntimeCanIgnoreUserConfig(t *testing.T) {
 	}
 }
 
+func TestNewRuntimeLoadsConfiguredProviderProfile(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, "config.toml"), "provider = \"profile:local\"")
+	writeFile(t, filepath.Join(home, "providers.json"), "{\n"+
+		"  \"version\": 1,\n"+
+		"  \"profiles\": [\n"+
+		"    {\n"+
+		"      \"id\": \"local\",\n"+
+		"      \"name\": \"Local Ollama\",\n"+
+		"      \"api_format\": \"openai\",\n"+
+		"      \"base_url\": \"http://127.0.0.1:11434/v1\",\n"+
+		"      \"model\": \"qwen3-coder\"\n"+
+		"    }\n"+
+		"  ]\n"+
+		"}")
+	t.Setenv("CODEWORLD_HOME", home)
+
+	rt, err := NewRuntime(context.Background(), Options{
+		Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, Ephemeral: true,
+	})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+	defer rt.Close()
+	if rt.ActiveProfile != "local" || rt.Session.Provider != "profile:local" {
+		t.Fatalf("provider profile was not selected: active=%q provider=%q", rt.ActiveProfile, rt.Session.Provider)
+	}
+	if rt.Session.Model != "qwen3-coder" || rt.Runner.ModelName != "qwen3-coder" {
+		t.Fatalf("profile model was not selected: session=%q runner=%q", rt.Session.Model, rt.Runner.ModelName)
+	}
+	if rt.Runner.Model == nil || rt.ChildRunner == nil || rt.ChildRunner.Model == nil {
+		t.Fatal("profile client was not wired to parent and child runners")
+	}
+}
+
+func TestNewRuntimeNamesMissingProfileCredential(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	writeFile(t, filepath.Join(home, "config.toml"), "provider = \"profile:gemini\"\n")
+	writeFile(t, filepath.Join(home, "providers.json"), "{\n"+
+		"  \"version\": 1,\n"+
+		"  \"profiles\": [{\n"+
+		"    \"id\": \"gemini\",\n"+
+		"    \"api_format\": \"gemini\",\n"+
+		"    \"model\": \"gemini-test\",\n"+
+		"    \"api_key_env\": \"TEST_GEMINI_API_KEY\"\n"+
+		"  }]\n"+
+		"}")
+	t.Setenv("CODEWORLD_HOME", home)
+	t.Setenv("TEST_GEMINI_API_KEY", "")
+
+	_, err := NewRuntime(context.Background(), Options{
+		Root: root, In: &bytes.Buffer{}, Out: &bytes.Buffer{}, Err: &bytes.Buffer{}, Ephemeral: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "TEST_GEMINI_API_KEY is not set") {
+		t.Fatalf("err=%v, want named missing credential", err)
+	}
+}
+
 func TestNewRuntimeLoadsAndCanIgnoreExecRules(t *testing.T) {
 	root, home := t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(home, "rules", "default.rules"), "prefix_rule(pattern=[\"git\", \"status\"], decision=\"allow\")\n"+

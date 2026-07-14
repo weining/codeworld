@@ -26,10 +26,19 @@ type Client struct {
 
 // NewClient 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewClient(apiKey, modelName string) *Client {
+	return NewClientWithBaseURL(apiKey, modelName, "")
+}
+
+// NewClientWithBaseURL creates an Anthropic Messages client for a custom compatible endpoint.
+func NewClientWithBaseURL(apiKey, modelName, baseURL string) *Client {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com"
+	}
 	return &Client{
 		apiKey:     apiKey,
 		model:      modelName,
-		baseURL:    "https://api.anthropic.com",
+		baseURL:    baseURL,
 		version:    defaultVersion,
 		httpClient: http.DefaultClient,
 	}

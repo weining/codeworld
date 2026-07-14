@@ -6,8 +6,8 @@ inspectable foundation for a Codex- or Claude Code-style terminal assistant.
 The current version focuses on:
 
 - a Codex-like Bubble Tea TUI as the default interactive entry point;
-- DeepSeek by default, with OpenAI-compatible, Anthropic, and Codex OAuth providers;
-- streaming assistant output for OpenAI-compatible providers;
+- DeepSeek by default, with user-managed OpenAI-compatible, Anthropic Messages, native Gemini, and Codex OAuth provider profiles;
+- streaming assistant output for OpenAI-compatible, Gemini, DeepSeek, and Codex providers;
 - workspace-safe tools for reading, writing, patching, shell commands, git, context search, and native web search;
 - project skills, plugin tools, stdio/HTTP MCP tools, hooks, and local subagents;
 - scriptable JSONL execution, structured JSON output, and local Git review;
@@ -110,6 +110,51 @@ ANTHROPIC_API_KEY=...
 CODEWORLD_LOCAL_BASE_URL=http://127.0.0.1:11434/v1
 ```
 
+### LLM provider profiles
+
+Use `/providers add` in the TUI to configure an LLM platform one field at a
+time. Profiles are stored atomically at `$CODEWORLD_HOME/providers.json` with
+`0600` permissions. A profile stores only the API key environment-variable
+name, never the key value itself.
+
+Supported wire formats:
+
+- `openai`: OpenAI Chat Completions-compatible APIs, including OpenAI,
+  DeepSeek, Moonshot/Kimi, Qwen/DashScope, Zhipu, OpenRouter, Ollama, LM Studio,
+  vLLM, and compatible gateways by changing the base URL;
+- `anthropic`: native Anthropic Messages-compatible APIs;
+- `gemini`: native Google Gemini `generateContent` and
+  `streamGenerateContent`;
+- `codex`: ChatGPT/Codex OAuth Responses backend.
+
+For example, this user-level file describes Moonshot and local Ollama:
+
+```json
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "moonshot",
+      "name": "Moonshot",
+      "api_format": "openai",
+      "base_url": "https://api.moonshot.cn/v1",
+      "model": "moonshot-v1-8k",
+      "api_key_env": "MOONSHOT_API_KEY"
+    },
+    {
+      "id": "ollama",
+      "api_format": "openai",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "model": "qwen3-coder"
+    }
+  ]
+}
+```
+
+Select a profile persistently in `config.toml` with
+`provider = "profile:moonshot"`, or switch the current TUI session immediately
+with `/providers use moonshot`.
+
 Codex OAuth, using the same ChatGPT OAuth shape as OpenClaw:
 
 ```bash
@@ -166,6 +211,7 @@ codeworld mcp login docs --scopes tools.read,tools.write
 codeworld mcp logout docs
 codeworld mcp remove local
 codeworld mcp-server
+codeworld app-server --stdio
 codeworld execpolicy check --pretty --rules ~/.codeworld/rules/default.rules -- git status --short
 codeworld sessions
 codeworld doctor
@@ -218,6 +264,8 @@ Command behavior:
 - `codeworld review --base <branch>` and `--commit <sha>` review a selected Git change set.
 - `codeworld mcp list|get|add|remove|login|logout` manages user-level stdio and HTTP MCP servers, including OAuth 2.0 authorization-code login with PKCE and refresh tokens.
 - `codeworld mcp-server` exposes `codex` and `codex-reply` over JSONL stdio MCP so other agents can start and continue Codeworld sessions.
+- `codeworld app-server [--stdio|--listen stdio://]` serves the Codex app-server JSONL protocol. The current compatibility slice implements `initialize`, `thread/start`, `thread/resume`, `turn/start`, and `turn/interrupt`, including streamed item and turn lifecycle notifications.
+- App-server keeps one Runtime per loaded thread, rejects overlapping turns on the same thread, persists completed or useful partial turns, and cancels the active model/tool context on `turn/interrupt`. WebSocket, daemon, and remote-control transports are not yet advertised.
 - MCP thread runtime metadata is saved privately under `$CODEWORLD_HOME/mcp-threads`, allowing `codex-reply` to continue a persisted workspace session after the stdio server restarts.
 - The stdio MCP server processes session calls serially, preserves response order, and honors `notifications/cancelled` by cancelling the matching active request context.
 - `codeworld plugin list|add|remove` installs Codex-compatible plugins from configured local or Git marketplaces; `codeworld plugin marketplace add|list|upgrade|remove` manages their snapshots.
@@ -271,6 +319,16 @@ Inside the TUI:
 /permissions <untrusted|on-request|never|auto|read-only|full-access>
                switch the current approval mode
 /mcp           list configured MCP servers
+/providers     list LLM provider profiles
+/providers add configure a profile with a step-by-step wizard
+/providers edit <id>
+               edit a saved profile
+/providers delete <id>
+               delete a profile after explicit confirmation
+/providers use <id>
+               switch this session and its subagents to a profile
+/providers cancel
+               cancel the active provider wizard
 /skills        list loaded project skills
 /context       show context system status
 /agents        list local subagent tasks
@@ -532,7 +590,7 @@ native search without per-call approval; enabling network through config or
 
 ## Image Input
 
-OpenAI-compatible and Anthropic providers can receive image content parts. In
+OpenAI-compatible, Anthropic, and Gemini providers can receive image content parts. In
 the TUI, run `/image <path>` before your next prompt. In non-interactive mode,
 use:
 

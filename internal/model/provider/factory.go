@@ -11,6 +11,7 @@ import (
 	"codeworld/internal/model/anthropic"
 	"codeworld/internal/model/codex"
 	"codeworld/internal/model/deepseek"
+	"codeworld/internal/model/gemini"
 	"codeworld/internal/model/openai"
 )
 
@@ -21,12 +22,18 @@ type Config struct {
 	OpenAIAPIKey    string
 	AnthropicAPIKey string
 	LocalBaseURL    string
+	APIFormat       string
+	APIKey          string
+	BaseURL         string
 	Root            string
 	LogPath         string
 }
 
 // NewClient 创建并返回对应组件，集中设置默认依赖和初始状态。
 func NewClient(cfg Config) (model.Client, error) {
+	if cfg.APIFormat != "" {
+		return newFormattedClient(cfg)
+	}
 	switch cfg.Provider {
 	case "", "deepseek":
 		client := deepseek.NewClient(cfg.DeepSeekAPIKey, cfg.Model)
@@ -77,6 +84,43 @@ func NewClient(cfg Config) (model.Client, error) {
 		return client, nil
 	default:
 		return nil, fmt.Errorf("unknown provider %q", cfg.Provider)
+	}
+}
+
+func newFormattedClient(cfg Config) (model.Client, error) {
+	switch cfg.APIFormat {
+	case "openai":
+		client := openai.NewClient(cfg.APIKey, cfg.Model, cfg.BaseURL)
+		if cfg.LogPath != "" {
+			client.SetLogger(openai.NewFileJSONLLogger(cfg.LogPath))
+		}
+		return client, nil
+	case "anthropic":
+		if cfg.APIKey == "" {
+			return nil, fmt.Errorf("API key is not set for provider %q", cfg.Provider)
+		}
+		client := anthropic.NewClientWithBaseURL(cfg.APIKey, cfg.Model, cfg.BaseURL)
+		if cfg.LogPath != "" {
+			client.SetLogger(anthropic.NewFileJSONLLogger(cfg.LogPath))
+		}
+		return client, nil
+	case "gemini":
+		if cfg.APIKey == "" {
+			return nil, fmt.Errorf("API key is not set for provider %q", cfg.Provider)
+		}
+		return gemini.NewClient(gemini.Config{APIKey: cfg.APIKey, Model: cfg.Model, BaseURL: cfg.BaseURL}), nil
+	case "codex":
+		cred, err := resolveCodexCredentials(cfg.Root)
+		if err != nil {
+			return nil, err
+		}
+		client := codex.NewClient(codex.Config{AccessToken: cred.Access, AccountID: cred.AccountID, Model: cfg.Model, BaseURL: cfg.BaseURL})
+		if cfg.LogPath != "" {
+			client.SetLogger(codex.NewFileJSONLLogger(cfg.LogPath))
+		}
+		return client, nil
+	default:
+		return nil, fmt.Errorf("unknown API format %q", cfg.APIFormat)
 	}
 }
 

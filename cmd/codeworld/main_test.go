@@ -55,7 +55,7 @@ func TestCLIHelpListsAutomationCommands(t *testing.T) {
 	if err := runWithIO(strings.NewReader(""), &out, &bytes.Buffer{}, []string{"--help"}); err != nil {
 		t.Fatalf("runWithIO: %v", err)
 	}
-	for _, want := range []string{"codeworld exec", "codeworld review", "codeworld login", "codeworld logout", "codeworld sessions", "codeworld fork", "codeworld doctor", "codeworld completion", "codeworld sandbox", "--version", "--cd", "--model", "--output-schema", "--ephemeral", "--approval-mode"} {
+	for _, want := range []string{"codeworld exec", "codeworld review", "codeworld login", "codeworld logout", "codeworld app-server", "codeworld sessions", "codeworld fork", "codeworld doctor", "codeworld completion", "codeworld sandbox", "--version", "--cd", "--model", "--output-schema", "--ephemeral", "--approval-mode"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("help missing %q:\n%s", want, out.String())
 		}
