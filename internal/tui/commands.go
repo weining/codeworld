@@ -19,6 +19,7 @@ var slashCommands = []string{
 	"/diff",
 	"/permissions",
 	"/mcp",
+	"/providers",
 	"/skills",
 	"/context",
 	"/agents",
@@ -114,6 +115,8 @@ func (m Model) handleSlashCommand(ctx context.Context, line string) (Model, bool
 			lines = append(lines, strings.TrimSpace(server.Name+" "+server.Command+" "+strings.Join(server.Args, " ")))
 		}
 		m.appendNotice(strings.Join(lines, "\n"))
+	case line == "/providers" || strings.HasPrefix(line, "/providers "):
+		m.handleProvidersCommand(line)
 	case line == "/skills":
 		if len(m.rt.Skills) == 0 {
 			m.appendNotice("no project skills loaded")

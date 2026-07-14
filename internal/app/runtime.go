@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"codeworld/internal/agent"
@@ -20,6 +21,7 @@ import (
 	"codeworld/internal/execpolicy"
 	"codeworld/internal/hooks"
 	"codeworld/internal/instructions"
+	"codeworld/internal/llmprofile"
 	"codeworld/internal/mcp"
 	"codeworld/internal/model"
 	"codeworld/internal/model/provider"
@@ -73,6 +75,9 @@ type Runtime struct {
 	BaseSystemPrompt string
 	CompactPrompt    string
 	NativeSearch     bool
+	ProviderProfiles *llmprofile.Store
+	ActiveProfile    string
+	ModelLogPath     string
 	Diff             func(context.Context) (string, error)
 	In               io.Reader
 	Out              io.Writer
@@ -274,6 +279,24 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		systemPrompt += "\n\nProject instructions:\n" + projectInstructions.Text
 	}
 	store := session.NewStore(ws.Root)
+	providerHome, err := config.Home("")
+	if err != nil {
+		return Runtime{}, err
+	}
+	providerProfiles, err := llmprofile.Load(providerHome)
+	if err != nil {
+		return Runtime{}, err
+	}
+	configuredProfileRef := profileReference(cfg.Provider)
+	if configuredProfileRef != "" {
+		configuredProfile, ok := providerProfiles.Get(configuredProfileRef)
+		if !ok {
+			return Runtime{}, fmt.Errorf("provider profile %q not found", configuredProfileRef)
+		}
+		if opts.Model == "" {
+			cfg.Model = configuredProfile.Model
+		}
+	}
 	if opts.ResumeLast {
 		sessions, err := store.List()
 		if err != nil {
@@ -302,6 +325,26 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}
 	if opts.Model != "" {
 		sess.Model = opts.Model
+	}
+	activeProfile := ""
+	profileRef := profileReference(sess.Provider)
+	if profileRef == "" {
+		profileRef = configuredProfileRef
+	}
+	var selectedProfile llmprofile.Profile
+	if profileRef != "" {
+		var ok bool
+		selectedProfile, ok = providerProfiles.Get(profileRef)
+		if !ok {
+			return Runtime{}, fmt.Errorf("provider profile %q not found", profileRef)
+		}
+		activeProfile = profileRef
+		sess.Provider = "profile:" + profileRef
+		cfg.Provider = sess.Provider
+		if opts.Model == "" && (opts.NewSession || sess.Model == "") {
+			sess.Model = selectedProfile.Model
+		}
+		cfg.Model = sess.Model
 	}
 	// Approvals are process-local trust decisions. Do not trust approvals read
 	// from a workspace-controlled session file after a restart.
@@ -345,7 +388,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		logPath = modelCallLogPath(ws.Root)
 	}
 	// provider client 负责隐藏各家 API 差异；Runtime 只关心统一的 Generate/Stream 接口。
-	client, err := provider.NewClient(provider.Config{
+	providerConfig := provider.Config{
 		Provider:        cfg.Provider,
 		Model:           modelName,
 		DeepSeekAPIKey:  cfg.APIKey,
@@ -354,8 +397,15 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		LocalBaseURL:    cfg.LocalBaseURL,
 		Root:            ws.Root,
 		LogPath:         logPath,
-	})
+	}
+	if activeProfile != "" {
+		providerConfig = formattedProviderConfig(selectedProfile, modelName, ws.Root, logPath)
+	}
+	client, err := provider.NewClient(providerConfig)
 	if err != nil {
+		if activeProfile != "" {
+			return Runtime{}, profileClientError(selectedProfile, err)
+		}
 		return Runtime{}, err
 	}
 	// capability loader 会合并原生 skill、Codex plugin 和 MCP 工具，再统一注册进工具表。
@@ -500,6 +550,9 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		BaseSystemPrompt: systemPrompt,
 		CompactPrompt:    opts.CompactPrompt,
 		NativeSearch:     opts.NativeSearch,
+		ProviderProfiles: providerProfiles,
+		ActiveProfile:    activeProfile,
+		ModelLogPath:     logPath,
 		In:               opts.In,
 		Out:              opts.Out,
 		Err:              opts.Err,
@@ -509,6 +562,59 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return result.Content, err
 		},
 	}, nil
+}
+
+// UseProviderProfile switches the current runtime and child agent to a saved LLM platform.
+func (r *Runtime) UseProviderProfile(id string) error {
+	if r.ProviderProfiles == nil {
+		return fmt.Errorf("provider profiles are unavailable")
+	}
+	profile, ok := r.ProviderProfiles.Get(strings.TrimSpace(id))
+	if !ok {
+		return fmt.Errorf("provider profile %q not found", id)
+	}
+	client, err := provider.NewClient(formattedProviderConfig(profile, profile.Model, r.Workspace.Root, r.ModelLogPath))
+	if err != nil {
+		return profileClientError(profile, err)
+	}
+	r.Runner.Model = client
+	if r.ChildRunner != nil {
+		r.ChildRunner.Model = client
+	}
+	r.ActiveProfile = profile.ID
+	r.Config.Provider = "profile:" + profile.ID
+	r.Config.Model = profile.Model
+	r.Session.Provider = r.Config.Provider
+	r.SetModel(profile.Model)
+	return nil
+}
+
+func formattedProviderConfig(profile llmprofile.Profile, modelName, root, logPath string) provider.Config {
+	apiKey := ""
+	if profile.APIKeyEnv != "" {
+		apiKey = os.Getenv(profile.APIKeyEnv)
+	}
+	return provider.Config{
+		Provider: "profile:" + profile.ID, Model: modelName,
+		APIFormat: string(profile.APIFormat), APIKey: apiKey, BaseURL: profile.BaseURL,
+		Root: root, LogPath: logPath,
+	}
+}
+
+func profileClientError(profile llmprofile.Profile, err error) error {
+	requiresAPIKey := profile.APIFormat == llmprofile.FormatAnthropic || profile.APIFormat == llmprofile.FormatGemini
+	if requiresAPIKey && profile.APIKeyEnv != "" && strings.TrimSpace(os.Getenv(profile.APIKeyEnv)) == "" {
+		return fmt.Errorf("%s is not set for provider profile %q", profile.APIKeyEnv, profile.ID)
+	}
+	return err
+}
+
+func profileReference(providerName string) string {
+	providerName = strings.TrimSpace(providerName)
+	if !strings.HasPrefix(providerName, "profile:") {
+		return ""
+	}
+	return strings.TrimSpace(strings.TrimPrefix(providerName, "profile:"))
 }
 
 // SetApprovalMode updates the parent policy while preserving loaded exec rules.

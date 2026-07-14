@@ -5,8 +5,8 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 当前版本已经具备：
 
 - 默认进入接近 Codex CLI 风格的 Bubble Tea TUI；
-- 默认使用 DeepSeek，并支持 OpenAI-compatible、Anthropic 与 Codex OAuth provider；
-- OpenAI-compatible provider 的流式输出；
+- 默认使用 DeepSeek，并支持用户管理的 OpenAI-compatible、Anthropic Messages、原生 Gemini 与 Codex OAuth provider profile；
+- OpenAI-compatible、Gemini、DeepSeek 与 Codex provider 的流式输出；
 - 面向 workspace 的读写、patch、shell、git、context 和原生 web search 工具；
 - project skills、plugin tools、Codex plugin bundle 基础兼容、stdio/HTTP MCP tools、hooks 和本地子代理；
 - 面向脚本的 JSONL 执行、结构化 JSON 输出校验和本地 Git review；
@@ -103,6 +103,48 @@ ANTHROPIC_API_KEY=...
 CODEWORLD_LOCAL_BASE_URL=http://127.0.0.1:11434/v1
 ```
 
+### LLM provider profiles
+
+在 TUI 中输入 `/providers add`，即可按步骤配置一个 LLM 平台。Profile 会原子
+写入 `$CODEWORLD_HOME/providers.json`，文件权限为 `0600`。配置中只保存 API key
+对应的环境变量名，不会保存 key 明文。
+
+支持以下 API wire format：
+
+- `openai`：OpenAI Chat Completions-compatible API；通过不同 base URL 可接入
+  OpenAI、DeepSeek、Moonshot/Kimi、Qwen/DashScope、智谱、OpenRouter、Ollama、
+  LM Studio、vLLM 及兼容网关；
+- `anthropic`：原生 Anthropic Messages-compatible API；
+- `gemini`：原生 Google Gemini `generateContent` 与 `streamGenerateContent`；
+- `codex`：ChatGPT/Codex OAuth Responses backend。
+
+例如，下面的用户级配置同时描述 Moonshot 和本地 Ollama：
+
+```json
+{
+  "version": 1,
+  "profiles": [
+    {
+      "id": "moonshot",
+      "name": "Moonshot",
+      "api_format": "openai",
+      "base_url": "https://api.moonshot.cn/v1",
+      "model": "moonshot-v1-8k",
+      "api_key_env": "MOONSHOT_API_KEY"
+    },
+    {
+      "id": "ollama",
+      "api_format": "openai",
+      "base_url": "http://127.0.0.1:11434/v1",
+      "model": "qwen3-coder"
+    }
+  ]
+}
+```
+
+可以在 `config.toml` 中设置 `provider = "profile:moonshot"` 持久选择，也可以在
+TUI 中输入 `/providers use moonshot` 立即切换当前 session。
+
 Codex OAuth 使用 OpenClaw 风格的 ChatGPT OAuth 流程：
 
 ```bash
@@ -155,6 +197,7 @@ codeworld mcp login docs --scopes tools.read,tools.write
 codeworld mcp logout docs
 codeworld mcp remove local
 codeworld mcp-server
+codeworld app-server --stdio
 codeworld plugin marketplace add ./my-marketplace
 codeworld plugin list --available --json
 codeworld plugin add reviewer@my-marketplace
@@ -214,6 +257,8 @@ codeworld index
 - `codeworld review --base <branch>`、`--commit <sha>`：审查指定 Git 变更集；
 - `codeworld mcp list|get|add|remove|login|logout`：管理用户级 stdio 和 HTTP MCP servers，包括带 PKCE 和 refresh token 的 OAuth 登录；
 - `codeworld mcp-server`：通过 JSONL stdio MCP 暴露 `codex` 和 `codex-reply`，供其他 agent 创建并继续 Codeworld session；
+- `codeworld app-server [--stdio|--listen stdio://]`：提供 Codex app-server JSONL 协议；当前兼容切片实现 `initialize`、`thread/start`、`thread/resume`、`turn/start`、`turn/interrupt`，并输出流式 item/turn 生命周期通知；
+- App-server 会为每个已加载 thread 保持独立 Runtime，拒绝同一 thread 的重叠 turn，保存完成或有价值的部分结果，并在 `turn/interrupt` 时取消活动模型/工具上下文；当前不会宣称支持 WebSocket、daemon 或 remote-control transport；
 - MCP thread 运行元数据会以私有文件保存到 `$CODEWORLD_HOME/mcp-threads`，stdio server 重启后 `codex-reply` 仍可继续已持久化的 workspace session；
 - stdio MCP server 会串行处理 session 调用、保持响应顺序，并通过取消匹配的活动请求上下文来响应 `notifications/cancelled`；
 - `codeworld plugin list|add|remove`：从本地或 Git marketplace 安装 Codex-compatible plugins；`plugin marketplace add|list|upgrade|remove` 管理 marketplace 快照；
@@ -265,6 +310,16 @@ TUI 使用响应式终端布局：顶部紧凑双行状态栏、空会话欢迎�
 /permissions <untrusted|on-request|never|auto|read-only|full-access>
                切换当前权限模式
 /mcp           查看已配置 MCP servers
+/providers     查看 LLM provider profiles
+/providers add 通过分步向导新增 profile
+/providers edit <id>
+               编辑已有 profile
+/providers delete <id>
+               显式确认后删除 profile
+/providers use <id>
+               将当前 session 和子代理切换到该 profile
+/providers cancel
+               取消当前 provider 向导
 /skills        查看已加载 skills
 /context       查看上下文系统状态
 /agents        查看本地子代理任务
@@ -505,7 +560,7 @@ Context graph 是本地、确定性的，不依赖 embedding。它会提取文�
 
 ## 图片输入
 
-OpenAI-compatible 和 Anthropic provider 可以接收图片 content parts。TUI 中先输入 `/image <path>`，下一条普通 prompt 会携带该图片。非交互模式可以使用：
+OpenAI-compatible、Anthropic 和 Gemini provider 可以接收图片 content parts。TUI 中先输入 `/image <path>`，下一条普通 prompt 会携带该图片。非交互模式可以使用：
 
 ```bash
 codeworld run --image screenshot.png "explain this screenshot"

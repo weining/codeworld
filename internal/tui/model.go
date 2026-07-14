@@ -26,6 +26,7 @@ type Model struct {
 	turnEvents        <-chan agent.TurnEvent
 	confirmer         *TUIConfirmer
 	pendingPermission *permissions.Request
+	providerWizard    *providerWizard
 	input             textarea.Model
 	viewport          viewport.Model
 	items             []TranscriptItem
@@ -171,6 +172,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.refreshViewport()
 			return m, nil
+		}
+		if m.providerWizard != nil {
+			switch msg.String() {
+			case "ctrl+c":
+				m.quitting = true
+				return m, tea.Quit
+			case "esc":
+				m.cancelProviderWizard()
+				m.refreshViewport()
+				return m, nil
+			case "enter":
+				m.handleProviderWizardInput(m.input.Value())
+				m.input.Reset()
+				m.refreshViewport()
+				return m, nil
+			}
 		}
 		switch msg.String() {
 		case "ctrl+c":
@@ -376,6 +393,10 @@ func (m Model) renderComposer() string {
 		borderColor = p.warning
 		status = "permission required"
 	}
+	if m.providerWizard != nil {
+		borderColor = p.secondary
+		status = "provider setup"
+	}
 	if len(m.pendingImages) > 0 {
 		status += fmt.Sprintf("  ·  %d image", len(m.pendingImages))
 	}
@@ -395,6 +416,8 @@ func (m Model) renderComposer() string {
 	}
 	if m.pendingPermission != nil {
 		helpText = "y allow once   a allow for session   n deny"
+	} else if m.providerWizard != nil {
+		helpText = "↵ next step   Esc cancel   values saved to providers.json"
 	} else if m.running {
 		helpText = "Working on your request…   ↵ queue   ctrl+x interrupt   ctrl+c quit"
 	}

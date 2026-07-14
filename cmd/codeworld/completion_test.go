@@ -18,7 +18,7 @@ func TestCompletionDefaultsToBash(t *testing.T) {
 
 func TestCompletionScriptsIncludeContextAndEnumCandidates(t *testing.T) {
 	tests := map[string][]string{
-		"bash":       {"auth:codex", "plugin:marketplace", "execpolicy:check", completionApprovalModes, completionShells},
+		"bash":       {"auth:codex", "plugin:marketplace", "execpolicy:check", "app-server", "--listen --stdio", completionApprovalModes, completionShells},
 		"elvish":     {"&'codeworld;mcp'", "&'codeworld;plugin;marketplace'", "&'codeworld;execpolicy;check'", "cand bash", "cand zsh"},
 		"fish":       {"__fish_seen_subcommand_from mcp", "__fish_seen_subcommand_from plugin; and __fish_seen_subcommand_from marketplace", "__fish_seen_subcommand_from execpolicy; and __fish_seen_subcommand_from check", completionColorModes},
 		"powershell": {"$elements[1]", "list get add remove login logout", "'execpolicy'", completionSandboxModes},

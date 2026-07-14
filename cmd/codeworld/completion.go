@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	completionCommands       = "login logout auth mcp mcp-server plugin features debug execpolicy repl run exec e review sessions fork archive unarchive delete index resume tui doctor completion sandbox version help"
+	completionCommands       = "login logout auth mcp mcp-server app-server plugin features debug execpolicy repl run exec e review sessions fork archive unarchive delete index resume tui doctor completion sandbox version help"
 	completionOptions        = "--help --version --profile -p --cd -C --add-dir --model -m --image -i --oss --local-provider --approval-mode -a --sandbox -s --network --no-network --search --no-alt-screen --config -c --enable --disable --dangerously-bypass-approvals-and-sandbox --dangerously-bypass-hook-trust --strict-config --json --ephemeral --output-schema --archived --last --uncommitted --title --color"
 	completionApprovalModes  = "untrusted on-request never auto read-only full-access"
 	completionSandboxModes   = "read-only workspace-write danger-full-access"
@@ -31,6 +31,7 @@ var completionPaths = []completionPath{
 	{path: "debug", candidates: "models prompt-input"},
 	{path: "execpolicy", candidates: "check"},
 	{path: "execpolicy;check", candidates: "--rules -r --pretty --resolve-host-executables"},
+	{path: "app-server", candidates: "--listen --stdio"},
 	{path: "sessions", candidates: "rename --archived"},
 	{path: "exec", candidates: "review"},
 	{path: "e", candidates: "review"},
@@ -100,6 +101,7 @@ _codeworld_completion() {
       features) candidates="list enable disable" ;;
 		debug) candidates="models prompt-input" ;;
 		execpolicy) candidates="check" ;;
+		app-server) candidates="--listen --stdio" ;;
       sessions) candidates="rename --archived" ;;
       exec|e) candidates="review" ;;
       completion) candidates="` + completionShells + `" ;;
@@ -134,6 +136,7 @@ _codeworld() {
       features) _values 'feature command' list enable disable; return ;;
       debug) _values 'debug command' models prompt-input; return ;;
 	  execpolicy) _values 'execpolicy command' check; return ;;
+	  app-server) _values 'app-server option' --listen --stdio; return ;;
       sessions) _values 'sessions argument' rename --archived; return ;;
       exec|e) _values 'exec command' review; return ;;
       completion) _values 'shell' ` + completionShells + `; return ;;
@@ -228,6 +231,7 @@ func powershellCompletionScript() string {
         'features' { 'list enable disable'.Split(' ') }
         'debug' { 'models prompt-input'.Split(' ') }
 		'execpolicy' { if ($elements.Count -le 2 -or ($elements.Count -eq 3 -and $currentIsElement)) { 'check'.Split(' ') } else { '--rules -r --pretty --resolve-host-executables'.Split(' ') } }
+		'app-server' { '--listen --stdio'.Split(' ') }
         'sessions' { 'rename --archived'.Split(' ') }
         { $_ -in 'exec', 'e' } { 'review'.Split(' ') }
         'completion' { '` + completionShells + `'.Split(' ') }

@@ -119,6 +119,35 @@ func TestNewClientCreatesAnthropicClient(t *testing.T) {
 	}
 }
 
+func TestNewClientCreatesWireFormatClients(t *testing.T) {
+	tests := []Config{
+		{Provider: "profile:openai-compatible", APIFormat: "openai", Model: "custom-model", BaseURL: "http://127.0.0.1:11434/v1"},
+		{Provider: "profile:anthropic-compatible", APIFormat: "anthropic", Model: "custom-model", BaseURL: "https://example.com", APIKey: "secret"},
+		{Provider: "profile:gemini", APIFormat: "gemini", Model: "gemini-test", BaseURL: "https://generativelanguage.googleapis.com/v1beta", APIKey: "secret"},
+	}
+	for _, cfg := range tests {
+		client, err := NewClient(cfg)
+		if err != nil {
+			t.Fatalf("NewClient(%s): %v", cfg.APIFormat, err)
+		}
+		if client == nil {
+			t.Fatalf("NewClient(%s) returned nil", cfg.APIFormat)
+		}
+	}
+}
+
+func TestNewClientValidatesWireFormatCredentials(t *testing.T) {
+	for _, format := range []string{"anthropic", "gemini"} {
+		_, err := NewClient(Config{Provider: "profile:test", APIFormat: format, Model: "test", BaseURL: "https://example.com"})
+		if err == nil || !strings.Contains(err.Error(), "API key is not set") {
+			t.Fatalf("format=%s err=%v, want missing API key", format, err)
+		}
+	}
+	if _, err := NewClient(Config{Provider: "profile:test", APIFormat: "unknown", Model: "test"}); err == nil || !strings.Contains(err.Error(), "unknown API format") {
+		t.Fatalf("err=%v, want unknown API format", err)
+	}
+}
+
 // TestNewClientRejectsMissingAnthropicAPIKey 验证对应场景的行为，避免后续改动破坏既有约束。
 func TestNewClientRejectsMissingAnthropicAPIKey(t *testing.T) {
 	_, err := NewClient(Config{Provider: "anthropic", Model: "claude-sonnet-4-5"})
