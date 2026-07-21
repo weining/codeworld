@@ -8,7 +8,7 @@ The current version focuses on:
 - a Codex-like Bubble Tea TUI as the default interactive entry point;
 - DeepSeek by default, with user-managed OpenAI-compatible, Anthropic Messages, native Gemini, and Codex OAuth provider profiles;
 - streaming assistant output for OpenAI-compatible, Gemini, DeepSeek, and Codex providers;
-- workspace-safe tools for reading, writing, patching, shell commands, git, context search, and native web search;
+- workspace-safe tools for reading, writing, patching, shell commands, git, context search, native web search, and persistent headless browser automation;
 - project skills, plugin tools, stdio/HTTP MCP tools, hooks, and local subagents;
 - scriptable JSONL execution, structured JSON output, and local Git review;
 - PTY-capable background command sessions with incremental output, stdin, resize, and termination;
@@ -23,7 +23,7 @@ smaller than Codex. The current implementation covers a Codex-like local TUI,
 provider calls, workspace tools, native web search, permissions, skills,
 plugins, stdio/HTTP MCP, hooks, local subagents, image input, and deterministic
 context. Larger Codex-style surfaces such as cloud tasks, IDE integration,
-browser control, computer use, and hosted GitHub review workflows are future work.
+accessibility-tree/coordinate browser control, computer use, and hosted GitHub review workflows are future work.
 
 ## Install
 
@@ -588,6 +588,37 @@ with network risk. Explicit global `--search` enables both sandbox network and
 native search without per-call approval; enabling network through config or
 `--network` alone retains the normal permission flow.
 
+## Browser Screenshots
+
+When sandbox network access is enabled, `browser_open` uses a local Google
+Chrome or Chromium installation to load an HTTP(S) page, return its rendered
+text, and save a PNG screenshot inside the workspace. Calls provide `url` and
+`screenshot_path`, with optional viewport dimensions and up to ten seconds of
+rendering wait time.
+
+For continuous interaction, `browser_session_start` creates a browser session
+that persists for the Runtime. A `snapshot` returns the page title, URL, text,
+and stable page-scoped element references such as `[ref=pabc-e1] button
+"Save"`. Old refs expire after navigation, preventing them from silently
+targeting a different element. `click`, `type`, and `select` prefer these refs
+and also accept CSS selectors; typing can optionally submit the nearest form.
+
+The same action tool supports `navigate`, `back`, `forward`, `reload`, and
+`screenshot`, plus the `tabs`, `new_tab`, `switch_tab`, and `close_tab` tab
+lifecycle. `upload` assigns a validated regular file from the workspace to a
+file input. `download` clicks a referenced element, waits for completion, and
+reports files written to a workspace directory. `diagnostics` captures console
+messages, uncaught JavaScript exceptions, failed requests, and HTTP error
+responses, with an option to clear the collected buffer. Call
+`browser_session_close` when finished. Runtime shutdown also cleans up every
+DevTools connection, browser process, and temporary profile.
+
+Sessions do not reuse the user's normal Chrome profile or persist login state
+across processes. Accessibility-tree locators and coordinate input are not
+implemented yet. Browser writes and network activity retain normal permission
+confirmation, file paths are constrained to the workspace, and browser tools
+are not registered in read-only sandboxes.
+
 ## Image Input
 
 OpenAI-compatible, Anthropic, and Gemini providers can receive image content parts. In
@@ -702,7 +733,7 @@ results may still contain sensitive workspace data.
 
 Known gaps compared with Codex include:
 
-- no browser/computer-use surface;
+- browser support includes semantic refs, CSS selectors, form/file input, controlled downloads, diagnostics, navigation history, tabs, and screenshots; cross-process login state, accessibility-tree/coordinate control, and Computer Use are not implemented;
 - subagents are local read-only investigation tasks, not cloud tasks;
 - PTY sessions are available on Unix platforms; Windows reports PTY as unsupported instead of silently using pipes;
 - Linux sandboxing requires Bubblewrap to be installed; Windows restricted process sandboxing is not implemented;

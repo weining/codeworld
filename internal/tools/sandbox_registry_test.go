@@ -13,7 +13,7 @@ func TestReadOnlySandboxOmitsMutationAndNetworkTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := NewDefaultRegistryWithSandbox(ws, sandbox.Policy{Mode: sandbox.ModeReadOnly, Workspace: ws.Root})
-	for _, name := range []string{"write_file", "apply_patch", "index_workspace", "web_search"} {
+	for _, name := range []string{"write_file", "apply_patch", "index_workspace", "web_search", "browser_open"} {
 		if _, ok := registry.Get(name); ok {
 			t.Fatalf("read-only registry unexpectedly contains %q", name)
 		}
@@ -30,7 +30,7 @@ func TestWorkspaceSandboxRegistersWritesAndOptInNetwork(t *testing.T) {
 	}
 	policy := sandbox.Policy{Mode: sandbox.ModeWorkspaceWrite, Workspace: ws.Root, Network: true}
 	registry := NewDefaultRegistryWithSandbox(ws, policy)
-	for _, name := range []string{"write_file", "apply_patch", "index_workspace", "web_search"} {
+	for _, name := range []string{"write_file", "apply_patch", "index_workspace", "web_search", "browser_open"} {
 		if _, ok := registry.Get(name); !ok {
 			t.Fatalf("workspace registry does not contain %q", name)
 		}

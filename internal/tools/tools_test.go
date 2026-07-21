@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"codeworld/internal/permissions"
+	"codeworld/internal/sandbox"
 	"codeworld/internal/workspace"
 )
 
@@ -56,6 +57,66 @@ func TestDefaultRegistryIncludesWebSearchTool(t *testing.T) {
 
 	if _, ok := registry.Get("web_search"); !ok {
 		t.Fatalf("default registry missing web_search")
+	}
+}
+
+func TestNetworkRegistryIncludesBrowserOpenTool(t *testing.T) {
+	ws := newTestWorkspace(t)
+	registry := NewDefaultRegistry(ws)
+	if _, ok := registry.Get("browser_open"); !ok {
+		t.Fatal("default registry missing browser_open")
+	}
+}
+
+func TestBrowserOpenPermissionAndExecution(t *testing.T) {
+	ws := newTestWorkspace(t)
+	fakeChrome := filepath.Join(ws.Root, "fake-chrome")
+	script := `#!/bin/sh
+for arg in "$@"; do
+  case "$arg" in
+    --screenshot=*) screenshot=${arg#--screenshot=} ;;
+  esac
+done
+printf 'png' > "$screenshot"
+printf '<html><head><style>hidden</style></head><body><h1>Hello</h1><p>Rendered page</p><script>hidden</script></body></html>'
+`
+	if err := os.WriteFile(fakeChrome, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tool := browserOpenTool{workspace: ws, sandbox: sandbox.FullAccess(ws.Root), browserPath: fakeChrome}
+	args := json.RawMessage(`{"url":"https://example.test/page","screenshot_path":"artifacts/page.png","wait_ms":250}`)
+	req, err := tool.PermissionRequest(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Action != permissions.ActionWrite || req.Risk != permissions.RiskNetwork {
+		t.Fatalf("permission = (%q, %q), want write/network", req.Action, req.Risk)
+	}
+	result, err := tool.Execute(context.Background(), args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Content != "Hello\nRendered page" {
+		t.Fatalf("content = %q", result.Content)
+	}
+	if result.Metadata["screenshot_path"] != "artifacts/page.png" {
+		t.Fatalf("screenshot path = %#v", result.Metadata["screenshot_path"])
+	}
+	if _, err := os.Stat(filepath.Join(ws.Root, "artifacts/page.png")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBrowserOpenRejectsUnsafeInputs(t *testing.T) {
+	tool := NewBrowserOpenTool(newTestWorkspace(t), sandbox.FullAccess(t.TempDir()))
+	for _, args := range []string{
+		`{"url":"file:///etc/passwd","screenshot_path":"page.png"}`,
+		`{"url":"https://example.test","screenshot_path":"../page.png"}`,
+		`{"url":"https://example.test","screenshot_path":"page.jpg"}`,
+	} {
+		if _, err := tool.PermissionRequest(json.RawMessage(args)); err == nil {
+			t.Fatalf("PermissionRequest accepted %s", args)
+		}
 	}
 }
 

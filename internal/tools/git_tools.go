@@ -102,6 +102,9 @@ func NewDefaultRegistryWithSandbox(ws workspace.Workspace, policy sandbox.Policy
 	}
 	if policy.Network {
 		registered = append(registered, NewWebSearchTool())
+		if policy.Mode != sandbox.ModeReadOnly {
+			registered = append(registered, NewBrowserOpenTool(ws, policy))
+		}
 	}
 	if policy.Mode != sandbox.ModeReadOnly {
 		registered = append(registered,
