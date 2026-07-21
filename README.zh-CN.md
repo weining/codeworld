@@ -7,7 +7,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 - 默认进入接近 Codex CLI 风格的 Bubble Tea TUI；
 - 默认使用 DeepSeek，并支持用户管理的 OpenAI-compatible、Anthropic Messages、原生 Gemini 与 Codex OAuth provider profile；
 - OpenAI-compatible、Gemini、DeepSeek 与 Codex provider 的流式输出；
-- 面向 workspace 的读写、patch、shell、git、context 和原生 web search 工具；
+- 面向 workspace 的读写、patch、shell、git、context、原生 web search 和持久化无头浏览器自动化工具；
 - project skills、plugin tools、Codex plugin bundle 基础兼容、stdio/HTTP MCP tools、hooks 和本地子代理；
 - 面向脚本的 JSONL 执行、结构化 JSON 输出校验和本地 Git review；
 - 支持增量输出、stdin、resize 和终止的 PTY 后台命令会话；
@@ -19,7 +19,7 @@ Codeworld 是一个用 Go 实现的本地 coding agent。它的目标是作为�
 
 Codeworld 已经可以作为本地 coding agent 使用，但还不是完整 Codex 替代品。当前重点是接近 Codex CLI 风格的本地 TUI、模型调用、workspace 工具、原生 web search、权限确认、skills/plugins/MCP、hooks、本地子代理和确定性的上下文系统。
 
-尚未实现或仍明显简化的 Codex 类能力包括：cloud tasks、IDE 集成、浏览器控制、Computer Use、托管 GitHub PR review 和图片生成等。
+尚未实现或仍明显简化的 Codex 类能力包括：cloud tasks、IDE 集成、无障碍树/坐标级浏览器控制、Computer Use、托管 GitHub PR review 和图片生成等。
 
 ## 安装
 
@@ -558,6 +558,16 @@ Context graph 是本地、确定性的，不依赖 embedding。它会提取文�
 
 因为它会访问网络，`web_search` 的权限声明是 read action + network risk。显式全局 `--search` 会同时开启沙箱网络和无需逐次审批的原生搜索；仅通过配置或 `--network` 开启网络时仍保留常规权限流程。
 
+## 浏览器截图
+
+启用沙箱网络后，`browser_open` 会使用本机 Google Chrome 或 Chromium 加载 HTTP/HTTPS 页面，返回渲染后的页面文本，并把 PNG 截图写入 workspace。调用必须提供 `url` 和 workspace 内的 `screenshot_path`；还可设置 viewport 尺寸和最多 10 秒的渲染等待时间。
+
+需要连续交互时，模型可以使用 `browser_session_start` 创建运行时内持久的浏览器会话。`snapshot` 返回页面标题、URL、正文，以及带页面实例前缀的稳定元素引用，例如 `[ref=pabc-e1] button "Save"`；导航后旧 ref 会失效，避免误操作新页面。`click`、`type` 和 `select` 优先消费这些 ref，也接受 CSS selector；`type` 可选择提交最近的 form。
+
+同一个 action 工具还支持 `navigate`、`back`、`forward`、`reload`、`screenshot`，以及 `tabs`、`new_tab`、`switch_tab`、`close_tab` 多标签页生命周期。`upload` 会先确认文件是 workspace 内的普通文件，再设置到文件输入框；`download` 点击指定元素、等待下载完成，并报告写入 workspace 目录的文件。`diagnostics` 收集 console 消息、未捕获 JavaScript 异常、失败请求和 HTTP 错误响应，也可在读取后清空缓冲区。完成后使用 `browser_session_close`；Runtime 关闭时也会自动清理所有 DevTools 连接、浏览器进程和临时 profile。
+
+会话只在当前 Runtime 内保留，不复用用户的日常 Chrome profile，也不会跨进程保存登录态。目前尚不支持无障碍树定位或坐标点击。浏览器写操作和网络操作仍走常规权限确认，文件路径限定在 workspace 内；read-only 沙箱不会注册这些工具。
+
 ## 图片输入
 
 OpenAI-compatible、Anthropic 和 Gemini provider 可以接收图片 content parts。TUI 中先输入 `/image <path>`，下一条普通 prompt 会携带该图片。非交互模式可以使用：
@@ -651,7 +661,7 @@ workspace 状态保存在 `.codeworld/`：
 
 相比 Codex，目前仍缺：
 
-- browser/computer-use；
+- 浏览器目前支持语义 ref、CSS selector、表单/文件输入、受控下载、诊断、导航历史、多标签页和截图，尚无跨进程登录态、无障碍树/坐标控制或 Computer Use；
 - subagents 还是本地只读调查任务，不是 cloud tasks；
 - Unix 平台支持 PTY session；Windows 会明确返回 PTY unsupported，不会静默退回管道；
 - 权限策略仍是进程内控制，尚无 OS 级文件系统/网络沙箱；

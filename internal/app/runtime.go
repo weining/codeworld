@@ -69,6 +69,7 @@ type Runtime struct {
 	MCPClients       []*mcp.Client
 	Subagents        *subagent.Manager
 	CommandSessions  *tools.CommandSessionManager
+	BrowserSessions  *tools.BrowserSessionManager
 	Runner           agent.Runner
 	ChildRunner      *agent.Runner
 	Hooks            *hooks.Runner
@@ -112,6 +113,11 @@ func (r *Runtime) closeResources() error {
 	var errs []error
 	if r.CommandSessions != nil {
 		if err := r.CommandSessions.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if r.BrowserSessions != nil {
+		if err := r.BrowserSessions.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -489,6 +495,19 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 			return Runtime{}, err
 		}
 	}
+	var browserSessions *tools.BrowserSessionManager
+	if sandboxPolicy.Network && sandboxPolicy.Mode != sandbox.ModeReadOnly {
+		browserSessions = tools.NewBrowserSessionManager(ws, sandboxPolicy)
+		for _, tool := range tools.NewBrowserSessionTools(browserSessions) {
+			if err := registry.RegisterChecked(tool); err != nil {
+				_ = browserSessions.Close()
+				_ = commandSessions.Close()
+				_ = subagentManager.Close()
+				_ = capability.CloseClients(loadedCapabilities.MCPClients)
+				return Runtime{}, err
+			}
+		}
+	}
 	childPolicy := permissions.Policy(permissions.ModePolicy{Mode: permissions.ModeReadOnly, AllowSearch: opts.NativeSearch})
 	runnerPolicy := permissions.Policy(permissions.ModePolicy{Mode: approvalMode, AllowSearch: opts.NativeSearch})
 	if len(execRules.Rules) > 0 {
@@ -516,6 +535,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 	}
 	if !opts.Ephemeral {
 		if err := store.SaveCurrent(sess); err != nil {
+			_ = browserSessions.Close()
 			_ = commandSessions.Close()
 			_ = subagentManager.Close()
 			_ = capability.CloseClients(loadedCapabilities.MCPClients)
@@ -523,6 +543,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		}
 	}
 	if err := hookRunner.Run(ctx, "SessionStart", hooks.Context{}); err != nil {
+		_ = browserSessions.Close()
 		_ = commandSessions.Close()
 		_ = subagentManager.Close()
 		_ = capability.CloseClients(loadedCapabilities.MCPClients)
@@ -544,6 +565,7 @@ func NewRuntime(ctx context.Context, opts Options) (Runtime, error) {
 		MCPClients:       loadedCapabilities.MCPClients,
 		Subagents:        subagentManager,
 		CommandSessions:  commandSessions,
+		BrowserSessions:  browserSessions,
 		Runner:           runner,
 		ChildRunner:      childRunner,
 		Hooks:            hookRunner,
